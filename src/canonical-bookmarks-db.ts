@@ -7,6 +7,7 @@ import type { BrowserBookmarkProvider, BrowserBookmarkRecord } from './browser-b
 import type { BookmarkRecord } from './types.js';
 import { dedupeKeyForUrl, dedupeKeyForXBookmark } from './url-normalize.js';
 import { sanitizeFtsQuery } from './bookmarks-db.js';
+import { classifyBookmarkInput } from './bookmark-classify.js';
 
 export interface CanonicalRebuildResult {
   dbPath: string;
@@ -22,6 +23,24 @@ export interface CanonicalSearchResult {
   sourceCount: number;
   sources: string[];
   score: number;
+}
+
+export interface CanonicalBookmarkListResult {
+  id: string;
+  canonicalUrl: string | null;
+  displayTitle: string | null;
+  searchText: string;
+  sourceCount: number;
+  sources: string[];
+  categories: string | null;
+  primaryCategory: string | null;
+  domains: string | null;
+  primaryDomain: string | null;
+}
+
+export interface ListCanonicalBookmarksOptions {
+  source?: string;
+  limit?: number;
 }
 
 interface CanonicalSourceInput {
@@ -118,6 +137,22 @@ function initCanonicalSchema(db: Database): void {
     content_rowid=rowid,
     tokenize='porter unicode61'
   )`);
+
+  ensureCanonicalColumn(db, 'categories', 'TEXT');
+  ensureCanonicalColumn(db, 'primary_category', 'TEXT');
+  ensureCanonicalColumn(db, 'domains', 'TEXT');
+  ensureCanonicalColumn(db, 'primary_domain', 'TEXT');
+}
+
+function canonicalColumnExists(db: Database, column: string): boolean {
+  const rows = db.exec(`PRAGMA table_info(canonical_bookmarks)`);
+  const columns = rows[0]?.values ?? [];
+  return columns.some((row) => row[1] === column);
+}
+
+function ensureCanonicalColumn(db: Database, column: string, definition: string): void {
+  if (canonicalColumnExists(db, column)) return;
+  db.run(`ALTER TABLE canonical_bookmarks ADD COLUMN ${column} ${definition}`);
 }
 
 function canonicalIdForDedupeKey(dedupeKey: string): string {
@@ -139,6 +174,25 @@ function parseSources(value: unknown): string[] {
     return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
   } catch {
     return [];
+  }
+}
+
+function parseJsonStringArray(value: unknown): string[] {
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function hostnameForUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).hostname.replace(/^www\./, '');
+  } catch {
+    return null;
   }
 }
 
@@ -305,6 +359,21 @@ function mapSearchRow(row: unknown[]): CanonicalSearchResult {
   };
 }
 
+function mapListRow(row: unknown[]): CanonicalBookmarkListResult {
+  return {
+    id: row[0] as string,
+    canonicalUrl: (row[1] as string) ?? null,
+    displayTitle: (row[2] as string) ?? null,
+    searchText: row[3] as string,
+    sourceCount: Number(row[4] ?? 0),
+    sources: parseSources(row[5]),
+    categories: (row[6] as string) ?? null,
+    primaryCategory: (row[7] as string) ?? null,
+    domains: (row[8] as string) ?? null,
+    primaryDomain: (row[9] as string) ?? null,
+  };
+}
+
 export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions): Promise<CanonicalRebuildResult> {
   const dbPath = twitterBookmarksIndexPath();
   const db = await openDb(dbPath);
@@ -383,6 +452,115 @@ export async function searchCanonicalBookmarks(options: SearchCanonicalOptions):
       );
 
     return (rows[0]?.values ?? []).map(mapSearchRow);
+  } finally {
+    db.close();
+  }
+}
+
+export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOptions = {}): Promise<CanonicalBookmarkListResult[]> {
+  const db = await openDb(twitterBookmarksIndexPath());
+  const limit = options.limit ?? 20;
+
+  try {
+    initCanonicalSchema(db);
+
+    const select = `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count, c.sources_json,
+                           c.categories, c.primary_category, c.domains, c.primary_domain
+                    FROM canonical_bookmarks c`;
+    const order = `ORDER BY COALESCE(c.last_saved_at, c.first_saved_at, '') DESC, c.id ASC
+                   LIMIT ?`;
+    const rows = options.source
+      ? db.exec(
+        `${select}
+         WHERE EXISTS (
+           SELECT 1 FROM bookmark_sources s
+           WHERE s.canonical_id = c.id AND s.source = ?
+         )
+         ${order}`,
+        [options.source, limit],
+      )
+      : db.exec(`${select} ${order}`, [limit]);
+
+    return (rows[0]?.values ?? []).map(mapListRow);
+  } finally {
+    db.close();
+  }
+}
+
+export async function classifyCanonicalBookmarks(): Promise<{ total: number; classified: number }> {
+  const dbPath = twitterBookmarksIndexPath();
+  const db = await openDb(dbPath);
+
+  try {
+    initCanonicalSchema(db);
+
+    const canonicalRows = db.exec(
+      `SELECT id, canonical_url, display_title, search_text
+       FROM canonical_bookmarks
+       ORDER BY id ASC`,
+    )[0]?.values ?? [];
+    const sourceRows = db.exec(
+      `SELECT canonical_id, source_url, target_url, links_json, folder_path_json
+       FROM bookmark_sources`,
+    )[0]?.values ?? [];
+
+    const sourceInputs = new Map<string, { links: string[]; folderPath: string[] }>();
+    for (const row of sourceRows) {
+      const canonicalId = row[0] as string;
+      const existing = sourceInputs.get(canonicalId) ?? { links: [], folderPath: [] };
+      for (const url of [row[1] as string | null, row[2] as string | null, ...parseJsonStringArray(row[3])]) {
+        if (url) existing.links.push(url);
+      }
+      existing.folderPath.push(...parseJsonStringArray(row[4]));
+      sourceInputs.set(canonicalId, existing);
+    }
+
+    let classified = 0;
+    db.run('BEGIN TRANSACTION');
+    try {
+      const stmt = db.prepare(
+        `UPDATE canonical_bookmarks
+         SET categories = ?, primary_category = ?, domains = ?, primary_domain = ?
+         WHERE id = ?`,
+      );
+      try {
+        for (const row of canonicalRows) {
+          const id = row[0] as string;
+          const canonicalUrl = (row[1] as string) ?? null;
+          const displayTitle = (row[2] as string) ?? undefined;
+          const searchText = (row[3] as string) ?? undefined;
+          const sourceInput = sourceInputs.get(id) ?? { links: [], folderPath: [] };
+          const links = [...new Set([canonicalUrl, ...sourceInput.links].filter((url): url is string => typeof url === 'string' && url.length > 0))];
+          const result = classifyBookmarkInput({
+            id,
+            title: displayTitle,
+            text: searchText,
+            url: canonicalUrl ?? undefined,
+            links,
+            folderPath: [...new Set(sourceInput.folderPath)],
+          });
+          const domains = [...new Set([canonicalUrl, ...result.extractedUrls].map(hostnameForUrl).filter((domain): domain is string => Boolean(domain)))];
+
+          if (result.categories.length > 0) classified += 1;
+          stmt.run([
+            result.categories.length ? result.categories.join(',') : null,
+            result.primary,
+            domains.length ? domains.join(',') : null,
+            domains[0] ?? null,
+            id,
+          ]);
+        }
+      } finally {
+        stmt.free();
+      }
+      db.run('COMMIT');
+    } catch (err) {
+      db.run('ROLLBACK');
+      throw err;
+    }
+
+    saveDb(db, dbPath);
+    return { total: canonicalRows.length, classified };
   } finally {
     db.close();
   }

@@ -609,7 +609,7 @@ npm run test -- tests/bookmarks-service.test.ts tests/bookmarks-status.test.ts t
 
 Expected: PASS; existing X index behavior unchanged.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/canonical-bookmarks-db.ts tests/canonical-bookmarks-db.test.ts
@@ -625,7 +625,7 @@ git commit -m "feat: build canonical bookmark index"
 - Modify: `src/canonical-bookmarks-db.ts`
 - Test: `tests/canonical-bookmarks-db.test.ts`
 
-- [ ] **Step 1: Add failing classification tests**
+- [x] **Step 1: Add failing classification tests**
 
 Append to `tests/canonical-bookmarks-db.test.ts`:
 
@@ -662,7 +662,7 @@ test('classifyCanonicalBookmarks classifies browser-only GitHub bookmarks as too
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -672,7 +672,7 @@ npm run test -- tests/canonical-bookmarks-db.test.ts
 
 Expected: FAIL because canonical classification does not exist.
 
-- [ ] **Step 3: Refactor classifier input**
+- [x] **Step 3: Refactor classifier input**
 
 In `src/bookmark-classify.ts`, add:
 
@@ -689,7 +689,7 @@ export interface ClassifiableBookmarkInput {
 
 Add `classifyBookmarkInput(input: ClassifiableBookmarkInput)` and make existing `classifyBookmark(bookmark: BookmarkRecord)` call it with existing X fields. Build classifier text by joining `title`, `text`, `url`, `links`, and `folderPath` with newlines.
 
-- [ ] **Step 4: Implement canonical classification**
+- [x] **Step 4: Implement canonical classification**
 
 In `src/canonical-bookmarks-db.ts`, add `classifyCanonicalBookmarks()`:
 
@@ -731,7 +731,7 @@ export async function classifyCanonicalBookmarks(): Promise<{ total: number; cla
 
 Use URL hostnames and `ClassifyResult.extractedUrls` to fill `domains` and `primary_domain` consistently with existing behavior.
 
-- [ ] **Step 5: Run classification tests**
+- [x] **Step 5: Run classification tests**
 
 Run:
 
@@ -741,7 +741,7 @@ npm run test -- tests/canonical-bookmarks-db.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Run existing classifier regression tests if present, otherwise broad tests**
+- [x] **Step 6: Run existing classifier regression tests if present, otherwise broad tests**
 
 Run:
 

@@ -145,6 +145,15 @@ const GITHUB_URL_RE = /github\.com\/[\w.-]+\/[\w.-]+/gi;
 const URL_RE = /https?:\/\/[^\s)>\]]+/gi;
 const TCO_RE = /https?:\/\/t\.co\/\w+/gi;
 
+export interface ClassifiableBookmarkInput {
+  id: string;
+  text?: string;
+  title?: string;
+  url?: string;
+  links?: string[];
+  folderPath?: string[];
+}
+
 // ── Domains that indicate tool/project bookmarks ─────────────────────────
 const TOOL_DOMAINS = new Set([
   'github.com',
@@ -177,12 +186,24 @@ const COMMERCE_DOMAINS = new Set([
 
 // ── Classify a single bookmark ───────────────────────────────────────────
 
-export function classifyBookmark(bookmark: BookmarkRecord): ClassifyResult {
-  const text = bookmark.text ?? '';
-  const allLinks = [...(bookmark.links ?? [])];
+export function classifyBookmarkInput(input: ClassifiableBookmarkInput): ClassifyResult {
+  const text = [
+    input.title,
+    input.text,
+    input.url,
+    ...(input.links ?? []),
+    ...(input.folderPath ?? []),
+  ]
+    .map((part) => typeof part === 'string' ? part.trim() : '')
+    .filter(Boolean)
+    .join('\n');
+  const allLinks = [...(input.links ?? [])];
 
   // Extract URLs from tweet text (excluding t.co shortlinks)
-  const textUrls = (text.match(URL_RE) ?? []).filter((u) => !TCO_RE.test(u));
+  const textUrls = (text.match(URL_RE) ?? []).filter((u) => {
+    TCO_RE.lastIndex = 0;
+    return !TCO_RE.test(u);
+  });
   const extractedUrls = [...new Set([...allLinks, ...textUrls])];
 
   // Extract GitHub URLs
@@ -221,6 +242,17 @@ export function classifyBookmark(bookmark: BookmarkRecord): ClassifyResult {
   const primary: BookmarkCategory | 'unclassified' = categories[0] ?? 'unclassified';
 
   return { categories, primary, extractedUrls, githubUrls };
+}
+
+export function classifyBookmark(bookmark: BookmarkRecord): ClassifyResult {
+  return classifyBookmarkInput({
+    id: bookmark.id,
+    text: bookmark.articleText ? [bookmark.text, bookmark.articleText].filter(Boolean).join('\n') : bookmark.text,
+    title: bookmark.articleTitle ?? undefined,
+    url: bookmark.url,
+    links: bookmark.links,
+    folderPath: bookmark.folderNames,
+  });
 }
 
 // ── Classify entire corpus ───────────────────────────────────────────────
