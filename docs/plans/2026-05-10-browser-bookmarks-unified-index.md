@@ -249,7 +249,7 @@ npm run test -- tests/browsers.test.ts tests/paths-migration.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/paths.ts src/browsers.ts tests/browsers.test.ts tests/paths-migration.test.ts
@@ -264,7 +264,7 @@ git commit -m "feat: add browser bookmark cache paths"
 - Create: `src/browser-bookmarks.ts`
 - Test: `tests/browser-bookmarks.test.ts`
 
-- [ ] **Step 1: Write failing parser tests**
+- [x] **Step 1: Write failing parser tests**
 
 Create `tests/browser-bookmarks.test.ts`:
 
@@ -311,7 +311,7 @@ test('parseChromiumBookmarks extracts URL nodes with folder paths', () => {
 });
 ```
 
-- [ ] **Step 2: Run parser tests to verify failure**
+- [x] **Step 2: Run parser tests to verify failure**
 
 Run:
 
@@ -321,7 +321,7 @@ npm run test -- tests/browser-bookmarks.test.ts
 
 Expected: FAIL because `src/browser-bookmarks.ts` does not exist.
 
-- [ ] **Step 3: Implement browser bookmark types and Chromium parser**
+- [x] **Step 3: Implement browser bookmark types and Chromium parser**
 
 Create `src/browser-bookmarks.ts` with:
 
@@ -396,7 +396,7 @@ export function parseChromiumBookmarks(
 }
 ```
 
-- [ ] **Step 4: Run parser tests to verify pass**
+- [x] **Step 4: Run parser tests to verify pass**
 
 Run:
 
@@ -406,7 +406,7 @@ npm run test -- tests/browser-bookmarks.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Add extraction orchestration tests**
+- [x] **Step 5: Add extraction orchestration tests**
 
 Extend `tests/browser-bookmarks.test.ts` with temp directory tests for reading a Chromium `Bookmarks` file and writing browser JSONL cache through a public `syncBrowserBookmarks()` function:
 
@@ -451,7 +451,7 @@ test('syncBrowserBookmarks writes Chromium bookmarks to browser cache', async ()
 });
 ```
 
-- [ ] **Step 6: Implement extraction orchestration**
+- [x] **Step 6: Implement extraction orchestration**
 
 Add functions to `src/browser-bookmarks.ts`:
 
@@ -466,7 +466,7 @@ export interface BrowserBookmarkSyncResult {
 
 Implement `syncBrowserBookmarks()` to read a provided bookmark file path, parse it, write JSONL to `browserBookmarksCachePath(browser, profile)`, and write metadata to `browserBookmarksMetaPath(browser, profile)`. Copy source files to a temp file before parsing.
 
-- [ ] **Step 7: Run browser bookmark tests**
+- [x] **Step 7: Run browser bookmark tests**
 
 Run:
 
