@@ -476,7 +476,7 @@ npm run test -- tests/browser-bookmarks.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/browser-bookmarks.ts tests/browser-bookmarks.test.ts
@@ -491,7 +491,7 @@ git commit -m "feat: parse browser bookmarks"
 - Create: `src/canonical-bookmarks-db.ts`
 - Test: `tests/canonical-bookmarks-db.test.ts`
 
-- [ ] **Step 1: Write failing canonical rebuild test**
+- [x] **Step 1: Write failing canonical rebuild test**
 
 Create `tests/canonical-bookmarks-db.test.ts`:
 
@@ -543,7 +543,7 @@ test('rebuildCanonicalIndex dedupes X external link with browser bookmark URL', 
 });
 ```
 
-- [ ] **Step 2: Run canonical test to verify failure**
+- [x] **Step 2: Run canonical test to verify failure**
 
 Run:
 
@@ -553,7 +553,7 @@ npm run test -- tests/canonical-bookmarks-db.test.ts
 
 Expected: FAIL because canonical DB module does not exist.
 
-- [ ] **Step 3: Implement canonical schema and rebuild**
+- [x] **Step 3: Implement canonical schema and rebuild**
 
 Create `src/canonical-bookmarks-db.ts` with exports:
 
@@ -585,11 +585,11 @@ Implement:
 - Build `search_text` from title, text, URL, folder path, and links.
 - Rebuild canonical FTS.
 
-- [ ] **Step 4: Add canonical search implementation**
+- [x] **Step 4: Add canonical search implementation**
 
 Add `searchCanonicalBookmarks({ query, limit })` that queries `canonical_bookmarks_fts` and returns canonical rows with BM25 scores.
 
-- [ ] **Step 5: Run canonical tests to verify pass**
+- [x] **Step 5: Run canonical tests to verify pass**
 
 Run:
 
@@ -599,7 +599,7 @@ npm run test -- tests/canonical-bookmarks-db.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Run existing X DB regression tests**
+- [x] **Step 6: Run existing X DB regression tests**
 
 Run:
 
