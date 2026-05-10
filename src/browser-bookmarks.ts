@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { writeJson, writeJsonLines } from './fs.js';
 import { browserBookmarksCachePath, browserBookmarksMetaPath } from './paths.js';
+import { rebuildCanonicalIndex } from './canonical-bookmarks-db.js';
 
 export type BrowserBookmarkProvider = 'chrome' | 'vivaldi' | 'safari';
 
@@ -39,6 +40,13 @@ export interface BrowserBookmarkSyncResult {
   profile: string;
   synced: number;
   cachePath: string;
+}
+
+export interface SyncBrowserBookmarksOptions {
+  browser: BrowserBookmarkProvider;
+  profile: string;
+  bookmarksPath?: string;
+  rebuildCanonical?: boolean;
 }
 
 export function chromiumWebkitTimeToIso(value: string | number | undefined | null): string | null {
@@ -85,14 +93,16 @@ export function parseChromiumBookmarks(
   return records;
 }
 
-export async function syncBrowserBookmarks(options: {
-  browser: BrowserBookmarkProvider;
-  profile: string;
-  bookmarksPath: string;
-}): Promise<BrowserBookmarkSyncResult> {
+export async function syncBrowserBookmarks(options: SyncBrowserBookmarksOptions): Promise<BrowserBookmarkSyncResult> {
   const { browser, profile, bookmarksPath } = options;
   if (browser === 'safari') {
     throw new Error('Safari bookmark sync is not supported yet');
+  }
+  if (browser !== 'chrome' && browser !== 'vivaldi') {
+    throw new Error(`Unsupported browser bookmark provider: ${browser}`);
+  }
+  if (!bookmarksPath) {
+    throw new Error(`--bookmarks-file is required to sync ${browser} bookmarks in this first cut`);
   }
 
   const syncedAt = new Date().toISOString();
@@ -116,6 +126,10 @@ export async function syncBrowserBookmarks(options: {
       synced: records.length,
       syncedAt,
     });
+
+    if (options.rebuildCanonical) {
+      await rebuildCanonicalIndex({ browserSources: [{ browser, profile }] });
+    }
 
     return { browser, profile, synced: records.length, cachePath };
   } finally {

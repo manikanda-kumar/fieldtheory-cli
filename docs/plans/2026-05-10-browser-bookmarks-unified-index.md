@@ -751,7 +751,7 @@ npm run test -- tests/**/*.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/bookmark-classify.ts src/canonical-bookmarks-db.ts tests/canonical-bookmarks-db.test.ts
@@ -768,7 +768,7 @@ git commit -m "feat: classify canonical bookmarks"
 - Modify: `src/canonical-bookmarks-db.ts`
 - Test: `tests/browser-bookmarks.test.ts`
 
-- [ ] **Step 1: Add sync orchestration test**
+- [x] **Step 1: Add sync orchestration test**
 
 Add a test that calls a public function rather than shelling out to Commander:
 
@@ -814,7 +814,7 @@ test('syncBrowserBookmarks writes raw cache and rebuilds canonical index when re
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -824,7 +824,7 @@ npm run test -- tests/browser-bookmarks.test.ts
 
 Expected: FAIL until orchestration supports canonical rebuild.
 
-- [ ] **Step 3: Implement sync orchestration option**
+- [x] **Step 3: Implement sync orchestration option**
 
 Update `syncBrowserBookmarks()` to accept:
 
@@ -839,7 +839,7 @@ export interface SyncBrowserBookmarksOptions {
 
 When `rebuildCanonical` is true, call `rebuildCanonicalIndex({ browserSources: [{ browser, profile }] })` after writing raw cache.
 
-- [ ] **Step 4: Add CLI command**
+- [x] **Step 4: Add CLI command**
 
 In `src/cli.ts`, add a top-level command:
 
@@ -878,7 +878,7 @@ program
 
 For the first pass, support one browser/profile plus `--bookmarks-file`; add `--all` and `--all-profiles` behavior in Task 7 if needed to keep this task small.
 
-- [ ] **Step 5: Run targeted tests and typecheck**
+- [x] **Step 5: Run targeted tests and typecheck**
 
 Run:
 

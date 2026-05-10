@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromiumWebkitTimeToIso, parseChromiumBookmarks, syncBrowserBookmarks } from '../src/browser-bookmarks.js';
+import { searchCanonicalBookmarks } from '../src/canonical-bookmarks-db.js';
 
 test('chromiumWebkitTimeToIso converts Chromium microseconds since 1601', () => {
   assert.equal(chromiumWebkitTimeToIso('0'), null);
@@ -102,6 +103,50 @@ test('syncBrowserBookmarks writes Chromium bookmarks to browser cache and metada
     assert.equal(records[0].syncedAt, meta.syncedAt);
     assert.equal(meta.synced, 2);
     assert.equal(meta.sourcePath, bookmarksPath);
+  } finally {
+    if (previous === undefined) delete process.env.FT_DATA_DIR;
+    else process.env.FT_DATA_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('syncBrowserBookmarks writes raw cache and rebuilds canonical index when requested', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-browser-sync-canonical-'));
+  const previous = process.env.FT_DATA_DIR;
+  process.env.FT_DATA_DIR = dir;
+  try {
+    const sourceDir = path.join(dir, 'source');
+    await mkdir(sourceDir, { recursive: true });
+    const bookmarksPath = path.join(sourceDir, 'Bookmarks');
+    await writeFile(bookmarksPath, JSON.stringify({
+      roots: {
+        bookmark_bar: {
+          type: 'folder',
+          name: 'Bookmarks Bar',
+          children: [
+            { type: 'url', id: '10', name: 'Acme Tool', url: 'https://github.com/acme/tool' },
+          ],
+        },
+      },
+    }), 'utf8');
+
+    const result = await syncBrowserBookmarks({
+      browser: 'chrome',
+      profile: 'Default',
+      bookmarksPath,
+      rebuildCanonical: true,
+    });
+    const raw = await readFile(result.cachePath, 'utf8');
+    const records = raw.trim().split('\n').map((line) => JSON.parse(line));
+    const matches = await searchCanonicalBookmarks({ query: 'Acme', limit: 10 });
+
+    assert.equal(result.synced, 1);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].title, 'Acme Tool');
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].displayTitle, 'Acme Tool');
+    assert.equal(matches[0].canonicalUrl, 'https://github.com/acme/tool');
+    assert.deepEqual(matches[0].sources, ['chrome:Default']);
   } finally {
     if (previous === undefined) delete process.env.FT_DATA_DIR;
     else process.env.FT_DATA_DIR = previous;

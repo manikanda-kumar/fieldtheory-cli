@@ -31,6 +31,8 @@ import { askMd } from './md-ask.js';
 import { lintMd, fixLintIssues } from './md-lint.js';
 import { exportBookmarks } from './md-export.js';
 import { renderViz } from './bookmarks-viz.js';
+import { syncBrowserBookmarks } from './browser-bookmarks.js';
+import type { BrowserBookmarkProvider } from './browser-bookmarks.js';
 import { listBrowserIds } from './browsers.js';
 import { configureHttpProxyFromEnv } from './http-proxy.js';
 import { dataDir, ensureDataDir, isFirstRun, migrateLegacyIdeasData, twitterBookmarksIndexPath, twitterBackfillStatePath, mdDir, bookmarkMediaDir, bookmarkMediaManifestPath } from './paths.js';
@@ -256,6 +258,11 @@ function warnIfEmpty(totalBookmarks: number): void {
 
 function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
+}
+
+function parseBrowserBookmarkProvider(value: unknown): BrowserBookmarkProvider | null {
+  if (value !== 'chrome' && value !== 'vivaldi' && value !== 'safari') return null;
+  return value;
 }
 
 // ── Update checker ────────────────────────────────────────────────────────
@@ -1085,6 +1092,52 @@ export function buildCli() {
         process.exitCode = 1;
       }
     });
+
+  // ── sync-browser ───────────────────────────────────────────────────────
+
+  program
+    .command('sync-browser')
+    .description('Sync browser bookmarks into the canonical bookmark index')
+    .option('--browser <name>', 'Browser to sync (chrome, vivaldi, safari)')
+    .option('--profile <name>', 'Browser profile name', 'Default')
+    .option('--bookmarks-file <path>', 'Path to a Chromium Bookmarks file')
+    .option('--all', 'Sync all supported browsers', false)
+    .option('--all-profiles', 'Sync all profiles for the selected browser', false)
+    .action(safe(async (options) => {
+      if (!options.browser && !options.all) {
+        console.error('  Error: pass --browser <chrome|vivaldi|safari> or --all.');
+        process.exitCode = 1;
+        return;
+      }
+      if (options.all) {
+        console.error('  Error: --all browser bookmark sync is not supported in this first cut.');
+        process.exitCode = 1;
+        return;
+      }
+      if (options.allProfiles) {
+        console.error('  Error: --all-profiles browser bookmark sync is not supported in this first cut.');
+        process.exitCode = 1;
+        return;
+      }
+
+      const browser = parseBrowserBookmarkProvider(options.browser);
+      if (!browser) {
+        console.error(`  Error: unsupported browser "${String(options.browser)}". Use chrome, vivaldi, or safari.`);
+        process.exitCode = 1;
+        return;
+      }
+
+      ensureDataDir();
+      const result = await syncBrowserBookmarks({
+        browser,
+        profile: String(options.profile ?? 'Default'),
+        bookmarksPath: options.bookmarksFile ? String(options.bookmarksFile) : undefined,
+        rebuildCanonical: true,
+      });
+
+      console.log(`  ✓ ${result.synced} browser bookmarks synced`);
+      console.log(`  ✓ Cache: ${result.cachePath}`);
+    }));
 
   // ── search ──────────────────────────────────────────────────────────────
 
@@ -2824,7 +2877,7 @@ export function buildCli() {
 
   const bookmarksAlias = program.command('bookmarks').description('(alias) Bookmark commands').helpOption(false);
   for (const cmd of ['sync', 'search', 'list', 'show', 'stats', 'viz', 'classify', 'classify-domains',
-    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media']) {
+    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media', 'sync-browser']) {
     bookmarksAlias.command(cmd).description(`Alias for: ft ${cmd}`).allowUnknownOption(true)
       .action(async () => {
         const args = ['node', 'ft', cmd, ...process.argv.slice(4)];
