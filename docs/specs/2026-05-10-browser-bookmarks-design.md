@@ -6,6 +6,8 @@ Add Safari, Chrome, and Vivaldi bookmark sync using a hybrid architecture: keep 
 
 Also change sync media behavior so media fetching is opt-in: default sync should not fetch media unless the user asks for it.
 
+This spec follows the repo documentation convention of storing specs in `docs/specs/` and plans in `docs/plans/`.
+
 ## Goals
 
 - Sync browser bookmarks from Safari, Chrome, and Vivaldi into local Field Theory storage.

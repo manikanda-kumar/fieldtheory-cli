@@ -1196,7 +1196,7 @@ Mark the feature DONE only when all of these are true:
 
 ## Execution handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-05-10-browser-bookmarks-unified-index.md`.
+Plan complete and saved to `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`.
 
 Two execution options:
 
