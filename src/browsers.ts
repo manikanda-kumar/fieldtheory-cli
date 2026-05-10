@@ -64,6 +64,17 @@ const BROWSERS: BrowserDef[] = [
     winPath: 'AppData/Local/BraveSoftware/Brave-Browser/User Data',
   },
   {
+    id: 'vivaldi',
+    displayName: 'Vivaldi',
+    cookieBackend: 'chromium',
+    keychainEntries: [
+      { service: 'Vivaldi Safe Storage', account: 'Vivaldi' },
+    ],
+    macPath: 'Library/Application Support/Vivaldi',
+    linuxPath: '.config/vivaldi',
+    winPath: 'AppData/Local/Vivaldi/User Data',
+  },
+  {
     id: 'edge',
     displayName: 'Microsoft Edge',
     cookieBackend: 'chromium',

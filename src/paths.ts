@@ -78,6 +78,25 @@ export function twitterBookmarksMetaPath(): string {
   return path.join(dataDir(), 'bookmarks-meta.json');
 }
 
+export function browserBookmarksDir(browser: string, profile: string): string {
+  return path.join(dataDir(), 'browsers', safeBrowserPathSegment(browser, 'browser'), safeBrowserPathSegment(profile, 'profile'));
+}
+
+export function browserBookmarksCachePath(browser: string, profile: string): string {
+  return path.join(browserBookmarksDir(browser, profile), 'bookmarks.jsonl');
+}
+
+export function browserBookmarksMetaPath(browser: string, profile: string): string {
+  return path.join(browserBookmarksDir(browser, profile), 'meta.json');
+}
+
+function safeBrowserPathSegment(value: string, label: string): string {
+  if (!value || value === '.' || value === '..' || path.isAbsolute(value) || value.includes('/') || value.includes('\\')) {
+    throw new Error(`Invalid browser bookmark ${label}: ${value}`);
+  }
+  return value;
+}
+
 export function twitterOauthTokenPath(): string {
   return path.join(dataDir(), 'oauth-token.json');
 }

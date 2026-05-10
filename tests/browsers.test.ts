@@ -26,6 +26,7 @@ test('listBrowserIds: returns all registered ids', () => {
   const ids = listBrowserIds();
   assert.ok(ids.includes('chrome'));
   assert.ok(ids.includes('brave'));
+  assert.ok(ids.includes('vivaldi'));
   assert.ok(ids.includes('edge'));
   assert.ok(ids.includes('firefox'));
   assert.ok(ids.includes('helium'));
@@ -60,6 +61,17 @@ test('getBrowser: brave has correct keychain entries', () => {
   const browser = getBrowser('brave');
   const services = browser.keychainEntries.map(e => e.service);
   assert.ok(services.some(s => s.includes('Brave')));
+});
+
+test('getBrowser: vivaldi has chromium backend and path metadata', () => {
+  const browser = getBrowser('vivaldi');
+  assert.equal(browser.id, 'vivaldi');
+  assert.equal(browser.displayName, 'Vivaldi');
+  assert.equal(browser.cookieBackend, 'chromium');
+  assert.deepEqual(browser.keychainEntries, [
+    { service: 'Vivaldi Safe Storage', account: 'Vivaldi' },
+  ]);
+  assert.equal(browser.macPath, 'Library/Application Support/Vivaldi');
 });
 
 test('getBrowser: edge has chromium backend and Microsoft path metadata', () => {

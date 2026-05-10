@@ -29,18 +29,22 @@ Key decisions:
 - Add repo-level AGENTS.md instructions to keep future docs under `docs/specs/` and `docs/plans/`.
 
 State:
-- Task 1 implementation is present but not committed:
-  - `src/url-normalize.ts`
-  - `tests/url-normalize.test.ts`
-- Task 1 passed sub-agent spec review and code-quality review.
-- Task 1 local verification passed:
+- Task 1 is committed as `fa2d995 feat: add bookmark URL dedupe keys`.
+- Task 2 implementation is present but not committed:
+  - `src/browsers.ts`
+  - `src/paths.ts`
+  - `tests/browsers.test.ts`
+  - `tests/paths.test.ts`
+- Task 2 passed sub-agent spec review.
+- Task 2 code-quality review requested browser/profile path segment validation; fix was applied and re-review approved.
+- Task 2 local verification passed:
   - `npm run build`
-  - `npm run test -- tests/url-normalize.test.ts` (repo script ran full suite: 544 pass, 0 fail)
-- Task 1 plan checkboxes are marked complete for steps 1-4; commit step remains open.
+  - `npm run test -- tests/browsers.test.ts tests/paths.test.ts` (repo script ran full suite: 547 pass, 0 fail)
+- Task 2 plan checkboxes are marked complete for steps 1-5; commit step remains open.
 - Design spec exists and is committed at `docs/specs/2026-05-10-browser-bookmarks-design.md`.
 - Implementation plan exists and is committed at `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`.
 - Repo instruction file exists and is committed at `AGENTS.md`.
-- Worktree is dirty with Task 1 implementation and plan/ledger updates.
+- Worktree is dirty with Task 2 implementation and plan/ledger updates.
 - Current remote verified as `origin https://github.com/manikanda-kumar/fieldtheory-cli` for fetch and push.
 
 Done:
@@ -79,14 +83,25 @@ Done:
 - Reviewed Task 1 with two sub-agents:
   - Spec reviewer approved.
   - Code quality reviewer approved.
+- Committed Task 1 as `fa2d995 feat: add bookmark URL dedupe keys`.
+- Implemented browser bookmark cache path helpers with path segment validation:
+  - `browserBookmarksDir`
+  - `browserBookmarksCachePath`
+  - `browserBookmarksMetaPath`
+- Added Vivaldi to the browser registry.
+- Added tests for Vivaldi lookup/list behavior, browser bookmark paths under `FT_DATA_DIR`, and traversal rejection.
+- Reviewed Task 2 with sub-agents:
+  - Spec reviewer approved.
+  - Code quality reviewer requested traversal validation.
+  - Code quality re-review approved after the fix.
 
 Now:
 - Browser bookmark implementation is underway with sub-agent-driven task execution.
-- Task 1 is implemented, reviewed, and verified, pending commit.
+- Task 2 is implemented, reviewed, and verified, pending commit.
 
 Next:
-- Commit Task 1 when ready: `git add src/url-normalize.ts tests/url-normalize.test.ts docs/plans/2026-05-10-browser-bookmarks-unified-index.md CONTINUITY.md && git commit -m "feat: add bookmark URL dedupe keys"`.
-- Continue to Task 2: browser bookmark cache paths and Vivaldi registry.
+- Commit Task 2 when ready: `git add src/paths.ts src/browsers.ts tests/browsers.test.ts tests/paths.test.ts docs/plans/2026-05-10-browser-bookmarks-unified-index.md CONTINUITY.md && git commit -m "feat: add browser bookmark cache paths"`.
+- Continue to Task 3: Chromium and Safari bookmark extraction.
 - Before claiming DONE for implementation, satisfy the plan’s DONE checklist, including:
   - `ft sync-browser --browser chrome --bookmarks-file <fixture>` writes raw JSONL.
   - `ft sync-browser --browser vivaldi --bookmarks-file <fixture>` writes raw JSONL.
@@ -108,9 +123,9 @@ Open questions (UNCONFIRMED if needed):
 
 Working set (files/ids/commands):
 - Docs: `docs/specs/2026-05-10-browser-bookmarks-design.md`, `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`, `AGENTS.md`, `CONTINUITY.md`.
-- Current implementation files: `src/url-normalize.ts`, `tests/url-normalize.test.ts`.
-- Remaining implementation plan target files: `src/browser-bookmarks.ts`, `src/canonical-bookmarks-db.ts`, `src/bookmark-classify.ts`, `src/browsers.ts`, `src/paths.ts`, `src/cli.ts`, `README.md`.
+- Current implementation files: `src/browsers.ts`, `src/paths.ts`, `tests/browsers.test.ts`, `tests/paths.test.ts`.
+- Remaining implementation plan target files: `src/browser-bookmarks.ts`, `src/canonical-bookmarks-db.ts`, `src/bookmark-classify.ts`, `src/cli.ts`, `README.md`.
 - Planned tests: `tests/url-normalize.test.ts`, `tests/browser-bookmarks.test.ts`, `tests/canonical-bookmarks-db.test.ts`, plus existing X regression tests.
-- Recent commits: `7ce567f docs: use generic planning folders`, `98a0320 docs: plan browser bookmark sync`.
+- Recent commits: `fa2d995 feat: add bookmark URL dedupe keys`, `7ce567f docs: use generic planning folders`, `98a0320 docs: plan browser bookmark sync`.
 - Remote: `origin https://github.com/manikanda-kumar/fieldtheory-cli`.
 - Useful commands: `npm run build`, `npm run test`, `npm run dev -- sync --help`, `npm run dev -- sync-browser --browser chrome --profile Default --bookmarks-file <path>`, `npm run dev -- search --unified <query>`.

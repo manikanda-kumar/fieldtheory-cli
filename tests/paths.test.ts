@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { canonicalCommandsDir, canonicalDataDir, canonicalLibraryDir, dataDir, libraryDir, mdDir, commandsDir, mdSchemaPath } from '../src/paths.js';
+import { browserBookmarksCachePath, browserBookmarksMetaPath, canonicalCommandsDir, canonicalDataDir, canonicalLibraryDir, dataDir, libraryDir, mdDir, commandsDir, mdSchemaPath } from '../src/paths.js';
 
 function withEnv(env: Record<string, string | undefined>, fn: () => void): void {
   const previous: Record<string, string | undefined> = {};
@@ -48,6 +48,36 @@ test('paths: FT_DATA_DIR keeps the legacy md child unless FT_LIBRARY_DIR is set'
     assert.equal(libraryDir(), '/tmp/ft-data/md');
     assert.equal(mdDir(), '/tmp/ft-data/md');
   });
+});
+
+test('paths: browser bookmark cache paths are scoped under FT_DATA_DIR browsers root', () => {
+  withEnv({
+    FT_DATA_DIR: '/tmp/ft-data',
+  }, () => {
+    assert.equal(
+      browserBookmarksCachePath('chrome', 'Default'),
+      path.join('/tmp/ft-data', 'browsers', 'chrome', 'Default', 'bookmarks.jsonl'),
+    );
+    assert.equal(
+      browserBookmarksMetaPath('safari', 'default'),
+      path.join('/tmp/ft-data', 'browsers', 'safari', 'default', 'meta.json'),
+    );
+  });
+});
+
+test('paths: browser bookmark cache paths reject traversal segments', () => {
+  assert.throws(
+    () => browserBookmarksCachePath('../chrome', 'Default'),
+    /Invalid browser bookmark browser/,
+  );
+  assert.throws(
+    () => browserBookmarksMetaPath('chrome', '../Default'),
+    /Invalid browser bookmark profile/,
+  );
+  assert.throws(
+    () => browserBookmarksCachePath('/tmp/chrome', 'Default'),
+    /Invalid browser bookmark browser/,
+  );
 });
 
 test('paths: default command root is under ~/.fieldtheory', () => {

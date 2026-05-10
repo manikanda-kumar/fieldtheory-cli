@@ -143,7 +143,7 @@ npm run test -- tests/url-normalize.test.ts
 
 Expected: PASS for all URL normalization tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/url-normalize.ts tests/url-normalize.test.ts
@@ -159,7 +159,7 @@ git commit -m "feat: add bookmark URL dedupe keys"
 - Modify: `src/browsers.ts`
 - Test: `tests/browsers.test.ts`
 
-- [ ] **Step 1: Add failing tests for browser cache paths and Vivaldi**
+- [x] **Step 1: Add failing tests for browser cache paths and Vivaldi**
 
 Append to `tests/browsers.test.ts`:
 
@@ -193,7 +193,7 @@ test('browser bookmark cache paths are scoped by browser and profile', async () 
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run:
 
@@ -203,7 +203,7 @@ npm run test -- tests/browsers.test.ts tests/paths-migration.test.ts
 
 Expected: FAIL because Vivaldi and path helpers do not exist.
 
-- [ ] **Step 3: Add path helpers**
+- [x] **Step 3: Add path helpers**
 
 Add to `src/paths.ts` near the bookmark path helpers:
 
@@ -221,7 +221,7 @@ export function browserBookmarksMetaPath(browser: string, profile: string): stri
 }
 ```
 
-- [ ] **Step 4: Add Vivaldi browser definition**
+- [x] **Step 4: Add Vivaldi browser definition**
 
 Add to the `BROWSERS` array in `src/browsers.ts`:
 
@@ -239,7 +239,7 @@ Add to the `BROWSERS` array in `src/browsers.ts`:
 },
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run:
 
