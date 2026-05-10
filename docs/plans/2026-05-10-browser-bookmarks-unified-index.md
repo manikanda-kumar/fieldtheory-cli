@@ -30,7 +30,7 @@
 - Create: `src/url-normalize.ts`
 - Test: `tests/url-normalize.test.ts`
 
-- [ ] **Step 1: Write failing URL normalization tests**
+- [x] **Step 1: Write failing URL normalization tests**
 
 Create `tests/url-normalize.test.ts`:
 
@@ -75,7 +75,7 @@ test('dedupeKeyForXBookmark falls back to tweet id when links are ambiguous', ()
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -85,7 +85,7 @@ npm run test -- tests/url-normalize.test.ts
 
 Expected: FAIL because `src/url-normalize.ts` does not exist.
 
-- [ ] **Step 3: Implement URL normalization**
+- [x] **Step 3: Implement URL normalization**
 
 Create `src/url-normalize.ts`:
 
@@ -133,7 +133,7 @@ export function dedupeKeyForXBookmark(input: { tweetId: string; links?: string[]
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 

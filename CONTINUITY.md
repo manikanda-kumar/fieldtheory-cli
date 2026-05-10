@@ -29,11 +29,18 @@ Key decisions:
 - Add repo-level AGENTS.md instructions to keep future docs under `docs/specs/` and `docs/plans/`.
 
 State:
-- No implementation code for browser bookmark sync has been written yet.
+- Task 1 implementation is present but not committed:
+  - `src/url-normalize.ts`
+  - `tests/url-normalize.test.ts`
+- Task 1 passed sub-agent spec review and code-quality review.
+- Task 1 local verification passed:
+  - `npm run build`
+  - `npm run test -- tests/url-normalize.test.ts` (repo script ran full suite: 544 pass, 0 fail)
+- Task 1 plan checkboxes are marked complete for steps 1-4; commit step remains open.
 - Design spec exists and is committed at `docs/specs/2026-05-10-browser-bookmarks-design.md`.
 - Implementation plan exists and is committed at `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`.
 - Repo instruction file exists and is committed at `AGENTS.md`.
-- Worktree was clean after the latest commit checks.
+- Worktree is dirty with Task 1 implementation and plan/ledger updates.
 - Current remote verified as `origin https://github.com/manikanda-kumar/fieldtheory-cli` for fetch and push.
 
 Done:
@@ -64,14 +71,22 @@ Done:
   - `git diff --check` reported no whitespace errors.
 - Committed generic docs convention as `7ce567f docs: use generic planning folders`.
 - Updated git remote origin from `https://github.com/afar1/fieldtheory-cli` to `https://github.com/manikanda-kumar/fieldtheory-cli` and verified fetch/push URLs.
+- Implemented URL normalization and dedupe keys:
+  - `normalizeBookmarkUrl`
+  - `dedupeKeyForUrl`
+  - `dedupeKeyForXBookmark`
+- Added URL normalization tests covering default ports/fragments, tracking params, URL key prefixing, single external X links, ambiguous external links, and X/Twitter/t.co filtering.
+- Reviewed Task 1 with two sub-agents:
+  - Spec reviewer approved.
+  - Code quality reviewer approved.
 
 Now:
-- CONTINUITY.md is being created so future sessions can resume from the plan without re-discovering context.
+- Browser bookmark implementation is underway with sub-agent-driven task execution.
+- Task 1 is implemented, reviewed, and verified, pending commit.
 
 Next:
-- If implementation is requested, follow `docs/plans/2026-05-10-browser-bookmarks-unified-index.md` task-by-task.
-- Recommended execution mode from the plan: subagent-driven, one task at a time with review and verification between tasks.
-- First implementation task: add `src/url-normalize.ts` and `tests/url-normalize.test.ts` for conservative URL normalization and dedupe keys.
+- Commit Task 1 when ready: `git add src/url-normalize.ts tests/url-normalize.test.ts docs/plans/2026-05-10-browser-bookmarks-unified-index.md CONTINUITY.md && git commit -m "feat: add bookmark URL dedupe keys"`.
+- Continue to Task 2: browser bookmark cache paths and Vivaldi registry.
 - Before claiming DONE for implementation, satisfy the plan’s DONE checklist, including:
   - `ft sync-browser --browser chrome --bookmarks-file <fixture>` writes raw JSONL.
   - `ft sync-browser --browser vivaldi --bookmarks-file <fixture>` writes raw JSONL.
@@ -93,7 +108,8 @@ Open questions (UNCONFIRMED if needed):
 
 Working set (files/ids/commands):
 - Docs: `docs/specs/2026-05-10-browser-bookmarks-design.md`, `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`, `AGENTS.md`, `CONTINUITY.md`.
-- Current implementation plan target files: `src/url-normalize.ts`, `src/browser-bookmarks.ts`, `src/canonical-bookmarks-db.ts`, `src/bookmark-classify.ts`, `src/browsers.ts`, `src/paths.ts`, `src/cli.ts`, `README.md`.
+- Current implementation files: `src/url-normalize.ts`, `tests/url-normalize.test.ts`.
+- Remaining implementation plan target files: `src/browser-bookmarks.ts`, `src/canonical-bookmarks-db.ts`, `src/bookmark-classify.ts`, `src/browsers.ts`, `src/paths.ts`, `src/cli.ts`, `README.md`.
 - Planned tests: `tests/url-normalize.test.ts`, `tests/browser-bookmarks.test.ts`, `tests/canonical-bookmarks-db.test.ts`, plus existing X regression tests.
 - Recent commits: `7ce567f docs: use generic planning folders`, `98a0320 docs: plan browser bookmark sync`.
 - Remote: `origin https://github.com/manikanda-kumar/fieldtheory-cli`.
