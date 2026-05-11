@@ -45,6 +45,9 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 | `ft sync --folder <name>` | Sync a single folder by name (exact or unambiguous prefix) |
 | `ft sync --classify` | Sync then classify new bookmarks with LLM |
 | `ft sync --api` | Sync via OAuth API (cross-platform) |
+| `ft sync-browser --browser chrome --bookmarks-file <path>` | Sync Chrome bookmarks from a Chromium `Bookmarks` file into the unified index |
+| `ft sync-browser --browser vivaldi --bookmarks-file <path>` | Sync Vivaldi bookmarks from a Chromium `Bookmarks` file into the unified index |
+| `ft sync-browser --browser safari` | Reserved; Safari import is not implemented yet and currently fails clearly |
 | `ft auth` | Set up OAuth for API-based sync (optional) |
 
 ### Search and browse
@@ -52,6 +55,7 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 | Command | Description |
 |---------|-------------|
 | `ft search <query>` | Full-text search with BM25 ranking |
+| `ft search --unified <query>` | Search deduped X and browser bookmarks |
 | `ft list` | Filter by author, date, category, domain, or folder |
 | `ft list --folder <name>` | Show bookmarks in an X bookmark folder |
 | `ft show <id>` | Show one bookmark in detail |
@@ -199,6 +203,10 @@ Data is stored locally under `~/.fieldtheory/`:
   bookmarks.db            # SQLite FTS5 search index
   bookmarks-meta.json     # sync metadata
   oauth-token.json        # OAuth token (if using API mode, chmod 600)
+  browsers/
+    chrome/Default/bookmarks.jsonl   # raw Chrome bookmark snapshot
+    vivaldi/Default/bookmarks.jsonl  # raw Vivaldi bookmark snapshot
+    safari/default/bookmarks.jsonl   # raw Safari bookmark snapshot
 
 ~/.fieldtheory/library/
   index.md                # markdown knowledge base (ft wiki / ft md)

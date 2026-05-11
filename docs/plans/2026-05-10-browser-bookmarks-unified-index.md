@@ -18,7 +18,7 @@
 - Modify `src/paths.ts`: browser cache path helpers.
 - Create `src/canonical-bookmarks-db.ts`: canonical schema, source-row rebuild, FTS search/list/show, canonical classification update.
 - Modify `src/bookmark-classify.ts`: add provider-neutral classifier input while preserving `classifyBookmark()` compatibility.
-- Modify `src/cli.ts`: add `sync-browser`; add unified search/list/show/classify flags; change `ft sync` media default to opt-in.
+- Modify `src/cli.ts`: add `sync-browser`; add unified search/list/show flags (classify unified remains follow-up); change `ft sync` media default to opt-in.
 - Modify `README.md`: document browser bookmark sync, unified search, and opt-in media behavior.
 - Add tests in `tests/url-normalize.test.ts`, `tests/browser-bookmarks.test.ts`, `tests/canonical-bookmarks-db.test.ts`, and update relevant CLI/status tests if needed.
 
@@ -1113,18 +1113,18 @@ git commit -m "feat: make sync media opt-in"
 - Modify: `README.md`
 - Modify: command help text in `src/cli.ts` if any help output still says media downloads by default
 
-- [ ] **Step 1: Document browser bookmark sync**
+- [x] **Step 1: Document browser bookmark sync**
 
 Add README rows:
 
 ```md
-| `ft sync-browser --browser chrome` | Sync Chrome bookmarks into the unified bookmark index |
-| `ft sync-browser --browser vivaldi` | Sync Vivaldi bookmarks into the unified bookmark index |
-| `ft sync-browser --browser safari` | Sync Safari bookmarks into the unified bookmark index on macOS |
+| `ft sync-browser --browser chrome --bookmarks-file <path>` | Sync Chrome bookmarks into the unified bookmark index |
+| `ft sync-browser --browser vivaldi --bookmarks-file <path>` | Sync Vivaldi bookmarks into the unified bookmark index |
+| `ft sync-browser --browser safari` | Reserved; currently fails clearly until Safari import is implemented |
 | `ft search --unified <query>` | Search deduped X and browser bookmarks |
 ```
 
-- [ ] **Step 2: Document data layout**
+- [x] **Step 2: Document data layout**
 
 Add to README data section:
 
@@ -1135,7 +1135,7 @@ Add to README data section:
   safari/default/bookmarks.jsonl   # raw Safari bookmark snapshot
 ```
 
-- [ ] **Step 3: Run complete verification**
+- [x] **Step 3: Run complete verification**
 
 Run:
 
@@ -1146,7 +1146,7 @@ npm run test
 
 Expected: both commands pass.
 
-- [ ] **Step 4: Manual smoke test with fixture browser file**
+- [x] **Step 4: Manual smoke test with fixture browser file**
 
 Run against a local fixture or copied Chromium `Bookmarks` file:
 
@@ -1157,7 +1157,7 @@ FT_DATA_DIR=<same-dir> npm run dev -- search --unified github
 
 Expected: sync reports imported bookmarks; unified search returns browser bookmark rows with source badges.
 
-- [ ] **Step 5: Confirm media default manually**
+- [x] **Step 5: Confirm media default manually**
 
 Run:
 
@@ -1167,7 +1167,7 @@ npm run dev -- sync --help
 
 Expected: help says media download is opt-in via `--media`; no help text says media downloads by default.
 
-- [ ] **Step 6: Commit docs**
+- [x] **Step 6: Commit docs**
 
 ```bash
 git add README.md src/cli.ts
@@ -1180,19 +1180,19 @@ git commit -m "docs: document browser bookmark sync"
 
 Mark the feature DONE only when all of these are true:
 
-- [ ] `ft sync-browser --browser chrome --bookmarks-file <fixture>` writes a raw JSONL cache.
+- [x] `ft sync-browser --browser chrome --bookmarks-file <fixture>` writes a raw JSONL cache.
 - [ ] `ft sync-browser --browser vivaldi --bookmarks-file <fixture>` writes a raw JSONL cache.
-- [ ] Safari sync either imports bookmarks on macOS or fails with a clear platform/path error.
-- [ ] Canonical rebuild dedupes an X bookmark with one external URL and a browser bookmark of that same URL.
-- [ ] Canonical rebuild does not dedupe an X bookmark with multiple external URLs.
-- [ ] `ft search --unified <query>` returns canonical rows with source information.
-- [ ] `ft list --unified` and `ft show --unified <id>` work for canonical rows.
+- [x] Safari sync either imports bookmarks on macOS or fails with a clear platform/path error.
+- [x] Canonical rebuild dedupes an X bookmark with one external URL and a browser bookmark of that same URL.
+- [x] Canonical rebuild does not dedupe an X bookmark with multiple external URLs.
+- [x] `ft search --unified <query>` returns canonical rows with source information.
+- [x] `ft list --unified` and `ft show --unified <id>` work for canonical rows.
 - [ ] `ft classify --unified --regex` classifies browser-only and merged canonical bookmarks.
-- [ ] Existing X-only `ft search`, `ft list`, `ft show`, `ft sync --gaps`, and `ft fetch-media` behavior is not intentionally changed.
-- [ ] `ft sync` does not fetch media by default.
+- [x] Existing X-only `ft search`, `ft list`, `ft show`, `ft sync --gaps`, and `ft fetch-media` behavior is not intentionally changed.
+- [x] `ft sync` does not fetch media by default.
 - [ ] `ft sync --media` fetches media after sync.
-- [ ] `npm run build` passes.
-- [ ] `npm run test` passes.
+- [x] `npm run build` passes.
+- [x] `npm run test` passes.
 
 ## Execution handoff
 

@@ -1,5 +1,5 @@
 Goal (incl. success criteria):
-- Add browser bookmark sync support for Safari, Chrome, and Vivaldi using a hybrid architecture: separate raw browser caches plus a unified deduped canonical search/classification index.
+- Add browser bookmark sync support for Chrome and Vivaldi now, with explicit Safari unsupported behavior for this phase, using a hybrid architecture: separate raw browser caches plus a unified deduped canonical search/classification index.
 - Preserve existing X/Twitter bookmark flows while enabling URL-level dedupe between X-linked resources and browser bookmarks.
 - Make sync media fetching opt-in by default: `ft sync` should not fetch media unless `--media` is passed; `ft fetch-media` remains explicit backfill.
 - Keep project documentation in generic folders: specs under `docs/specs/`, plans under `docs/plans/`, no workflow/tool/skill names in doc folder names.
@@ -9,7 +9,7 @@ Constraints/Assumptions:
 - Do not merge browser bookmark raw records into the existing X `BookmarkRecord` cache or `bookmarks` table.
 - Browser bookmark sync should be additive and should not destabilize GraphQL sync, OAuth sync, gap fill, X folders, existing search/list/show behavior, media fetching, or markdown/wiki exports.
 - First implementation should expose unified behavior explicitly, e.g. `--unified`, before changing existing command defaults.
-- Safari support is macOS-only and should use a dedicated extractor rather than the existing cookie-oriented browser registry.
+- Safari import is currently unsupported and should fail clearly until a dedicated extractor is implemented.
 - Chrome/Vivaldi bookmark extraction should read Chromium `Bookmarks` JSON files by copying to temp first to avoid partial live-file reads.
 - Remote `origin` has been updated to `https://github.com/manikanda-kumar/fieldtheory-cli`.
 
@@ -23,7 +23,7 @@ Key decisions:
   - X bookmark with zero or multiple ambiguous external links: `x:<tweetId>`
 - URL normalization v1: lowercase scheme/host, remove fragments/default ports, strip known tracking params, preserve meaningful query params, no network canonicalization.
 - Classify canonical bookmarks, not raw source rows, using merged evidence from title, folder path, URL/domain, X tweet text, and enriched X article text when available.
-- Add explicit browser sync command first: `ft sync-browser --browser chrome|vivaldi|safari`.
+- Add explicit browser sync command first: `ft sync-browser --browser chrome|vivaldi|safari` (Safari path currently reserved and fails clearly).
 - Browser bookmark sync does not fetch media.
 - Change X `ft sync` media behavior to no media by default, with opt-in `--media`.
 - Add repo-level AGENTS.md instructions to keep future docs under `docs/specs/` and `docs/plans/`.
@@ -41,6 +41,13 @@ State:
   - `npm run test -- tests/browser-bookmarks.test.ts tests/canonical-bookmarks-db.test.ts` (repo script ran full suite: 559 pass, 0 fail)
 - Task 7 is committed as `f57dfdf feat: add unified bookmark search`.
 - Task 8 implementation is present and reviewed; commit step remains open.
+- Task 9 docs + verification run completed locally (no commit yet):
+  - `npm run build` passed.
+  - `npm run test` passed (561 pass, 0 fail).
+  - `npm run dev -- sync --help` passed and shows `--media` is opt-in (`default: off`).
+  - Manual smoke with local fixture under `FT_DATA_DIR=/tmp/ft-task9-smoke-ZCtcZB` succeeded:
+    - `sync-browser --browser chrome` synced 2 bookmarks and wrote `/tmp/ft-task9-smoke-ZCtcZB/browsers/chrome/Default/bookmarks.jsonl`.
+    - Unified search returned canonical rows with source badges (`[chrome:Default]`).
 - Design spec exists and is committed at `docs/specs/2026-05-10-browser-bookmarks-design.md`.
 - Implementation plan exists and is committed at `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`.
 - Repo instruction file exists and is committed at `AGENTS.md`.
@@ -143,28 +150,19 @@ Done:
   - Code quality reviewer approved.
 
 Now:
-- Browser bookmark implementation is underway with sub-agent-driven task execution.
-- Task 8 is implemented, reviewed by sub-agents (spec + quality), and verified locally (`npm run build`, `npm run test -- tests/cli.test.ts tests/bookmark-media.test.ts tests/graphql-bookmarks.test.ts`).
+- Task 9 documentation and verification updates are applied to `README.md` and the plan checklist.
+- Task 9 commit step remains intentionally unchecked per user request (do not commit).
 
 Next:
-- Commit Task 8: `feat: make sync media opt-in`.
-- Continue to Task 9: docs and final verification checklist.
-- Before claiming DONE for implementation, satisfy the plan’s DONE checklist, including:
-  - `ft sync-browser --browser chrome --bookmarks-file <fixture>` writes raw JSONL.
-  - `ft sync-browser --browser vivaldi --bookmarks-file <fixture>` writes raw JSONL.
-  - Safari sync imports on macOS or fails with a clear platform/path error.
-  - Canonical rebuild dedupes one-clear-link X bookmarks with matching browser URLs.
-  - Canonical rebuild does not dedupe X bookmarks with multiple external URLs.
-  - `ft search --unified`, `ft list --unified`, `ft show --unified`, and `ft classify --unified --regex` work.
-  - Existing X-only flows remain unchanged unless explicitly intended.
-  - `ft sync` does not fetch media by default.
-  - `ft sync --media` fetches media after sync.
-  - `npm run build` and `npm run test` pass.
+- Optional follow-up verification still open for DONE checklist completeness:
+  - vivaldi manual raw-cache smoke (`ft sync-browser --browser vivaldi --bookmarks-file <fixture>`).
+  - explicit CLI/manual checks for `ft list --unified`, `ft show --unified`, `ft classify --unified --regex`.
+  - explicit proof that `ft sync --media` fetches media after sync in this run log.
 
 Open questions (UNCONFIRMED if needed):
 - UNCONFIRMED: whether unified search should become the default after the explicit `--unified` rollout proves stable.
 - UNCONFIRMED: whether `--all` and `--all-profiles` should be implemented in the first browser sync PR or deferred after single-browser sync is stable.
-- UNCONFIRMED: exact Safari plist parsing mechanism to use in code; plan currently allows macOS platform-native parsing with a clear failure path.
+- UNCONFIRMED: whether to implement Safari plist parsing in a follow-up or keep Safari explicitly unsupported.
 - UNCONFIRMED: whether browser bookmark deletion history should be retained long-term or raw snapshots should remain current-state only with `bookmark_sources.active` preserving provenance.
 - UNCONFIRMED: whether webpage fetching/canonical URL resolution should be added later to improve browser-only classification and dedupe quality.
 
