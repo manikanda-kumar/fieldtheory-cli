@@ -22,6 +22,7 @@ import {
   getBookmarkById,
 } from './bookmarks-db.js';
 import {
+  classifyCanonicalBookmarks,
   formatCanonicalSearchResults,
   getCanonicalBookmarkById,
   listCanonicalBookmarks,
@@ -553,6 +554,23 @@ function requireIndex(): boolean {
   Search index not built yet.
 
   Run: ft index
+`);
+    process.exitCode = 1;
+    return false;
+  }
+  return true;
+}
+
+/** Check that the unified index DB exists. Returns true if it does. */
+function requireUnifiedIndex(): boolean {
+  if (!fs.existsSync(twitterBookmarksIndexPath())) {
+    console.log(`
+  Unified index not built yet.
+
+  Run one of:
+    ft sync-browser --browser chrome --bookmarks-file <path>
+    ft sync-browser --browser vivaldi --bookmarks-file <path>
+    ft sync
 `);
     process.exitCode = 1;
     return false;
@@ -1106,31 +1124,29 @@ export function buildCli() {
   program
     .command('sync-browser')
     .description('Sync browser bookmarks into the canonical bookmark index')
-    .option('--browser <name>', 'Browser to sync (chrome, vivaldi, safari)')
+    .option('--browser <name>', 'Browser to sync (chrome or vivaldi; safari is currently unsupported)')
     .option('--profile <name>', 'Browser profile name', 'Default')
     .option('--bookmarks-file <path>', 'Path to a Chromium Bookmarks file')
-    .option('--all', 'Sync all supported browsers', false)
-    .option('--all-profiles', 'Sync all profiles for the selected browser', false)
     .action(safe(async (options) => {
-      if (!options.browser && !options.all) {
-        console.error('  Error: pass --browser <chrome|vivaldi|safari> or --all.');
+      const browserName = options.browser ? String(options.browser).trim().toLowerCase() : '';
+      if (!browserName) {
+        console.error('  Error: --browser is required. Supported browsers: chrome, vivaldi.');
         process.exitCode = 1;
         return;
       }
-      if (options.all) {
-        console.error('  Error: --all browser bookmark sync is not supported in this first cut.');
+      if (browserName === 'safari') {
+        console.error('  Error: Safari bookmark sync is not supported yet.');
         process.exitCode = 1;
         return;
       }
-      if (options.allProfiles) {
-        console.error('  Error: --all-profiles browser bookmark sync is not supported in this first cut.');
-        process.exitCode = 1;
-        return;
-      }
-
-      const browser = parseBrowserBookmarkProvider(options.browser);
+      const browser = parseBrowserBookmarkProvider(browserName);
       if (!browser) {
-        console.error(`  Error: unsupported browser "${String(options.browser)}". Use chrome, vivaldi, or safari.`);
+        console.error(`  Error: unsupported browser "${browserName}". Supported browsers: chrome, vivaldi.`);
+        process.exitCode = 1;
+        return;
+      }
+      if (!options.bookmarksFile) {
+        console.error(`  Error: --bookmarks-file <path> is required for ${browser} bookmark sync.`);
         process.exitCode = 1;
         return;
       }
@@ -1139,7 +1155,7 @@ export function buildCli() {
       const result = await syncBrowserBookmarks({
         browser,
         profile: String(options.profile ?? 'Default'),
-        bookmarksPath: options.bookmarksFile ? String(options.bookmarksFile) : undefined,
+        bookmarksPath: String(options.bookmarksFile),
         rebuildCanonical: true,
       });
 
@@ -1160,8 +1176,8 @@ export function buildCli() {
     .option('--json', 'JSON output')
     .option('--unified', 'Search unified X and browser bookmarks')
     .action(safe(async (query: string, options) => {
-      if (!requireIndex()) return;
       if (options.unified) {
+        if (!requireUnifiedIndex()) return;
         const results = await searchCanonicalBookmarks({
           query,
           limit: Number(options.limit) || 20,
@@ -1173,6 +1189,7 @@ export function buildCli() {
         console.log(formatCanonicalSearchResults(results));
         return;
       }
+      if (!requireIndex()) return;
       const results = await searchBookmarks({
         query,
         author: options.author ? String(options.author) : undefined,
@@ -1204,8 +1221,8 @@ export function buildCli() {
     .option('--json', 'JSON output')
     .option('--unified', 'List unified X and browser bookmarks')
     .action(safe(async (options) => {
-      if (!requireIndex()) return;
       if (options.unified) {
+        if (!requireUnifiedIndex()) return;
         const unsupportedFilters = ['query', 'author', 'after', 'before', 'category', 'domain', 'folder']
           .filter((name) => options[name] !== undefined);
         if (unsupportedFilters.length > 0) {
@@ -1224,6 +1241,7 @@ export function buildCli() {
         console.log(formatCanonicalSearchResults(items));
         return;
       }
+      if (!requireIndex()) return;
 
       // Resolve --folder to an exact name via the same exact-then-prefix rules
       // that `ft sync --folder` uses, so both flags behave identically.
@@ -1274,8 +1292,8 @@ export function buildCli() {
     .option('--json', 'JSON output')
     .option('--unified', 'Show one unified X or browser bookmark')
     .action(safe(async (id: string, options) => {
-      if (!requireIndex()) return;
       if (options.unified) {
+        if (!requireUnifiedIndex()) return;
         const item = await getCanonicalBookmarkById(String(id));
         if (!item) {
           console.log(`  Unified bookmark not found: ${String(id)}`);
@@ -1289,6 +1307,7 @@ export function buildCli() {
         console.log(formatCanonicalSearchResults([item]));
         return;
       }
+      if (!requireIndex()) return;
       const item = await getBookmarkById(String(id));
       if (!item) {
         console.log(`  Bookmark not found: ${String(id)}`);
@@ -1348,8 +1367,21 @@ export function buildCli() {
     .command('classify')
     .description('Classify bookmarks by category and domain using LLM (requires claude or codex CLI)')
     .option('--regex', 'Use simple regex classification instead of LLM')
+    .option('--unified', 'Classify unified canonical bookmarks (currently supports --regex only)')
     .addOption(engineOption())
     .action(safe(async (options) => {
+      if (options.unified) {
+        if (!options.regex) {
+          console.error('  Error: --unified currently supports only --regex.');
+          process.exitCode = 1;
+          return;
+        }
+        if (!requireUnifiedIndex()) return;
+        process.stderr.write('Classifying unified bookmarks (regex)...\n');
+        const result = await classifyCanonicalBookmarks();
+        console.log(`Unified bookmarks: ${result.classified}/${result.total} classified`);
+        return;
+      }
       if (!requireData()) return;
       if (options.regex) {
         process.stderr.write('Classifying bookmarks (regex)...\n');

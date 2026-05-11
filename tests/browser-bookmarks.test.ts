@@ -154,6 +154,153 @@ test('syncBrowserBookmarks writes raw cache and rebuilds canonical index when re
   }
 });
 
+test('syncBrowserBookmarks preserves canonical entries across chrome then vivaldi rebuilds', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-browser-sync-multi-'));
+  const previous = process.env.FT_DATA_DIR;
+  process.env.FT_DATA_DIR = dir;
+  try {
+    const sourceDir = path.join(dir, 'source');
+    await mkdir(sourceDir, { recursive: true });
+
+    const chromeBookmarksPath = path.join(sourceDir, 'ChromeBookmarks');
+    await writeFile(chromeBookmarksPath, JSON.stringify({
+      roots: {
+        bookmark_bar: {
+          type: 'folder',
+          name: 'Bookmarks Bar',
+          children: [{ type: 'url', id: '10', name: 'Chrome Link', url: 'https://example.com/chrome' }],
+        },
+      },
+    }), 'utf8');
+
+    const vivaldiBookmarksPath = path.join(sourceDir, 'VivaldiBookmarks');
+    await writeFile(vivaldiBookmarksPath, JSON.stringify({
+      roots: {
+        bookmark_bar: {
+          type: 'folder',
+          name: 'Bookmarks Bar',
+          children: [{ type: 'url', id: '20', name: 'Vivaldi Link', url: 'https://example.com/vivaldi' }],
+        },
+      },
+    }), 'utf8');
+
+    await syncBrowserBookmarks({
+      browser: 'chrome',
+      profile: 'Default',
+      bookmarksPath: chromeBookmarksPath,
+      rebuildCanonical: true,
+    });
+    await syncBrowserBookmarks({
+      browser: 'vivaldi',
+      profile: 'Profile 1',
+      bookmarksPath: vivaldiBookmarksPath,
+      rebuildCanonical: true,
+    });
+
+    const all = await searchCanonicalBookmarks({ query: '', limit: 10 });
+    const byUrl = new Map(all.map((row) => [row.canonicalUrl, row]));
+    assert.equal(all.length, 2);
+    assert.deepEqual(byUrl.get('https://example.com/chrome')?.sources, ['chrome:Default']);
+    assert.deepEqual(byUrl.get('https://example.com/vivaldi')?.sources, ['vivaldi:Profile 1']);
+  } finally {
+    if (previous === undefined) delete process.env.FT_DATA_DIR;
+    else process.env.FT_DATA_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('syncBrowserBookmarks resync replaces removed records, is idempotent, and ignores malformed URLs in rebuild', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-browser-sync-resync-'));
+  const previous = process.env.FT_DATA_DIR;
+  process.env.FT_DATA_DIR = dir;
+  try {
+    const sourceDir = path.join(dir, 'source');
+    await mkdir(sourceDir, { recursive: true });
+    const bookmarksPath = path.join(sourceDir, 'Bookmarks');
+
+    await writeFile(bookmarksPath, JSON.stringify({
+      roots: {
+        bookmark_bar: {
+          type: 'folder',
+          name: 'Bookmarks Bar',
+          children: [
+            { type: 'url', id: '10', name: 'Keep', url: 'https://example.com/keep' },
+            { type: 'url', id: '11', name: 'Drop', url: 'https://example.com/drop' },
+            { type: 'url', id: '12', name: 'Malformed', url: 'not a valid url' },
+          ],
+        },
+      },
+    }), 'utf8');
+
+    await syncBrowserBookmarks({
+      browser: 'chrome',
+      profile: 'Default',
+      bookmarksPath,
+      rebuildCanonical: true,
+    });
+
+    let all = await searchCanonicalBookmarks({ query: '', limit: 10 });
+    let urls = all.map((row) => row.canonicalUrl).filter((url): url is string => typeof url === 'string').sort();
+    assert.deepEqual(urls, ['https://example.com/drop', 'https://example.com/keep']);
+
+    await writeFile(bookmarksPath, JSON.stringify({
+      roots: {
+        bookmark_bar: {
+          type: 'folder',
+          name: 'Bookmarks Bar',
+          children: [
+            { type: 'url', id: '10', name: 'Keep', url: 'https://example.com/keep' },
+            { type: 'url', id: '12', name: 'Malformed', url: 'not a valid url' },
+          ],
+        },
+      },
+    }), 'utf8');
+
+    await syncBrowserBookmarks({
+      browser: 'chrome',
+      profile: 'Default',
+      bookmarksPath,
+      rebuildCanonical: true,
+    });
+    await syncBrowserBookmarks({
+      browser: 'chrome',
+      profile: 'Default',
+      bookmarksPath,
+      rebuildCanonical: true,
+    });
+
+    all = await searchCanonicalBookmarks({ query: '', limit: 10 });
+    urls = all.map((row) => row.canonicalUrl).filter((url): url is string => typeof url === 'string');
+    assert.deepEqual(urls, ['https://example.com/keep']);
+    assert.deepEqual(all[0].sources, ['chrome:Default']);
+  } finally {
+    if (previous === undefined) delete process.env.FT_DATA_DIR;
+    else process.env.FT_DATA_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('syncBrowserBookmarks surfaces torn Chromium copy parse guidance on JSON parse failure', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-browser-sync-invalid-json-'));
+  const previous = process.env.FT_DATA_DIR;
+  process.env.FT_DATA_DIR = dir;
+  try {
+    const sourceDir = path.join(dir, 'source');
+    await mkdir(sourceDir, { recursive: true });
+    const bookmarksPath = path.join(sourceDir, 'Bookmarks');
+    await writeFile(bookmarksPath, '{"roots":', 'utf8');
+
+    await assert.rejects(
+      syncBrowserBookmarks({ browser: 'chrome', profile: 'Default', bookmarksPath }),
+      /may have changed while being copied; retry sync/i,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.FT_DATA_DIR;
+    else process.env.FT_DATA_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('syncBrowserBookmarks fails clearly for Safari until plist parsing exists', async () => {
   await assert.rejects(
     syncBrowserBookmarks({ browser: 'safari', profile: 'default', bookmarksPath: '/tmp/Bookmarks.plist' }),

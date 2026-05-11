@@ -2,7 +2,7 @@
 
 ## Summary
 
-Add Safari, Chrome, and Vivaldi bookmark sync using a hybrid architecture: keep each provider's raw bookmark cache separate, then build a unified, deduped canonical index for search, list, show, and classification. The existing X/Twitter bookmark pipeline remains intact because its current data model is tweet-centric.
+Add Chrome and Vivaldi bookmark sync using a hybrid architecture: keep each provider's raw bookmark cache separate, then build a unified, deduped canonical index for search, list, show, and classification. Keep Safari explicitly unsupported for now with a clear CLI error. The existing X/Twitter bookmark pipeline remains intact because its current data model is tweet-centric.
 
 Also change sync media behavior so media fetching is opt-in: default sync should not fetch media unless the user asks for it.
 
@@ -10,7 +10,7 @@ This spec follows the repo documentation convention of storing specs in `docs/sp
 
 ## Goals
 
-- Sync browser bookmarks from Safari, Chrome, and Vivaldi into local Field Theory storage.
+- Sync browser bookmarks from Chrome and Vivaldi into local Field Theory storage.
 - Preserve raw source data separately per browser/profile.
 - Build a unified canonical index that dedupes overlap between X bookmarks and browser bookmarks.
 - Reuse existing search/classification concepts for the canonical index.
@@ -76,8 +76,7 @@ Keep the existing X paths unchanged and add browser caches under `browsers/`:
     chrome/Default/meta.json
     vivaldi/Default/bookmarks.jsonl
     vivaldi/Default/meta.json
-    safari/default/bookmarks.jsonl
-    safari/default/meta.json
+    # safari/* reserved for future support; no files written yet
 ```
 
 Browser caches are snapshots of current browser state. A later sync may mark missing source rows inactive in the unified source table, but raw snapshot files can be rewritten to reflect the current browser bookmark tree.
@@ -89,7 +88,7 @@ Add a browser-specific type instead of extending `BookmarkRecord`:
 ```ts
 export interface BrowserBookmarkRecord {
   id: string;
-  browser: 'chrome' | 'vivaldi' | 'safari';
+  browser: 'chrome' | 'vivaldi';
   profile: string;
   sourceItemId: string;
   url: string;
@@ -207,23 +206,19 @@ Read browser bookmark files by copying them to a temporary file first, then pars
 
 #### Safari
 
-Safari is macOS-only for this feature. Use a dedicated extractor instead of shoehorning Safari into the existing cookie-oriented browser registry.
-
-Initial implementation should support Safari bookmark plist parsing with platform-native tools available on macOS. If the plist cannot be parsed, fail with a helpful error that includes the expected Safari bookmarks path.
+Safari bookmark sync remains intentionally unsupported in this phase. The CLI should fail clearly so users do not assume partial Safari support.
 
 ### CLI design
 
 Add a browser-specific sync command first:
 
 ```bash
-ft sync-browser --browser chrome
-ft sync-browser --browser vivaldi
+ft sync-browser --browser chrome --bookmarks-file /path/to/Bookmarks
+ft sync-browser --browser vivaldi --bookmarks-file /path/to/Bookmarks
 ft sync-browser --browser safari
-ft sync-browser --all
-ft sync-browser --all-profiles
 ```
 
-After browser sync, rebuild the canonical index. Browser bookmark sync does not fetch media.
+For the current first cut, Chrome/Vivaldi require `--bookmarks-file <path>` and Safari exits as unsupported. After browser sync, rebuild the canonical index. Browser bookmark sync does not fetch media.
 
 Also change current X sync media behavior:
 
@@ -247,9 +242,9 @@ The safest first implementation is to add explicit `--unified` flags rather than
 
 ## Error handling
 
-- Missing browser bookmark file: report browser/profile/path and continue for `--all`; fail for a single requested browser/profile.
+- Missing browser bookmark file: fail with a clear message that includes browser and required `--bookmarks-file <path>`.
 - Invalid bookmark JSON/plist: report path and parser error.
-- Unsupported platform for Safari: report that Safari bookmark sync is macOS-only.
+- Safari requested: report that Safari bookmark sync is not supported yet.
 - No browser bookmarks found: write an empty cache and report zero imported, not an error.
 - Canonical rebuild failure: leave raw caches intact and exit nonzero.
 
@@ -257,7 +252,6 @@ The safest first implementation is to add explicit `--unified` flags rather than
 
 - Unit-test URL normalization and dedupe key selection.
 - Unit-test Chromium bookmark tree parsing with nested folders.
-- Unit-test Safari parser with a small fixture or parser seam.
 - Unit-test raw browser cache path generation.
 - Unit-test canonical index build from mixed X/browser records.
 - Unit-test canonical classification with browser-only and merged X/browser inputs.
@@ -267,7 +261,7 @@ The safest first implementation is to add explicit `--unified` flags rather than
 ## Rollout sequence
 
 1. Add URL normalization and browser bookmark types/paths.
-2. Add Chromium and Safari extractors.
+2. Add Chromium extractor and reserve Safari as unsupported.
 3. Add raw browser sync command and caches.
 4. Add canonical SQL schema and index builder.
 5. Add canonical search/list/show helpers and CLI flags.

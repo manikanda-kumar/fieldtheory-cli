@@ -59,6 +59,18 @@ export function chromiumWebkitTimeToIso(value: string | number | undefined | nul
   return date.toISOString();
 }
 
+function parseChromiumBookmarkFile(raw: string, snapshotPath: string): ChromiumBookmarkFile {
+  try {
+    return JSON.parse(raw) as ChromiumBookmarkFile;
+  } catch (error) {
+    const details = error instanceof Error ? ` (${error.message})` : '';
+    throw new Error(
+      `Failed to parse Chromium bookmarks snapshot at ${snapshotPath}${details}. ` +
+      'The source Bookmarks file may have changed while being copied; retry sync.',
+    );
+  }
+}
+
 export function parseChromiumBookmarks(
   file: ChromiumBookmarkFile,
   options: { browser: BrowserBookmarkProvider; profile: string; syncedAt: string },
@@ -112,7 +124,7 @@ export async function syncBrowserBookmarks(options: SyncBrowserBookmarksOptions)
 
   try {
     await copyFile(bookmarksPath, snapshotPath);
-    const parsed = JSON.parse(await readFile(snapshotPath, 'utf8')) as ChromiumBookmarkFile;
+    const parsed = parseChromiumBookmarkFile(await readFile(snapshotPath, 'utf8'), snapshotPath);
     const records = parseChromiumBookmarks(parsed, { browser, profile, syncedAt });
 
     await mkdir(path.dirname(cachePath), { recursive: true });

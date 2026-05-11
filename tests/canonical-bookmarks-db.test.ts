@@ -28,8 +28,14 @@ async function withIsolatedDataDir(fn: (dir: string) => Promise<void>): Promise<
   }
 }
 
-async function writeBrowserBookmarks(dir: string, records: unknown[]): Promise<void> {
-  const browserCacheDir = path.join(dir, 'browsers', 'chrome', 'Default');
+async function writeBrowserBookmarks(
+  dir: string,
+  records: unknown[],
+  options: { browser?: 'chrome' | 'vivaldi'; profile?: string } = {},
+): Promise<void> {
+  const browser = options.browser ?? 'chrome';
+  const profile = options.profile ?? 'Default';
+  const browserCacheDir = path.join(dir, 'browsers', browser, profile);
   await mkdir(browserCacheDir, { recursive: true });
   await writeJsonLines(path.join(browserCacheDir, 'bookmarks.jsonl'), records);
 }
@@ -74,6 +80,36 @@ test('rebuildCanonicalIndex dedupes X external link with browser bookmark URL', 
     const byId = await getCanonicalBookmarkById(listed[0].id);
     assert.ok(byId);
     assert.equal(byId.sourceCount, 2);
+  });
+});
+
+test('rebuildCanonicalIndex stores browser source rows with null target_url', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeBrowserBookmarks(dir, [{
+      id: 'chrome:Default:10',
+      browser: 'chrome',
+      profile: 'Default',
+      sourceItemId: '10',
+      url: 'https://github.com/example/tool',
+      title: 'Acme Tool',
+      folderPath: ['Dev'],
+      syncedAt: '2026-05-10T00:00:00.000Z',
+    }]);
+
+    await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+
+    const db = await openDb(twitterBookmarksIndexPath());
+    try {
+      const row = db.exec(
+        `SELECT source_url, target_url
+         FROM bookmark_sources
+         WHERE id = ?`,
+        ['browser:chrome:Default:10'],
+      )[0]?.values?.[0];
+      assert.deepEqual(row, ['https://github.com/example/tool', null]);
+    } finally {
+      db.close();
+    }
   });
 });
 
@@ -165,6 +201,118 @@ test('rebuildCanonicalIndex does not dedupe X bookmark with multiple external li
     assert.equal(matches.length, 1);
     assert.equal(matches[0].sourceCount, 1);
     assert.deepEqual(matches[0].sources, ['chrome:Default']);
+  });
+});
+
+test('rebuildCanonicalIndex skips malformed browser URLs without crashing', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeBrowserBookmarks(dir, [
+      {
+        id: 'chrome:Default:10',
+        browser: 'chrome',
+        profile: 'Default',
+        sourceItemId: '10',
+        url: 'https://example.com/ok',
+        title: 'Good',
+        folderPath: [],
+        syncedAt: '2026-05-10T00:00:00.000Z',
+      },
+      {
+        id: 'chrome:Default:11',
+        browser: 'chrome',
+        profile: 'Default',
+        sourceItemId: '11',
+        url: 'not a valid url',
+        title: 'Bad',
+        folderPath: [],
+        syncedAt: '2026-05-10T00:00:00.000Z',
+      },
+    ]);
+    await writeBrowserBookmarks(
+      dir,
+      [
+        {
+          id: 'vivaldi:Default:20',
+          browser: 'vivaldi',
+          profile: 'Default',
+          sourceItemId: '20',
+          url: 'https://example.org/keep',
+          title: 'Keep',
+          folderPath: [],
+          syncedAt: '2026-05-10T00:00:00.000Z',
+        },
+      ],
+      { browser: 'vivaldi', profile: 'Default' },
+    );
+
+    const result = await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    const chromeRows = await listCanonicalBookmarks({ source: 'chrome', limit: 10 });
+    const vivaldiRows = await listCanonicalBookmarks({ source: 'vivaldi', limit: 10 });
+
+    assert.equal(result.sourceCount, 2);
+    assert.equal(result.canonicalCount, 2);
+    assert.equal(chromeRows.length, 1);
+    assert.equal(chromeRows[0].canonicalUrl, 'https://example.com/ok');
+    assert.equal(vivaldiRows.length, 1);
+    assert.equal(vivaldiRows[0].canonicalUrl, 'https://example.org/keep');
+  });
+});
+
+test('rebuildCanonicalIndex isolates malformed URLs across browser profiles', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeBrowserBookmarks(
+      dir,
+      [
+        {
+          id: 'chrome:Default:10',
+          browser: 'chrome',
+          profile: 'Default',
+          sourceItemId: '10',
+          url: 'https://example.com/default-ok',
+          title: 'Default OK',
+          folderPath: [],
+          syncedAt: '2026-05-10T00:00:00.000Z',
+        },
+      ],
+      { browser: 'chrome', profile: 'Default' },
+    );
+    await writeBrowserBookmarks(
+      dir,
+      [
+        {
+          id: 'chrome:Work:20',
+          browser: 'chrome',
+          profile: 'Work',
+          sourceItemId: '20',
+          url: 'not a valid url',
+          title: 'Work Bad',
+          folderPath: [],
+          syncedAt: '2026-05-10T00:00:00.000Z',
+        },
+        {
+          id: 'chrome:Work:21',
+          browser: 'chrome',
+          profile: 'Work',
+          sourceItemId: '21',
+          url: 'https://example.com/work-ok',
+          title: 'Work OK',
+          folderPath: [],
+          syncedAt: '2026-05-10T00:00:00.000Z',
+        },
+      ],
+      { browser: 'chrome', profile: 'Work' },
+    );
+
+    const result = await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    const rows = await listCanonicalBookmarks({ source: 'chrome', limit: 10 });
+
+    assert.equal(result.sourceCount, 2);
+    assert.equal(result.canonicalCount, 2);
+    assert.equal(rows.length, 2);
+    const urls = rows.map((row) => row.canonicalUrl).sort();
+    assert.deepEqual(urls, ['https://example.com/default-ok', 'https://example.com/work-ok']);
+    const sources = rows.flatMap((row) => row.sources).sort();
+    assert.deepEqual(sources, ['chrome:Default', 'chrome:Work']);
   });
 });
 

@@ -47,7 +47,7 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 | `ft sync --api` | Sync via OAuth API (cross-platform) |
 | `ft sync-browser --browser chrome --bookmarks-file <path>` | Sync Chrome bookmarks from a Chromium `Bookmarks` file into the unified index |
 | `ft sync-browser --browser vivaldi --bookmarks-file <path>` | Sync Vivaldi bookmarks from a Chromium `Bookmarks` file into the unified index |
-| `ft sync-browser --browser safari` | Reserved; Safari import is not implemented yet and currently fails clearly |
+| `ft sync-browser --browser safari` | Safari bookmark sync is not implemented yet and exits with a clear error |
 | `ft auth` | Set up OAuth for API-based sync (optional) |
 
 ### Search and browse
@@ -56,6 +56,8 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 |---------|-------------|
 | `ft search <query>` | Full-text search with BM25 ranking |
 | `ft search --unified <query>` | Search deduped X and browser bookmarks |
+| `ft list --unified` | List unified canonical bookmarks |
+| `ft show --unified <id>` | Show one unified canonical bookmark |
 | `ft list` | Filter by author, date, category, domain, or folder |
 | `ft list --folder <name>` | Show bookmarks in an X bookmark folder |
 | `ft show <id>` | Show one bookmark in detail |
@@ -72,6 +74,7 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 |---------|-------------|
 | `ft classify` | Classify by category and domain using LLM |
 | `ft classify --regex` | Classify by category using simple regex |
+| `ft classify --unified --regex` | Classify unified canonical bookmarks with the regex classifier |
 | `ft classify-domains` | Classify by subject domain only (LLM) |
 | `ft classify --engine <name>` | Override the LLM engine for one run (also works on `ft sync --classify` and `ft classify-domains`) |
 | `ft model` | View or change the default LLM engine |
@@ -206,7 +209,6 @@ Data is stored locally under `~/.fieldtheory/`:
   browsers/
     chrome/Default/bookmarks.jsonl   # raw Chrome bookmark snapshot
     vivaldi/Default/bookmarks.jsonl  # raw Vivaldi bookmark snapshot
-    safari/default/bookmarks.jsonl   # raw Safari bookmark snapshot
 
 ~/.fieldtheory/library/
   index.md                # markdown knowledge base (ft wiki / ft md)

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add Safari, Chrome, and Vivaldi bookmark sync with separate raw caches and a unified deduped search/classification index, while making sync media fetching opt-in by default.
+**Goal:** Add Chrome and Vivaldi bookmark sync with separate raw caches and a unified deduped search/classification index, keep Safari explicitly unsupported for now, and make sync media fetching opt-in by default.
 
 **Architecture:** Keep the existing X bookmark cache and `bookmarks` table intact. Add browser-specific raw JSONL caches, additive canonical SQLite tables, conservative URL-based dedupe, and explicit unified CLI surfaces before making unified search the default.
 
@@ -18,7 +18,7 @@
 - Modify `src/paths.ts`: browser cache path helpers.
 - Create `src/canonical-bookmarks-db.ts`: canonical schema, source-row rebuild, FTS search/list/show, canonical classification update.
 - Modify `src/bookmark-classify.ts`: add provider-neutral classifier input while preserving `classifyBookmark()` compatibility.
-- Modify `src/cli.ts`: add `sync-browser`; add unified search/list/show flags (classify unified remains follow-up); change `ft sync` media default to opt-in.
+- Modify `src/cli.ts`: add `sync-browser`; add unified search/list/show/classify flags; change `ft sync` media default to opt-in.
 - Modify `README.md`: document browser bookmark sync, unified search, and opt-in media behavior.
 - Add tests in `tests/url-normalize.test.ts`, `tests/browser-bookmarks.test.ts`, `tests/canonical-bookmarks-db.test.ts`, and update relevant CLI/status tests if needed.
 
@@ -847,28 +847,31 @@ In `src/cli.ts`, add a top-level command:
 program
   .command('sync-browser')
   .description('Sync browser bookmarks into the unified bookmark index')
-  .option('--browser <name>', 'Browser to sync (chrome, vivaldi, safari)')
+  .option('--browser <name>', 'Browser to sync (chrome or vivaldi; safari unsupported)')
   .option('--profile <name>', 'Browser profile name', 'Default')
   .option('--bookmarks-file <path>', 'Explicit browser bookmarks file path')
-  .option('--all', 'Sync all supported installed browsers', false)
-  .option('--all-profiles', 'Sync all discovered profiles for selected browser(s)', false)
   .action(safe(async (options) => {
+    const browser = options.browser ? String(options.browser) : '';
+    if (!browser) {
+      console.error('  Error: --browser is required. Supported browsers: chrome, vivaldi.');
+      process.exitCode = 1;
+      return;
+    }
+    if (browser === 'safari') {
+      console.error('  Error: Safari bookmark sync is not supported yet.');
+      process.exitCode = 1;
+      return;
+    }
+    if (!options.bookmarksFile) {
+      console.error(`  Error: --bookmarks-file <path> is required for ${browser} bookmark sync.`);
+      process.exitCode = 1;
+      return;
+    }
     ensureDataDir();
-    const browser = options.browser ? String(options.browser) : undefined;
-    if (!browser && !options.all) {
-      console.error('  Error: pass --browser <name> or --all');
-      process.exitCode = 1;
-      return;
-    }
-    if (options.all) {
-      console.error('  Error: --all is not supported in the first cut. Run one browser at a time.');
-      process.exitCode = 1;
-      return;
-    }
     const result = await syncBrowserBookmarks({
       browser,
       profile: String(options.profile ?? 'Default'),
-      bookmarksPath: options.bookmarksFile ? String(options.bookmarksFile) : undefined,
+      bookmarksPath: String(options.bookmarksFile),
       rebuildCanonical: true,
     });
     console.log(`  ✓ ${result.synced} ${result.browser} bookmarks synced (${result.profile})`);
@@ -876,7 +879,7 @@ program
   }));
 ```
 
-For the first pass, support one browser/profile plus `--bookmarks-file`; add `--all` and `--all-profiles` behavior in Task 7 if needed to keep this task small.
+For the first pass, support one browser/profile plus `--bookmarks-file`; do not advertise `--all` or `--all-profiles` until implemented.
 
 - [x] **Step 5: Run targeted tests and typecheck**
 
@@ -1182,12 +1185,12 @@ Mark the feature DONE only when all of these are true:
 
 - [x] `ft sync-browser --browser chrome --bookmarks-file <fixture>` writes a raw JSONL cache.
 - [ ] `ft sync-browser --browser vivaldi --bookmarks-file <fixture>` writes a raw JSONL cache.
-- [x] Safari sync either imports bookmarks on macOS or fails with a clear platform/path error.
+- [x] Safari sync fails with a clear unsupported error.
 - [x] Canonical rebuild dedupes an X bookmark with one external URL and a browser bookmark of that same URL.
 - [x] Canonical rebuild does not dedupe an X bookmark with multiple external URLs.
 - [x] `ft search --unified <query>` returns canonical rows with source information.
 - [x] `ft list --unified` and `ft show --unified <id>` work for canonical rows.
-- [ ] `ft classify --unified --regex` classifies browser-only and merged canonical bookmarks.
+- [x] `ft classify --unified --regex` classifies browser-only and merged canonical bookmarks.
 - [x] Existing X-only `ft search`, `ft list`, `ft show`, `ft sync --gaps`, and `ft fetch-media` behavior is not intentionally changed.
 - [x] `ft sync` does not fetch media by default.
 - [ ] `ft sync --media` fetches media after sync.

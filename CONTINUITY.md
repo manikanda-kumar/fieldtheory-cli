@@ -150,14 +150,12 @@ Done:
   - Code quality reviewer approved.
 
 Now:
-- Task 9 documentation and verification updates are applied to `README.md` and the plan checklist.
-- Task 9 commit step remains intentionally unchecked per user request (do not commit).
+- Post-review remediation batch is implemented and locally verified (build + full test suite passing) across canonical rebuild, sync-browser CLI, unified classify, and docs/spec alignment.
+- Changes are staged in worktree pending commit.
 
 Next:
-- Optional follow-up verification still open for DONE checklist completeness:
-  - vivaldi manual raw-cache smoke (`ft sync-browser --browser vivaldi --bookmarks-file <fixture>`).
-  - explicit CLI/manual checks for `ft list --unified`, `ft show --unified`, `ft classify --unified --regex`.
-  - explicit proof that `ft sync --media` fetches media after sync in this run log.
+- Commit remediation batch that addresses review findings from `review.md` and `docs/reviews/2026-05-11-browser-bookmarks-review.md`.
+- Keep `review.md` and `docs/reviews/...` uncommitted (reference-only artifacts).
 
 Open questions (UNCONFIRMED if needed):
 - UNCONFIRMED: whether unified search should become the default after the explicit `--unified` rollout proves stable.

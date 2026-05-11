@@ -6,6 +6,7 @@ import os from 'node:os';
 import { compareVersions, runWithSpinner, buildCli, parseCookieOption, shouldDownloadSyncMedia } from '../src/cli.js';
 import { dataDir } from '../src/paths.js';
 import { skillWithFrontmatter } from '../src/skill.js';
+import { rebuildCanonicalIndex } from '../src/canonical-bookmarks-db.js';
 
 async function captureStdout(fn: () => Promise<void>): Promise<string> {
   const chunks: string[] = [];
@@ -24,6 +25,18 @@ async function captureStdout(fn: () => Promise<void>): Promise<string> {
   }
 
   return chunks.join('');
+}
+
+async function captureConsoleErrors(fn: () => Promise<void>): Promise<string> {
+  const chunks: string[] = [];
+  const origError = console.error;
+  console.error = (...args: any[]) => { chunks.push(args.map(String).join(' ')); };
+  try {
+    await fn();
+  } finally {
+    console.error = origError;
+  }
+  return chunks.join('\n');
 }
 
 test('showDashboard: prints update notice when cache is newer than local', async () => {
@@ -105,6 +118,43 @@ test('ft sync: media is off by default and exposes --media opt-in', () => {
   assert.equal(mediaOption.long, '--media');
 });
 
+test('ft sync-browser: exposes only current first-cut flags', () => {
+  const program = buildCli();
+  const syncBrowserCmd = program.commands.find((c: any) => c.name() === 'sync-browser');
+  assert.ok(syncBrowserCmd, 'sync-browser command should be registered');
+  const opts = syncBrowserCmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--browser'));
+  assert.ok(opts.includes('--profile'));
+  assert.ok(opts.includes('--bookmarks-file'));
+  assert.ok(!opts.includes('--all'), '--all should not be advertised');
+  assert.ok(!opts.includes('--all-profiles'), '--all-profiles should not be advertised');
+});
+
+test('ft sync-browser: requires --bookmarks-file for supported browsers', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-sync-browser-cli-'));
+  const origEnv = process.env.FT_DATA_DIR;
+  const origExitCode = process.exitCode;
+  process.env.FT_DATA_DIR = tmpDir;
+  process.exitCode = undefined;
+  fs.writeFileSync(path.join(tmpDir, '.update-check'), '0.0.0');
+
+  try {
+    const errors = await captureConsoleErrors(async () => {
+      await buildCli().parseAsync(['node', 'ft', 'sync-browser', '--browser', 'chrome']);
+    });
+    assert.ok(
+      errors.includes('--bookmarks-file <path> is required for chrome bookmark sync.'),
+      `expected required bookmarks-file error, got:\n${errors}`,
+    );
+    assert.equal(process.exitCode, 1);
+  } finally {
+    if (origEnv === undefined) delete process.env.FT_DATA_DIR;
+    else process.env.FT_DATA_DIR = origEnv;
+    process.exitCode = origExitCode;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('shouldDownloadSyncMedia enables media only when --media is truthy', () => {
   assert.equal(shouldDownloadSyncMedia({}), false);
   assert.equal(shouldDownloadSyncMedia({ media: false }), false);
@@ -117,6 +167,58 @@ test('ft wiki: description mentions engine prerequisite', () => {
   assert.ok(wikiCmd);
   const desc = wikiCmd.description().toLowerCase();
   assert.ok(desc.includes('claude') && desc.includes('codex'));
+});
+
+test('ft classify: exposes --unified with --regex', () => {
+  const program = buildCli();
+  const classifyCmd = program.commands.find((c: any) => c.name() === 'classify');
+  assert.ok(classifyCmd, 'classify command should be registered');
+  const opts = classifyCmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--regex'));
+  assert.ok(opts.includes('--unified'));
+});
+
+test('ft classify --unified requires --regex', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-classify-unified-'));
+  const origEnv = process.env.FT_DATA_DIR;
+  const origExitCode = process.exitCode;
+  process.env.FT_DATA_DIR = tmpDir;
+  process.exitCode = 0;
+
+  try {
+    const errors = await captureConsoleErrors(async () => {
+      await buildCli().parseAsync(['node', 'ft', 'classify', '--unified']);
+    });
+    assert.ok(errors.includes('--unified currently supports only --regex'));
+    assert.equal(process.exitCode, 1);
+  } finally {
+    if (origEnv === undefined) delete process.env.FT_DATA_DIR;
+    else process.env.FT_DATA_DIR = origEnv;
+    process.exitCode = origExitCode;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('ft classify --unified --regex runs canonical classification', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-classify-unified-'));
+  const origEnv = process.env.FT_DATA_DIR;
+  const origExitCode = process.exitCode;
+  process.env.FT_DATA_DIR = tmpDir;
+  process.exitCode = 0;
+
+  try {
+    await rebuildCanonicalIndex();
+    const output = await captureStdout(async () => {
+      await buildCli().parseAsync(['node', 'ft', 'classify', '--unified', '--regex']);
+    });
+    assert.match(output, /Unified bookmarks: \d+\/\d+ classified/);
+    assert.equal(process.exitCode, 0);
+  } finally {
+    if (origEnv === undefined) delete process.env.FT_DATA_DIR;
+    else process.env.FT_DATA_DIR = origEnv;
+    process.exitCode = origExitCode;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 test('ft path: prints only the data directory', async () => {

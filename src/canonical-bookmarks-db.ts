@@ -1,8 +1,10 @@
 import crypto from 'node:crypto';
+import { readdir } from 'node:fs/promises';
+import path from 'node:path';
 import type { Database } from 'sql.js';
 import { openDb, saveDb } from './db.js';
-import { readJsonLines } from './fs.js';
-import { browserBookmarksCachePath, twitterBookmarksCachePath, twitterBookmarksIndexPath } from './paths.js';
+import { pathExists, readJsonLines } from './fs.js';
+import { browserBookmarksCachePath, dataDir, twitterBookmarksCachePath, twitterBookmarksIndexPath } from './paths.js';
 import type { BrowserBookmarkProvider, BrowserBookmarkRecord } from './browser-bookmarks.js';
 import type { BookmarkRecord } from './types.js';
 import { dedupeKeyForUrl, dedupeKeyForXBookmark } from './url-normalize.js';
@@ -76,6 +78,11 @@ interface CanonicalGroup {
   sources: string[];
 }
 
+interface BrowserSourceRef {
+  browser: BrowserBookmarkProvider;
+  profile: string;
+}
+
 interface PreservedCanonicalFields {
   categories: string | null;
   primaryCategory: string | null;
@@ -84,7 +91,7 @@ interface PreservedCanonicalFields {
 }
 
 export interface RebuildCanonicalOptions {
-  browserSources: Array<{ browser: BrowserBookmarkProvider; profile: string }>;
+  browserSources?: Array<{ browser: BrowserBookmarkProvider; profile: string }>;
 }
 
 export interface SearchCanonicalOptions {
@@ -219,15 +226,22 @@ function xSourceFromRecord(record: BookmarkRecord): CanonicalSourceInput {
   };
 }
 
-function browserSourceFromRecord(record: BrowserBookmarkRecord): CanonicalSourceInput {
+function browserSourceFromRecord(record: BrowserBookmarkRecord): CanonicalSourceInput | null {
+  let dedupeKey: string;
+  try {
+    dedupeKey = dedupeKeyForUrl(record.url);
+  } catch {
+    return null;
+  }
+
   return {
     id: `browser:${record.id}`,
     source: record.browser,
     profile: record.profile,
     sourceItemId: record.sourceItemId,
     sourceUrl: record.url,
-    targetUrl: record.url,
-    dedupeKey: dedupeKeyForUrl(record.url),
+    targetUrl: null,
+    dedupeKey,
     title: record.title || record.url,
     text: null,
     authorHandle: null,
@@ -319,10 +333,81 @@ function readPreservedCanonicalFields(db: Database): Map<string, PreservedCanoni
         primaryDomain: (row[4] as string) ?? null,
       });
     }
-  } catch {
-    // Existing DB may not have canonical tables yet.
+  } catch (error) {
+    if (!isSchemaMissingError(error)) throw error;
+    // Existing DB may not have canonical tables/columns yet.
   }
   return preserved;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function isSchemaMissingError(error: unknown): boolean {
+  const message = errorMessage(error).toLowerCase();
+  return message.includes('no such table')
+    || message.includes('no such column')
+    || message.includes('has no column named');
+}
+
+const SUPPORTED_BROWSER_PROVIDERS: ReadonlySet<BrowserBookmarkProvider> = new Set(['chrome', 'vivaldi']);
+
+function isBrowserProvider(value: string): value is BrowserBookmarkProvider {
+  return SUPPORTED_BROWSER_PROVIDERS.has(value as BrowserBookmarkProvider);
+}
+
+function mergeBrowserSources(sources: BrowserSourceRef[]): BrowserSourceRef[] {
+  const deduped = new Map<string, BrowserSourceRef>();
+  for (const source of sources) {
+    deduped.set(`${source.browser}\u0000${source.profile}`, source);
+  }
+  return [...deduped.values()].sort((a, b) => {
+    const browserCompare = a.browser.localeCompare(b.browser);
+    if (browserCompare !== 0) return browserCompare;
+    return a.profile.localeCompare(b.profile);
+  });
+}
+
+async function discoverBrowserSources(): Promise<BrowserSourceRef[]> {
+  const root = path.join(dataDir(), 'browsers');
+  let browserEntries: Array<{ isDirectory(): boolean; name: string }>;
+  try {
+    browserEntries = await readdir(root, { withFileTypes: true, encoding: 'utf8' });
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return [];
+    throw error;
+  }
+
+  const discovered: BrowserSourceRef[] = [];
+  for (const browserEntry of browserEntries) {
+    if (!browserEntry.isDirectory() || !isBrowserProvider(browserEntry.name)) continue;
+    const browser = browserEntry.name;
+    const browserDir = path.join(root, browserEntry.name);
+    let profileEntries: Array<{ isDirectory(): boolean; name: string }>;
+    try {
+      profileEntries = await readdir(browserDir, { withFileTypes: true, encoding: 'utf8' });
+    } catch (error) {
+      if (errorCode(error) === 'ENOENT') continue;
+      throw error;
+    }
+    for (const profileEntry of profileEntries) {
+      if (!profileEntry.isDirectory()) continue;
+      const profile = profileEntry.name;
+      if (await pathExists(browserBookmarksCachePath(browser, profile))) {
+        discovered.push({ browser, profile });
+      }
+    }
+  }
+
+  return mergeBrowserSources(discovered);
 }
 
 function insertCanonical(db: Database, group: CanonicalGroup, preserved?: PreservedCanonicalFields): void {
@@ -377,9 +462,11 @@ function mapListRow(row: unknown[]): CanonicalBookmarkListResult {
   };
 }
 
-export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions): Promise<CanonicalRebuildResult> {
+export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions = {}): Promise<CanonicalRebuildResult> {
   const dbPath = twitterBookmarksIndexPath();
   const db = await openDb(dbPath);
+  const discoveredBrowserSources = await discoverBrowserSources();
+  const browserSources = mergeBrowserSources([...(options.browserSources ?? []), ...discoveredBrowserSources]);
 
   try {
     initCanonicalSchema(db);
@@ -389,9 +476,12 @@ export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions): P
     const xRecords = await readJsonLines<BookmarkRecord>(twitterBookmarksCachePath());
     sourceRows.push(...xRecords.map(xSourceFromRecord));
 
-    for (const source of options.browserSources) {
+    for (const source of browserSources) {
       const records = await readJsonLines<BrowserBookmarkRecord>(browserBookmarksCachePath(source.browser, source.profile));
-      sourceRows.push(...records.map(browserSourceFromRecord));
+      const normalized = records
+        .map(browserSourceFromRecord)
+        .filter((row): row is CanonicalSourceInput => row !== null);
+      sourceRows.push(...normalized);
     }
 
     const groups = new Map<string, CanonicalSourceInput[]>();
