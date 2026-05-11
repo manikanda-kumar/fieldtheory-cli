@@ -1028,7 +1028,7 @@ npm run build
 
 Expected: PASS and TypeScript build succeeds.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/canonical-bookmarks-db.ts src/cli.ts tests/canonical-bookmarks-db.test.ts
@@ -1044,7 +1044,7 @@ git commit -m "feat: add unified bookmark search"
 - Modify: `README.md`
 - Test: existing CLI behavior tests if present; otherwise `npm run build`
 
-- [ ] **Step 1: Inspect current sync option handling**
+- [x] **Step 1: Inspect current sync option handling**
 
 Read the `sync` command in `src/cli.ts` and confirm current behavior:
 
@@ -1058,7 +1058,7 @@ and:
 const downloadMedia = options.media !== false;
 ```
 
-- [ ] **Step 2: Change sync options**
+- [x] **Step 2: Change sync options**
 
 Update the sync options to include explicit opt-in media:
 
@@ -1075,7 +1075,7 @@ const downloadMedia = Boolean(options.media);
 
 Keep the existing `ft fetch-media` command unchanged.
 
-- [ ] **Step 3: Update first-run and README copy**
+- [x] **Step 3: Update first-run and README copy**
 
 In `README.md`, update sync command descriptions:
 
@@ -1087,7 +1087,7 @@ In `README.md`, update sync command descriptions:
 
 Remove or reword any statement saying default sync downloads media.
 
-- [ ] **Step 4: Run build and relevant tests**
+- [x] **Step 4: Run build and relevant tests**
 
 Run:
 

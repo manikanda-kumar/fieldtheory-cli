@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { compareVersions, runWithSpinner, buildCli, parseCookieOption } from '../src/cli.js';
+import { compareVersions, runWithSpinner, buildCli, parseCookieOption, shouldDownloadSyncMedia } from '../src/cli.js';
 import { dataDir } from '../src/paths.js';
 import { skillWithFrontmatter } from '../src/skill.js';
 
@@ -92,17 +92,23 @@ test('ft install app command is registered', () => {
   assert.ok(opts.includes('--json'));
 });
 
-test('ft sync: media is on by default and exposes --no-media', () => {
+test('ft sync: media is off by default and exposes --media opt-in', () => {
   const program = buildCli();
   const syncCmd = program.commands.find((c: any) => c.name() === 'sync');
   assert.ok(syncCmd, 'sync command should be registered');
 
-  assert.equal(syncCmd.opts().media, true, 'sync should default to downloading media');
+  assert.equal(syncCmd.opts().media, false, 'sync should default to skipping media');
 
   const mediaOption = syncCmd.options.find((o: any) => o.attributeName() === 'media');
   assert.ok(mediaOption, 'a media option must be registered');
-  assert.equal(mediaOption.negate, true, 'the media option must be --no-media (negated)');
-  assert.equal(mediaOption.long, '--no-media');
+  assert.equal(mediaOption.negate, false, 'the media option must be --media (non-negated)');
+  assert.equal(mediaOption.long, '--media');
+});
+
+test('shouldDownloadSyncMedia enables media only when --media is truthy', () => {
+  assert.equal(shouldDownloadSyncMedia({}), false);
+  assert.equal(shouldDownloadSyncMedia({ media: false }), false);
+  assert.equal(shouldDownloadSyncMedia({ media: true }), true);
 });
 
 test('ft wiki: description mentions engine prerequisite', () => {

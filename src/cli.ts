@@ -266,6 +266,10 @@ function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
+export function shouldDownloadSyncMedia(options: { media?: unknown }): boolean {
+  return Boolean(options.media);
+}
+
 function parseBrowserBookmarkProvider(value: unknown): BrowserBookmarkProvider | null {
   if (value !== 'chrome' && value !== 'vivaldi' && value !== 'safari') return null;
   return value;
@@ -340,7 +344,7 @@ function showCachedUpdateNotice(): void {
 
 const WHATS_NEW: Record<string, string[]> = {
   '1.3.18': [
-    'ft sync now downloads media by default; pass --no-media to skip',
+    'ft sync now skips media by default; pass --media to download',
     'ft sync --gaps now also fills media gaps in the same pass',
   ],
   '1.3.13': [
@@ -747,10 +751,10 @@ export function buildCli() {
     .option('--api', 'Use OAuth v2 API instead of Chrome session', false)
     .option('--rebuild', 'Full re-crawl of all bookmarks', false)
     .option('--continue', 'Resume a previous sync that was interrupted or hit the page limit', false)
-    .option('--gaps', 'Backfill missing data (quoted tweets, truncated articles, linked article content)', false)
+    .option('--gaps', 'Backfill missing data (quoted tweets, truncated articles, linked article content, optional media gaps with --media)', false)
     .option('--yes', 'Skip confirmation prompts', false)
     .option('--classify', 'Classify new bookmarks with LLM after syncing', false)
-    .option('--no-media', 'Skip downloading media assets after syncing (default: media is downloaded)')
+    .option('--media', 'Download media assets after syncing (default: off)', false)
     .option('--media-max-bytes <n>', 'Per-asset byte limit for media downloads (default: 200 MB)', (v: string) => Number(v), DEFAULT_MEDIA_MAX_BYTES)
     .option('--skip-profile-images', 'Skip downloading author profile images', false)
     .option('--max-pages <n>', 'Max pages to fetch (default: unlimited)', (v: string) => Number(v))
@@ -802,9 +806,7 @@ export function buildCli() {
           process.exitCode = 1;
           return;
         }
-        // Commander sets options.media=false when --no-media is passed;
-        // otherwise it's true by default.
-        const downloadMedia = options.media !== false;
+        const downloadMedia = shouldDownloadSyncMedia(options);
         const mediaMaxBytes = typeof options.mediaMaxBytes === 'number' && !Number.isNaN(options.mediaMaxBytes)
           ? options.mediaMaxBytes
           : DEFAULT_MEDIA_MAX_BYTES;
