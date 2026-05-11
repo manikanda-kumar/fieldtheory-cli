@@ -21,6 +21,12 @@ import {
   listBookmarks,
   getBookmarkById,
 } from './bookmarks-db.js';
+import {
+  formatCanonicalSearchResults,
+  getCanonicalBookmarkById,
+  listCanonicalBookmarks,
+  searchCanonicalBookmarks,
+} from './canonical-bookmarks-db.js';
 import { formatClassificationSummary } from './bookmark-classify.js';
 import { classifyWithLlm, classifyDomainsWithLlm } from './bookmark-classify-llm.js';
 import { resolveEngine, detectAvailableEngines } from './engine.js';
@@ -1150,8 +1156,21 @@ export function buildCli() {
     .option('--before <date>', 'Bookmarks posted before this date (YYYY-MM-DD)')
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 20)
     .option('--json', 'JSON output')
+    .option('--unified', 'Search unified X and browser bookmarks')
     .action(safe(async (query: string, options) => {
       if (!requireIndex()) return;
+      if (options.unified) {
+        const results = await searchCanonicalBookmarks({
+          query,
+          limit: Number(options.limit) || 20,
+        });
+        if (options.json) {
+          printJson(results);
+          return;
+        }
+        console.log(formatCanonicalSearchResults(results));
+        return;
+      }
       const results = await searchBookmarks({
         query,
         author: options.author ? String(options.author) : undefined,
@@ -1181,8 +1200,28 @@ export function buildCli() {
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 30)
     .option('--offset <n>', 'Offset into results', (v: string) => Number(v), 0)
     .option('--json', 'JSON output')
+    .option('--unified', 'List unified X and browser bookmarks')
     .action(safe(async (options) => {
       if (!requireIndex()) return;
+      if (options.unified) {
+        const unsupportedFilters = ['query', 'author', 'after', 'before', 'category', 'domain', 'folder']
+          .filter((name) => options[name] !== undefined);
+        if (unsupportedFilters.length > 0) {
+          console.error(`  --unified list does not support filters yet: ${unsupportedFilters.map((name) => `--${name}`).join(', ')}`);
+          process.exitCode = 1;
+          return;
+        }
+        const items = await listCanonicalBookmarks({
+          limit: Number(options.limit) || 30,
+          offset: Number(options.offset) || 0,
+        });
+        if (options.json) {
+          printJson(items);
+          return;
+        }
+        console.log(formatCanonicalSearchResults(items));
+        return;
+      }
 
       // Resolve --folder to an exact name via the same exact-then-prefix rules
       // that `ft sync --folder` uses, so both flags behave identically.
@@ -1231,8 +1270,23 @@ export function buildCli() {
     .description('Show one bookmark in detail')
     .argument('<id>', 'Bookmark id')
     .option('--json', 'JSON output')
+    .option('--unified', 'Show one unified X or browser bookmark')
     .action(safe(async (id: string, options) => {
       if (!requireIndex()) return;
+      if (options.unified) {
+        const item = await getCanonicalBookmarkById(String(id));
+        if (!item) {
+          console.log(`  Unified bookmark not found: ${String(id)}`);
+          process.exitCode = 1;
+          return;
+        }
+        if (options.json) {
+          printJson(item);
+          return;
+        }
+        console.log(formatCanonicalSearchResults([item]));
+        return;
+      }
       const item = await getBookmarkById(String(id));
       if (!item) {
         console.log(`  Bookmark not found: ${String(id)}`);

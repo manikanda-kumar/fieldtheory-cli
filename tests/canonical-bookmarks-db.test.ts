@@ -6,6 +6,8 @@ import path from 'node:path';
 import { writeJsonLines } from '../src/fs.js';
 import {
   classifyCanonicalBookmarks,
+  formatCanonicalSearchResults,
+  getCanonicalBookmarkById,
   listCanonicalBookmarks,
   rebuildCanonicalIndex,
   searchCanonicalBookmarks,
@@ -61,7 +63,41 @@ test('rebuildCanonicalIndex dedupes X external link with browser bookmark URL', 
     assert.equal(matches.length, 1);
     assert.equal(matches[0].sourceCount, 2);
     assert.deepEqual(matches[0].sources.sort(), ['chrome:Default', 'x']);
+
+    const listed = await listCanonicalBookmarks({ source: 'chrome', limit: 10 });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].canonicalUrl, 'https://github.com/example/tool');
+    assert.equal(listed[0].displayTitle, 'Acme Tool');
+    assert.equal(listed[0].sourceCount, 2);
+    assert.deepEqual(listed[0].sources.sort(), ['chrome:Default', 'x']);
+
+    const byId = await getCanonicalBookmarkById(listed[0].id);
+    assert.ok(byId);
+    assert.equal(byId.sourceCount, 2);
   });
+});
+
+test('formatCanonicalSearchResults includes title, source badges, url, and empty message', () => {
+  const formatted = formatCanonicalSearchResults([{
+    id: 'canonical:1',
+    canonicalUrl: 'https://github.com/example/tool',
+    displayTitle: 'Acme Tool',
+    searchText: 'Acme Tool',
+    sourceCount: 2,
+    sources: ['chrome:Default', 'x'],
+    categories: 'tool',
+    primaryCategory: 'tool',
+    domains: 'github.com',
+    primaryDomain: 'github.com',
+  }]);
+
+  assert.match(formatted, /Acme Tool/);
+  assert.match(formatted, /\[chrome:Default\]/);
+  assert.match(formatted, /\[x\]/);
+  assert.match(formatted, /https:\/\/github\.com\/example\/tool/);
+  assert.match(formatted, /tool/);
+  assert.match(formatted, /github\.com/);
+  assert.equal(formatCanonicalSearchResults([]), 'No unified bookmarks found.');
 });
 
 test('classifyCanonicalBookmarks classifies browser-only GitHub bookmarks as tool', async () => {

@@ -34,19 +34,16 @@ State:
 - Task 3 is committed as `25db8b6 feat: parse browser bookmarks`.
 - Task 4 is committed as `4d227ea feat: build canonical bookmark index`.
 - Task 5 is committed as `a0a9418 feat: classify canonical bookmarks`.
-- Task 6 implementation is present but not committed:
-  - `src/browser-bookmarks.ts`
-  - `src/cli.ts`
-  - `tests/browser-bookmarks.test.ts`
+- Task 6 is committed as `58ca24f feat: add browser bookmark sync command`.
 - Task 6 passed sub-agent spec review and code-quality review.
 - Task 6 local verification passed:
   - `npm run build`
   - `npm run test -- tests/browser-bookmarks.test.ts tests/canonical-bookmarks-db.test.ts` (repo script ran full suite: 559 pass, 0 fail)
-- Task 6 plan checkboxes are marked complete for steps 1-5; commit step remains open.
+- Task 7 implementation is present and reviewed; commit step remains open.
 - Design spec exists and is committed at `docs/specs/2026-05-10-browser-bookmarks-design.md`.
 - Implementation plan exists and is committed at `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`.
 - Repo instruction file exists and is committed at `AGENTS.md`.
-- Worktree is dirty with Task 6 implementation and plan/ledger updates.
+- Worktree is dirty with Task 7 implementation and plan/ledger updates.
 - Current remote verified as `origin https://github.com/manikanda-kumar/fieldtheory-cli` for fetch and push.
 
 Done:
@@ -146,11 +143,11 @@ Done:
 
 Now:
 - Browser bookmark implementation is underway with sub-agent-driven task execution.
-- Task 6 is implemented, reviewed, and verified, pending commit.
+- Task 7 is implemented, reviewed by sub-agents (spec + quality), and verified locally (`npm run build`, `npm run test -- tests/canonical-bookmarks-db.test.ts`).
 
 Next:
-- Commit Task 6 when ready: `git add src/cli.ts src/browser-bookmarks.ts tests/browser-bookmarks.test.ts docs/plans/2026-05-10-browser-bookmarks-unified-index.md CONTINUITY.md && git commit -m "feat: add browser bookmark sync command"`.
-- Continue to Task 7: unified search/list/show CLI surfaces.
+- Commit Task 7: `feat: add unified bookmark search`.
+- Continue to Task 8: make `ft sync` media fetching opt-in by default (`--media`).
 - Before claiming DONE for implementation, satisfy the plan’s DONE checklist, including:
   - `ft sync-browser --browser chrome --bookmarks-file <fixture>` writes raw JSONL.
   - `ft sync-browser --browser vivaldi --bookmarks-file <fixture>` writes raw JSONL.

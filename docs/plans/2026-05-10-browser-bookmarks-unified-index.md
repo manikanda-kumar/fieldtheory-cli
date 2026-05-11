@@ -889,7 +889,7 @@ npm run build
 
 Expected: PASS and TypeScript build succeeds.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/cli.ts src/browser-bookmarks.ts src/canonical-bookmarks-db.ts tests/browser-bookmarks.test.ts
@@ -905,7 +905,7 @@ git commit -m "feat: add browser bookmark sync command"
 - Modify: `src/cli.ts`
 - Test: `tests/canonical-bookmarks-db.test.ts`
 
-- [ ] **Step 1: Add canonical list/show tests**
+- [x] **Step 1: Add canonical list/show tests**
 
 Add tests for:
 
@@ -922,7 +922,7 @@ assert.equal(list[0].sources.includes('chrome'), true);
 assert.equal(shown.sourceCount, 2);
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -932,7 +932,7 @@ npm run test -- tests/canonical-bookmarks-db.test.ts
 
 Expected: FAIL because list/show helpers are missing.
 
-- [ ] **Step 3: Implement canonical list/show helpers**
+- [x] **Step 3: Implement canonical list/show helpers**
 
 Add to `src/canonical-bookmarks-db.ts`:
 
@@ -995,7 +995,7 @@ export function formatCanonicalSearchResults(results: CanonicalSearchResult[]): 
 
 Keep formatting compact and source-aware: title, URL, source badges, category/domain if present.
 
-- [ ] **Step 4: Wire explicit unified flags into CLI**
+- [x] **Step 4: Wire explicit unified flags into CLI**
 
 Modify existing commands:
 
@@ -1017,7 +1017,7 @@ program
 
 When `--unified` is passed, call canonical helpers. Without `--unified`, keep current X-only behavior.
 
-- [ ] **Step 5: Run targeted tests and build**
+- [x] **Step 5: Run targeted tests and build**
 
 Run:
 

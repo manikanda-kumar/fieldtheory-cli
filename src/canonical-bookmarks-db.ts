@@ -41,7 +41,10 @@ export interface CanonicalBookmarkListResult {
 export interface ListCanonicalBookmarksOptions {
   source?: string;
   limit?: number;
+  offset?: number;
 }
+
+export type CanonicalBookmarkFormatResult = CanonicalSearchResult | CanonicalBookmarkListResult;
 
 interface CanonicalSourceInput {
   id: string;
@@ -460,6 +463,7 @@ export async function searchCanonicalBookmarks(options: SearchCanonicalOptions):
 export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOptions = {}): Promise<CanonicalBookmarkListResult[]> {
   const db = await openDb(twitterBookmarksIndexPath());
   const limit = options.limit ?? 20;
+  const offset = options.offset ?? 0;
 
   try {
     initCanonicalSchema(db);
@@ -468,7 +472,8 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
                            c.categories, c.primary_category, c.domains, c.primary_domain
                     FROM canonical_bookmarks c`;
     const order = `ORDER BY COALESCE(c.last_saved_at, c.first_saved_at, '') DESC, c.id ASC
-                   LIMIT ?`;
+                   LIMIT ?
+                   OFFSET ?`;
     const rows = options.source
       ? db.exec(
         `${select}
@@ -477,14 +482,58 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
            WHERE s.canonical_id = c.id AND s.source = ?
          )
          ${order}`,
-        [options.source, limit],
+        [options.source, limit, offset],
       )
-      : db.exec(`${select} ${order}`, [limit]);
+      : db.exec(`${select} ${order}`, [limit, offset]);
 
     return (rows[0]?.values ?? []).map(mapListRow);
   } finally {
     db.close();
   }
+}
+
+export async function getCanonicalBookmarkById(id: string): Promise<CanonicalBookmarkListResult | null> {
+  const db = await openDb(twitterBookmarksIndexPath());
+
+  try {
+    initCanonicalSchema(db);
+
+    const rows = db.exec(
+      `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count, c.sources_json,
+              c.categories, c.primary_category, c.domains, c.primary_domain
+       FROM canonical_bookmarks c
+       WHERE c.id = ?
+       LIMIT 1`,
+      [id],
+    );
+    const row = rows[0]?.values?.[0];
+    return row ? mapListRow(row) : null;
+  } finally {
+    db.close();
+  }
+}
+
+function hasListMetadata(result: CanonicalBookmarkFormatResult): result is CanonicalBookmarkListResult {
+  return 'categories' in result;
+}
+
+export function formatCanonicalSearchResults(results: CanonicalBookmarkFormatResult[]): string {
+  if (results.length === 0) return 'No unified bookmarks found.';
+
+  return results
+    .map((result, index) => {
+      const title = result.displayTitle?.trim() || result.canonicalUrl || result.id;
+      const url = result.canonicalUrl ?? '(no url)';
+      const badges = result.sources.length ? result.sources.map((source) => `[${source}]`).join(' ') : `[${result.sourceCount} sources]`;
+      const metadata: string[] = [];
+      if (hasListMetadata(result)) {
+        if (result.primaryCategory) metadata.push(result.primaryCategory);
+        if (result.primaryDomain) metadata.push(result.primaryDomain);
+      }
+      const suffix = metadata.length ? `  ${metadata.join(' / ')}` : '';
+      return `${index + 1}. ${title} ${badges}${suffix}\n   ${url}`;
+    })
+    .join('\n\n');
 }
 
 export async function classifyCanonicalBookmarks(): Promise<{ total: number; classified: number }> {
