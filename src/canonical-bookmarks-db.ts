@@ -290,32 +290,31 @@ function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[])
   };
 }
 
-function insertSource(db: Database, source: CanonicalSourceInput, canonicalId: string): void {
-  db.run(
-    `INSERT INTO bookmark_sources (
-      id, source, profile, source_item_id, source_url, target_url, dedupe_key,
-      title, text, author_handle, saved_at, created_at, modified_at,
-      folder_path_json, links_json, active, canonical_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-    [
-      source.id,
-      source.source,
-      source.profile,
-      source.sourceItemId,
-      source.sourceUrl,
-      source.targetUrl,
-      source.dedupeKey,
-      source.title,
-      source.text,
-      source.authorHandle,
-      source.savedAt,
-      source.createdAt,
-      source.modifiedAt,
-      JSON.stringify(source.folderPath),
-      JSON.stringify(source.links),
-      canonicalId,
-    ],
-  );
+const INSERT_SOURCE_SQL = `INSERT INTO bookmark_sources (
+  id, source, profile, source_item_id, source_url, target_url, dedupe_key,
+  title, text, author_handle, saved_at, created_at, modified_at,
+  folder_path_json, links_json, active, canonical_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`;
+
+function sourceInsertParams(source: CanonicalSourceInput, canonicalId: string): Array<string | null> {
+  return [
+    source.id,
+    source.source,
+    source.profile,
+    source.sourceItemId,
+    source.sourceUrl,
+    source.targetUrl,
+    source.dedupeKey,
+    source.title,
+    source.text,
+    source.authorHandle,
+    source.savedAt,
+    source.createdAt,
+    source.modifiedAt,
+    JSON.stringify(source.folderPath),
+    JSON.stringify(source.links),
+    canonicalId,
+  ];
 }
 
 function readPreservedCanonicalFields(db: Database): Map<string, PreservedCanonicalFields> {
@@ -410,29 +409,28 @@ async function discoverBrowserSources(): Promise<BrowserSourceRef[]> {
   return mergeBrowserSources(discovered);
 }
 
-function insertCanonical(db: Database, group: CanonicalGroup, preserved?: PreservedCanonicalFields): void {
-  db.run(
-    `INSERT INTO canonical_bookmarks (
-      id, dedupe_key, canonical_url, display_title, search_text,
-      categories, primary_category, domains, primary_domain,
-      source_count, first_saved_at, last_saved_at, sources_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      group.id,
-      group.dedupeKey,
-      group.canonicalUrl,
-      group.displayTitle,
-      group.searchText,
-      preserved?.categories ?? null,
-      preserved?.primaryCategory ?? null,
-      preserved?.domains ?? null,
-      preserved?.primaryDomain ?? null,
-      group.sourceCount,
-      group.firstSavedAt,
-      group.lastSavedAt,
-      JSON.stringify(group.sources),
-    ],
-  );
+const INSERT_CANONICAL_SQL = `INSERT INTO canonical_bookmarks (
+  id, dedupe_key, canonical_url, display_title, search_text,
+  categories, primary_category, domains, primary_domain,
+  source_count, first_saved_at, last_saved_at, sources_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+function canonicalInsertParams(group: CanonicalGroup, preserved?: PreservedCanonicalFields): Array<string | number | null> {
+  return [
+    group.id,
+    group.dedupeKey,
+    group.canonicalUrl,
+    group.displayTitle,
+    group.searchText,
+    preserved?.categories ?? null,
+    preserved?.primaryCategory ?? null,
+    preserved?.domains ?? null,
+    preserved?.primaryDomain ?? null,
+    group.sourceCount,
+    group.firstSavedAt,
+    group.lastSavedAt,
+    JSON.stringify(group.sources),
+  ];
 }
 
 function mapSearchRow(row: unknown[]): CanonicalSearchResult {
@@ -464,9 +462,9 @@ function mapListRow(row: unknown[]): CanonicalBookmarkListResult {
 
 export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions = {}): Promise<CanonicalRebuildResult> {
   const dbPath = twitterBookmarksIndexPath();
-  const db = await openDb(dbPath);
   const discoveredBrowserSources = await discoverBrowserSources();
   const browserSources = mergeBrowserSources([...(options.browserSources ?? []), ...discoveredBrowserSources]);
+  const db = await openDb(dbPath);
 
   try {
     initCanonicalSchema(db);
@@ -496,10 +494,17 @@ export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions = {
     try {
       db.run('DELETE FROM bookmark_sources');
       db.run('DELETE FROM canonical_bookmarks');
-      for (const group of canonicalGroups) {
-        insertCanonical(db, group, preservedFields.get(group.dedupeKey));
-        const groupSources = groups.get(group.dedupeKey) ?? [];
-        for (const source of groupSources) insertSource(db, source, group.id);
+      const canonicalStmt = db.prepare(INSERT_CANONICAL_SQL);
+      const sourceStmt = db.prepare(INSERT_SOURCE_SQL);
+      try {
+        for (const group of canonicalGroups) {
+          canonicalStmt.run(canonicalInsertParams(group, preservedFields.get(group.dedupeKey)));
+          const groupSources = groups.get(group.dedupeKey) ?? [];
+          for (const source of groupSources) sourceStmt.run(sourceInsertParams(source, group.id));
+        }
+      } finally {
+        canonicalStmt.free();
+        sourceStmt.free();
       }
       db.run(`INSERT INTO canonical_bookmarks_fts(canonical_bookmarks_fts) VALUES('rebuild')`);
       db.run('COMMIT');
