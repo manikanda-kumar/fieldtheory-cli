@@ -1,8 +1,6 @@
 Goal (incl. success criteria):
-- Add browser bookmark sync support for Chrome and Vivaldi now, with explicit Safari unsupported behavior for this phase, using a hybrid architecture: separate raw browser caches plus a unified deduped canonical search/classification index.
-- Preserve existing X/Twitter bookmark flows while enabling URL-level dedupe between X-linked resources and browser bookmarks.
-- Make sync media fetching opt-in by default: `ft sync` should not fetch media unless `--media` is passed; `ft fetch-media` remains explicit backfill.
-- Keep project documentation in generic folders: specs under `docs/specs/`, plans under `docs/plans/`, no workflow/tool/skill names in doc folder names.
+- ACTIVE: Add `ft sync-youtube --playlist <url|id>` — turn a public YouTube watch-later playlist into local artifacts: structured text notes (transcript→LLM) for every new video, written to the markdown library and indexed in the existing SQLite FTS DB; plus an optional local AI overview — `--overview audio` (condensed ~12-min script→TTS→mp3) or `--overview video` (slide-gated: only slide-heavy videos get a script→TTS→ffmpeg slideshow mp4). Idempotent reruns. LLM via OpenRouter (OpenAI primary, Gemini fallback); TTS via real OpenAI API (OpenRouter has no TTS endpoint), Gemini/`say`/`piper` fallback. Reuse `bookmark_sources`/`canonical_bookmarks` (source `youtube`), no schema change. Optional external bins: `summarize` (steipete/summarize), `yt-dlp`, `ffmpeg`, `tesseract` — all runtime-detected with fallbacks. Implemented by sub-agents; every implementation task paired with an orchestrator review task.
+- DONE (prior): browser bookmark sync (Chrome/Vivaldi) with hybrid raw caches + canonical dedupe index; `ft sync` media opt-in (`--media`); docs under `docs/specs/`+`docs/plans/`; remote → `manikanda-kumar/fieldtheory-cli`. All committed on `main` through `50e19c9`.
 
 Constraints/Assumptions:
 - Existing X bookmark model is tweet-centric: `BookmarkRecord` requires `tweetId`, and the current SQLite `bookmarks` table requires `tweet_id TEXT NOT NULL`.
@@ -40,8 +38,8 @@ State:
   - `npm run build`
   - `npm run test -- tests/browser-bookmarks.test.ts tests/canonical-bookmarks-db.test.ts` (repo script ran full suite: 559 pass, 0 fail)
 - Task 7 is committed as `f57dfdf feat: add unified bookmark search`.
-- Task 8 implementation is present and reviewed; commit step remains open.
-- Task 9 docs + verification run completed locally (no commit yet):
+- Task 8 is committed as `cb30a14 feat: make sync media opt-in`.
+- Task 9 docs + verification are committed as `130f719 docs: document browser bookmark sync`; verification previously completed locally:
   - `npm run build` passed.
   - `npm run test` passed (561 pass, 0 fail).
   - `npm run dev -- sync --help` passed and shows `--media` is opt-in (`default: off`).
@@ -51,7 +49,7 @@ State:
 - Design spec exists and is committed at `docs/specs/2026-05-10-browser-bookmarks-design.md`.
 - Implementation plan exists and is committed at `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`.
 - Repo instruction file exists and is committed at `AGENTS.md`.
-- Worktree is dirty with Task 8 implementation and plan/ledger updates.
+- Worktree has no tracked browser-bookmark implementation changes; only untracked review artifacts are present (`review.md`, `docs/reviews/`, `.claude/settings.local.json`).
 - Current remote verified as `origin https://github.com/manikanda-kumar/fieldtheory-cli` for fetch and push.
 
 Done:
@@ -150,12 +148,13 @@ Done:
   - Code quality reviewer approved.
 
 Now:
-- Post-review remediation batch is implemented and locally verified (build + full test suite passing) across canonical rebuild, sync-browser CLI, unified classify, and docs/spec alignment.
-- Changes are staged in worktree pending commit.
+- Wrote the YouTube playlist → notes/overviews implementation plan: `docs/plans/2026-05-12-youtube-playlist-overviews.md` (14 tasks across 6 phases, each impl task + a review task; new files under `src/youtube/*` and `src/llm/*`; CLI `ft sync-youtube`).
+- Browser bookmark work + `--media` opt-in already committed on `main` through `50e19c9`; only untracked review artifacts (`review.md`, `docs/reviews/`) plus the new plan doc remain in the worktree.
 
 Next:
-- Commit remediation batch that addresses review findings from `review.md` and `docs/reviews/2026-05-11-browser-bookmarks-review.md`.
-- Keep `review.md` and `docs/reviews/...` uncommitted (reference-only artifacts).
+- User to review the plan; then sub-agents implement Task 1 onward; orchestrator runs Review N after each.
+- Verify `summarize` CLI's actual JSON-output flags before/while doing plan Task 5 (most likely spot needing a small correction).
+- (Carryover, low priority) decide on Vivaldi fixture CLI smoke + `ft sync --media` smoke; decide fate of untracked review artifacts.
 
 Open questions (UNCONFIRMED if needed):
 - UNCONFIRMED: whether unified search should become the default after the explicit `--unified` rollout proves stable.
@@ -169,6 +168,6 @@ Working set (files/ids/commands):
 - Current implementation files: `src/browser-bookmarks.ts`, `src/cli.ts`, `tests/browser-bookmarks.test.ts`.
 - Remaining implementation plan target files: `src/cli.ts`, `README.md`.
 - Planned tests: `tests/url-normalize.test.ts`, `tests/browser-bookmarks.test.ts`, `tests/canonical-bookmarks-db.test.ts`, plus existing X regression tests.
-- Recent commits: `a0a9418 feat: classify canonical bookmarks`, `4d227ea feat: build canonical bookmark index`, `25db8b6 feat: parse browser bookmarks`, `bf3b930 feat: add browser bookmark cache paths`.
+- Recent commits: `50e19c9 fix: prepare canonical insert statements and close db on discovery failure`, `9afddff fix: address browser bookmark review findings`, `130f719 docs: document browser bookmark sync`, `cb30a14 feat: make sync media opt-in`, `f57dfdf feat: add unified bookmark search`.
 - Remote: `origin https://github.com/manikanda-kumar/fieldtheory-cli`.
 - Useful commands: `npm run build`, `npm run test`, `npm run dev -- sync --help`, `npm run dev -- sync-browser --browser chrome --profile Default --bookmarks-file <path>`, `npm run dev -- search --unified <query>`.
