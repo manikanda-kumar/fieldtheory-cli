@@ -27,6 +27,8 @@ import {
   getCanonicalBookmarkById,
   listCanonicalBookmarks,
   searchCanonicalBookmarks,
+  upsertYoutubeVideosAsSources,
+  type YoutubeSourceVideoInput,
 } from './canonical-bookmarks-db.js';
 import { formatClassificationSummary } from './bookmark-classify.js';
 import { classifyWithLlm, classifyDomainsWithLlm } from './bookmark-classify-llm.js';
@@ -1204,9 +1206,11 @@ export function buildCli() {
         return;
       }
       const tts = overview === 'none' ? undefined : createTtsClient({ engine: ttsEngine });
+      if (tts) tts.resolve?.();
       let processed = 0;
       let skipped = 0;
       let failed = 0;
+      const youtubeSources: YoutubeSourceVideoInput[] = [];
       for (const video of videos) {
         try {
           const result = await processVideo(video.videoId, {
@@ -1214,17 +1218,20 @@ export function buildCli() {
             force: Boolean(options.force),
             llm,
             tts,
+            indexCanonical: false,
             targetMinutes: Number(options.targetMinutes) || 12,
             slideConfidence: Number(options.slideConfidence) || 0.6,
           });
           if (result.processed) processed += 1;
           else skipped += 1;
+          if (result.canonicalSource) youtubeSources.push(result.canonicalSource);
           console.log(`  ${result.processed ? '✓' : '-'} ${video.title} (${result.status})`);
         } catch (error) {
           failed += 1;
           console.error(`  ! ${video.title} (failed: ${error instanceof Error ? error.message : String(error)})`);
         }
       }
+      if (youtubeSources.length) await upsertYoutubeVideosAsSources(youtubeSources);
       console.log(`  ✓ YouTube sync complete: ${processed} processed, ${skipped} skipped, ${failed} failed`);
       if (failed > 0) process.exitCode = 1;
     }));

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, open, rm } from 'node:fs/promises';
 import { readJson, writeJson, pathExists } from '../fs.js';
 import { youtubeStatePath } from '../paths.js';
 
@@ -71,6 +71,18 @@ export async function saveYoutubeState(state: YoutubeState): Promise<void> {
   await writeJson(statePath, state);
 }
 
+export async function updateYoutubeState<T>(mutate: (state: YoutubeState) => T | Promise<T>): Promise<T> {
+  const release = await acquireYoutubeStateLock();
+  try {
+    const state = await loadYoutubeState();
+    const result = await mutate(state);
+    await saveYoutubeState(state);
+    return result;
+  } finally {
+    await release();
+  }
+}
+
 export function markVideo(
   state: YoutubeState,
   videoId: string,
@@ -96,4 +108,22 @@ export function shouldProcess(state: YoutubeState, videoId: string, contentHash:
   const video = state.videos[videoId];
   if (!video) return true;
   return video.status !== 'done' || video.contentHash !== contentHash;
+}
+
+async function acquireYoutubeStateLock(): Promise<() => Promise<void>> {
+  const lockPath = `${youtubeStatePath()}.lock`;
+  await mkdir(path.dirname(lockPath), { recursive: true });
+  const deadline = Date.now() + 30_000;
+  while (true) {
+    try {
+      const handle = await open(lockPath, 'wx');
+      await handle.writeFile(`${process.pid}\n${new Date().toISOString()}\n`, 'utf8');
+      await handle.close();
+      return async () => { await rm(lockPath, { force: true }); };
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'EEXIST') throw error;
+      if (Date.now() > deadline) throw new Error(`Timed out waiting for YouTube state lock: ${lockPath}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
 }

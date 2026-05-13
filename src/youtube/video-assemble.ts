@@ -20,15 +20,22 @@ export interface AssembleVideoOptions {
 }
 
 export class FfmpegUnavailableError extends Error {
-  constructor(message = 'ffmpeg and ffprobe are required to assemble video overviews') {
+  constructor(message = 'ffmpeg is required to assemble video overviews') {
     super(message);
     this.name = 'FfmpegUnavailableError';
   }
 }
 
+export class MissingSlideError extends Error {
+  constructor(message = 'Cannot assemble a video overview without at least one slide frame') {
+    super(message);
+    this.name = 'MissingSlideError';
+  }
+}
+
 export async function assembleVideo(input: AssembleVideoInput, options: AssembleVideoOptions = {}): Promise<{ outPath: string; durationSec: number }> {
   const hasCommand = options.hasCommand ?? ((command: string) => hasCommandOnPath(command));
-  if (!hasCommand('ffmpeg') || !hasCommand('ffprobe')) throw new FfmpegUnavailableError();
+  if (!hasCommand('ffmpeg')) throw new FfmpegUnavailableError();
   const runCommand = options.runCommand ?? runCommandDefault;
   await mkdir(path.dirname(input.outPath), { recursive: true });
   await writeSrt(input.segments, input.srtPath);
@@ -49,10 +56,10 @@ export async function assembleVideo(input: AssembleVideoInput, options: Assemble
   }
 
   const concatList = path.join(path.dirname(input.outPath), 'concat.txt');
-  await writeFile(concatList, segmentPaths.map((segmentPath) => `file '${segmentPath.replace(/'/g, "'\\''")}'`).join('\n') + '\n', 'utf8');
+  await writeFile(concatList, segmentPaths.map((segmentPath) => `file ${escapeConcatPath(segmentPath)}`).join('\n') + '\n', 'utf8');
   const concatPath = path.join(path.dirname(input.outPath), 'concat.mp4');
   await runCommand('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', concatPath]);
-  await runCommand('ffmpeg', ['-y', '-i', concatPath, '-vf', `subtitles=${input.srtPath}`, input.outPath]);
+  await runCommand('ffmpeg', ['-y', '-i', concatPath, '-vf', `subtitles=${escapeFilterPath(input.srtPath)}`, input.outPath]);
 
   return { outPath: input.outPath, durationSec: input.segments.reduce((sum, segment) => sum + segment.approxSeconds, 0) };
 }
@@ -71,7 +78,15 @@ export async function writeSrt(segments: ScriptSegment[], srtPath: string): Prom
 function pickSlide(slides: FrameRef[], segment: ScriptSegment, index: number): FrameRef {
   if (segment.slideRef != null && slides[segment.slideRef]) return slides[segment.slideRef];
   if (slides.length) return slides[index % slides.length];
-  return { tSec: 0, imagePath: path.join(path.dirname(process.argv[1] ?? '.'), 'title-card.png') };
+  throw new MissingSlideError();
+}
+
+function escapeConcatPath(filePath: string): string {
+  return `'${filePath.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function escapeFilterPath(filePath: string): string {
+  return `'${filePath.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:').replace(/,/g, '\\,').replace(/\[/g, '\\[').replace(/]/g, '\\]')}'`;
 }
 
 function formatSrtTime(totalSeconds: number): string {

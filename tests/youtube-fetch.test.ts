@@ -57,3 +57,21 @@ test('fetchVideo throws NoTranscriptError when no transcript source works', asyn
     NoTranscriptError,
   );
 });
+
+test('fetchVideo content hash changes when transcript text changes at same length', async () => {
+  const baseOptions = {
+    hasCommand: () => false,
+    fetchText: async (url: string) => url.includes('timedtext')
+      ? '<transcript><text start="0" dur="1">abc</text></transcript>'
+      : JSON.stringify({ title: 'Same title' }),
+  };
+  const first = await fetchVideo('same', baseOptions);
+  const second = await fetchVideo('same', {
+    ...baseOptions,
+    fetchText: async (url) => url.includes('timedtext')
+      ? '<transcript><text start="0" dur="1">xyz</text></transcript>'
+      : JSON.stringify({ title: 'Same title' }),
+  });
+
+  assert.notEqual(first.contentHash, second.contentHash);
+});

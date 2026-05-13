@@ -3,13 +3,13 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import type { OpenRouterClient } from '../llm/openrouter-client.js';
 import { createTtsClient, type TtsClient } from '../llm/tts-client.js';
 import { youtubeArtifactsDir, youtubeLibraryDir } from '../paths.js';
-import { upsertYoutubeVideosAsSources } from '../canonical-bookmarks-db.js';
+import { upsertYoutubeVideosAsSources, type YoutubeSourceVideoInput } from '../canonical-bookmarks-db.js';
 import { fetchVideo as fetchVideoDefault, NoTranscriptError, type VideoFetchResult } from './fetch.js';
 import { generateNotes, renderNotesMarkdown } from './notes.js';
 import { buildScript } from './script.js';
 import { detectSlides } from './slides.js';
 import { assembleVideo as assembleVideoDefault, type AssembleVideoInput } from './video-assemble.js';
-import { loadYoutubeState, markVideo, saveYoutubeState, shouldProcess } from './state.js';
+import { loadYoutubeState, markVideo, shouldProcess, updateYoutubeState } from './state.js';
 
 export type OverviewMode = 'none' | 'audio' | 'video';
 
@@ -20,6 +20,7 @@ export interface ProcessVideoOptions {
   tts?: TtsClient;
   targetMinutes?: number;
   slideConfidence?: number;
+  indexCanonical?: boolean;
   assembleVideo?: (input: AssembleVideoInput) => Promise<{ outPath: string; durationSec: number }>;
   fetchVideo?: (videoId: string, options: { wantFrames?: boolean }) => Promise<VideoFetchResult>;
 }
@@ -31,6 +32,7 @@ export interface ProcessVideoResult {
   notesPath?: string;
   audioPath?: string;
   videoPath?: string;
+  canonicalSource?: YoutubeSourceVideoInput;
 }
 
 export async function processVideo(videoId: string, options: ProcessVideoOptions): Promise<ProcessVideoResult> {
@@ -41,8 +43,9 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
     fetched = await fetchVideo(videoId, { wantFrames: options.overview === 'video' });
   } catch (error) {
     if (error instanceof NoTranscriptError) {
-      markVideo(state, videoId, { status: 'skipped-no-transcript', error: error.message, artifacts: {} });
-      await saveYoutubeState(state);
+      await updateYoutubeState((latest) => {
+        markVideo(latest, videoId, { status: 'skipped-no-transcript', error: error.message, artifacts: {} });
+      });
       return { videoId, status: 'skipped-no-transcript', processed: false };
     }
     throw error;
@@ -85,8 +88,8 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
           const audioSegmentPaths: string[] = [];
           for (let i = 0; i < script.segments.length; i += 1) {
             const audioPath = path.join(artifactDir, `segment-${i}.mp3`);
-            await tts.synthesize(script.segments[i].text, audioPath);
-            audioSegmentPaths.push(audioPath);
+            const audio = await tts.synthesize(script.segments[i].text, audioPath);
+            audioSegmentPaths.push(audio.outPath);
           }
           const videoPath = path.join(artifactDir, `${videoId}.overview.mp4`);
           await (options.assembleVideo ?? assembleVideoDefault)({
@@ -115,25 +118,27 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
 
   await mkdir(path.dirname(notesPath), { recursive: true });
   await writeFile(notesPath, notesMarkdown, 'utf8');
-  await upsertYoutubeVideosAsSources([{
+  const canonicalSource: YoutubeSourceVideoInput = {
     videoId,
     title: fetched.meta.title,
     tldr: notes.tldr,
     topics: notes.topics,
     published: fetched.meta.publishDate ?? null,
-  }]);
+  };
+  if (options.indexCanonical !== false) await upsertYoutubeVideosAsSources([canonicalSource]);
 
-  markVideo(state, videoId, {
-    status,
-    contentHash: fetched.contentHash,
-    title: fetched.meta.title,
-    channel: fetched.meta.channel,
-    durationSec: fetched.meta.durationSec,
-    artifacts,
+  await updateYoutubeState((latest) => {
+    markVideo(latest, videoId, {
+      status,
+      contentHash: fetched.contentHash,
+      title: fetched.meta.title,
+      channel: fetched.meta.channel,
+      durationSec: fetched.meta.durationSec,
+      artifacts,
+    });
   });
-  await saveYoutubeState(state);
 
-  return { videoId, status, processed: true, notesPath, audioPath: artifacts.audioPath, videoPath: artifacts.videoPath };
+  return { videoId, status, processed: true, notesPath, audioPath: artifacts.audioPath, videoPath: artifacts.videoPath, canonicalSource };
 }
 
 async function synthesizeAudioOverview(videoId: string, fetched: VideoFetchResult, options: ProcessVideoOptions): Promise<string> {
@@ -141,6 +146,6 @@ async function synthesizeAudioOverview(videoId: string, fetched: VideoFetchResul
   const audioText = script.segments.map((segment) => segment.text).join('\n\n');
   const audioPath = path.join(youtubeArtifactsDir(videoId), `${videoId}.overview.mp3`);
   await mkdir(path.dirname(audioPath), { recursive: true });
-  await (options.tts ?? createTtsClient()).synthesize(audioText, audioPath);
-  return audioPath;
+  const result = await (options.tts ?? createTtsClient()).synthesize(audioText, audioPath);
+  return result.outPath;
 }

@@ -72,7 +72,7 @@ export async function fetchVideo(videoId: string, options: FetchVideoOptions = {
     transcriptText,
     segments,
     frames,
-    contentHash: crypto.createHash('sha256').update(`${videoId}\n${meta.title}\n${meta.durationSec ?? ''}\n${transcriptText.length}`).digest('hex'),
+    contentHash: crypto.createHash('sha256').update(`${videoId}\n${meta.title}\n${meta.durationSec ?? ''}\n${transcriptText}`).digest('hex'),
   };
 }
 

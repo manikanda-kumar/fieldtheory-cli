@@ -31,7 +31,7 @@
 
 - OpenRouter is used only for chat/vision LLM work. It does not provide TTS.
 - TTS uses direct OpenAI or local engines through `src/llm/tts-client.ts`; Gemini TTS is intentionally not exposed in the v1 CLI surface.
-- `yt-dlp`, `summarize`, `ffmpeg`, and `ffprobe` are optional runtime tools; unit tests stub them.
+- `yt-dlp`, `summarize`, and `ffmpeg` are optional runtime tools; unit tests stub them.
 - Video overviews are slide-gated. Non-slide-heavy videos remain notes-only.
 - No schema changes were required for canonical indexing; YouTube videos are stored in `bookmark_sources` with `source='youtube'`.
 - Idempotency is tracked in `youtube/state.json` by video content hash.

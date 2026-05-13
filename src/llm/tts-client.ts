@@ -9,7 +9,7 @@ const DEFAULT_MAX_CHUNK_CHARS = 4000;
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 export type TtsEngine = 'openai' | 'gemini' | 'say' | 'piper' | 'auto';
 type ConcreteTtsEngine = Exclude<TtsEngine, 'auto'>;
-type SpawnFn = (command: string, args: string[]) => Promise<void>;
+type SpawnFn = (command: string, args: string[], input?: string) => Promise<void>;
 
 export interface TtsClientOptions {
   engine?: TtsEngine;
@@ -31,6 +31,7 @@ export interface SynthesizeResult {
 }
 
 export interface TtsClient {
+  resolve?: () => ConcreteTtsEngine;
   synthesize(text: string, outPath: string, options?: SynthesizeOptions): Promise<SynthesizeResult>;
 }
 
@@ -55,24 +56,25 @@ export function createTtsClient(options: TtsClientOptions = {}): TtsClient {
   const spawn = options.spawn ?? spawnCommand;
   const maxChunkChars = options.maxChunkChars ?? DEFAULT_MAX_CHUNK_CHARS;
 
-  const openaiKey = () => options.apiKeys ? options.apiKeys.openai?.trim() ?? '' : process.env.OPENAI_API_KEY?.trim() ?? '';
-  const geminiKey = () => options.apiKeys ? options.apiKeys.gemini?.trim() ?? '' : process.env.GEMINI_API_KEY?.trim() ?? '';
+  const openaiKey = () => options.apiKeys?.openai?.trim() || process.env.OPENAI_API_KEY?.trim() || '';
+  const geminiKey = () => options.apiKeys?.gemini?.trim() || process.env.GEMINI_API_KEY?.trim() || '';
 
   async function synthesize(text: string, outPath: string, synthOptions: SynthesizeOptions = {}): Promise<SynthesizeResult> {
     const selected = resolveEngine();
-    await mkdir(path.dirname(outPath), { recursive: true });
+    const actualOutPath = localAudioPath(outPath, selected);
+    await mkdir(path.dirname(actualOutPath), { recursive: true });
 
     if (selected === 'openai') {
-      await synthesizeOpenAi(text, outPath, synthOptions);
+      await synthesizeOpenAi(text, actualOutPath, synthOptions);
     } else if (selected === 'gemini') {
-      await synthesizeGemini(text, outPath);
+      await synthesizeGemini(text, actualOutPath);
     } else if (selected === 'say') {
-      await spawn('say', ['-o', outPath, text]);
+      await spawn('say', ['--file-format=AIFF', '-o', actualOutPath], text);
     } else {
-      await spawn('piper', ['--output_file', outPath],);
+      await spawn('piper', ['--output_file', actualOutPath], text);
     }
 
-    return { engine: selected, outPath };
+    return { engine: selected, outPath: actualOutPath };
   }
 
   function resolveEngine(): ConcreteTtsEngine {
@@ -119,7 +121,17 @@ export function createTtsClient(options: TtsClientOptions = {}): TtsClient {
     throw new TtsRequestError('Gemini TTS is not implemented yet', 'gemini');
   }
 
-  return { synthesize };
+  return { resolve: resolveEngine, synthesize };
+}
+
+function localAudioPath(outPath: string, engine: ConcreteTtsEngine): string {
+  if (engine === 'say') return replaceExtension(outPath, '.aiff');
+  if (engine === 'piper') return replaceExtension(outPath, '.wav');
+  return outPath;
+}
+
+function replaceExtension(filePath: string, extension: string): string {
+  return path.join(path.dirname(filePath), `${path.basename(filePath, path.extname(filePath))}${extension}`);
 }
 
 function chunkText(text: string, maxChunkChars: number): string[] {
@@ -140,10 +152,13 @@ function chunkText(text: string, maxChunkChars: number): string[] {
   return chunks.length ? chunks : [''];
 }
 
-function spawnCommand(command: string, args: string[]): Promise<void> {
+function spawnCommand(command: string, args: string[], input?: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = nodeSpawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = nodeSpawn(command, args, { stdio: [input == null ? 'ignore' : 'pipe', 'ignore', 'pipe'] });
     let stderr = '';
+    if (input != null) {
+      child.stdin?.end(input);
+    }
     child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
     child.on('error', reject);
     child.on('close', (code) => {

@@ -79,7 +79,7 @@ Optional external tools:
 
 - `yt-dlp` improves playlist, metadata, and transcript extraction.
 - `summarize` can provide Whisper transcript and slide/OCR extraction when native transcript sources fail.
-- `ffmpeg`/`ffprobe` are required for video overview assembly.
+- `ffmpeg` is required for video overview assembly.
 
 Overview modes:
 
