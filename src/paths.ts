@@ -90,11 +90,31 @@ export function browserBookmarksMetaPath(browser: string, profile: string): stri
   return path.join(browserBookmarksDir(browser, profile), 'meta.json');
 }
 
-function safeBrowserPathSegment(value: string, label: string): string {
+export function youtubeDir(): string {
+  return path.join(dataDir(), 'youtube');
+}
+
+export function youtubeStatePath(): string {
+  return path.join(youtubeDir(), 'state.json');
+}
+
+export function youtubeArtifactsDir(videoId: string): string {
+  return path.join(youtubeDir(), 'artifacts', safePathSegment(videoId, 'youtube video id'));
+}
+
+export function youtubeLibraryDir(): string {
+  return path.join(libraryDir(), 'youtube');
+}
+
+function safePathSegment(value: string, label: string): string {
   if (!value || value === '.' || value === '..' || path.isAbsolute(value) || value.includes('/') || value.includes('\\')) {
-    throw new Error(`Invalid browser bookmark ${label}: ${value}`);
+    throw new Error(`Invalid ${label}: ${value}`);
   }
   return value;
+}
+
+function safeBrowserPathSegment(value: string, label: string): string {
+  return safePathSegment(value, `browser bookmark ${label}`);
 }
 
 export function twitterOauthTokenPath(): string {

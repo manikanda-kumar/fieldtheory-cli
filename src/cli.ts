@@ -40,6 +40,10 @@ import { exportBookmarks } from './md-export.js';
 import { renderViz } from './bookmarks-viz.js';
 import { syncBrowserBookmarks } from './browser-bookmarks.js';
 import type { BrowserBookmarkProvider } from './browser-bookmarks.js';
+import { createOpenRouterClient } from './llm/openrouter-client.js';
+import { createTtsClient, type TtsEngine } from './llm/tts-client.js';
+import { processVideo, type OverviewMode } from './youtube/overview.js';
+import { resolvePlaylist } from './youtube/playlist.js';
 import { listBrowserIds } from './browsers.js';
 import { configureHttpProxyFromEnv } from './http-proxy.js';
 import { dataDir, ensureDataDir, isFirstRun, migrateLegacyIdeasData, twitterBookmarksIndexPath, twitterBackfillStatePath, mdDir, bookmarkMediaDir, bookmarkMediaManifestPath } from './paths.js';
@@ -1161,6 +1165,68 @@ export function buildCli() {
 
       console.log(`  ✓ ${result.synced} browser bookmarks synced`);
       console.log(`  ✓ Cache: ${result.cachePath}`);
+    }));
+
+  program
+    .command('sync-youtube')
+    .description('Sync a public YouTube playlist into local notes and the canonical bookmark index')
+    .requiredOption('--playlist <url-or-id>', 'Public YouTube playlist URL or list ID')
+    .option('--overview <mode>', 'Overview mode: none, audio, or video', 'none')
+    .option('--limit <n>', 'Max videos to consider', (v: string) => Number(v))
+    .option('--force', 'Reprocess videos even when state says they are unchanged', false)
+    .option('--dry-run', 'Print videos that would be processed without fetching transcripts or calling LLMs', false)
+    .option('--model <openrouter-model-id>', 'Override the primary OpenRouter model')
+    .option('--target-minutes <n>', 'Target overview length in minutes (reserved for audio/video)', (v: string) => Number(v), 12)
+    .option('--tts <engine>', 'TTS engine for audio/video overviews: auto, openai, say, or piper', 'auto')
+    .option('--slide-confidence <n>', 'Slide gate confidence threshold for video overviews', (v: string) => Number(v), 0.6)
+    .action(safe(async (options) => {
+      const overview = String(options.overview ?? 'none') as OverviewMode;
+      if (!['none', 'audio', 'video'].includes(overview)) {
+        console.error('  Error: --overview must be one of: none, audio, video.');
+        process.exitCode = 1;
+        return;
+      }
+      const playlist = await resolvePlaylist(String(options.playlist));
+      const limit = typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : playlist.videos.length;
+      const videos = playlist.videos.slice(0, limit);
+
+      if (options.dryRun) {
+        console.log(`  YouTube playlist ${playlist.playlistId}: ${videos.length} video(s) would be considered`);
+        for (const video of videos) console.log(`  - ${video.videoId} ${video.title}`);
+        return;
+      }
+
+      const llm = createOpenRouterClient({ primaryModel: options.model ? String(options.model) : undefined });
+      const ttsEngine = String(options.tts ?? 'auto') as TtsEngine;
+      if (!['auto', 'openai', 'say', 'piper'].includes(ttsEngine)) {
+        console.error('  Error: --tts must be one of: auto, openai, say, piper.');
+        process.exitCode = 1;
+        return;
+      }
+      const tts = overview === 'none' ? undefined : createTtsClient({ engine: ttsEngine });
+      let processed = 0;
+      let skipped = 0;
+      let failed = 0;
+      for (const video of videos) {
+        try {
+          const result = await processVideo(video.videoId, {
+            overview,
+            force: Boolean(options.force),
+            llm,
+            tts,
+            targetMinutes: Number(options.targetMinutes) || 12,
+            slideConfidence: Number(options.slideConfidence) || 0.6,
+          });
+          if (result.processed) processed += 1;
+          else skipped += 1;
+          console.log(`  ${result.processed ? '✓' : '-'} ${video.title} (${result.status})`);
+        } catch (error) {
+          failed += 1;
+          console.error(`  ! ${video.title} (failed: ${error instanceof Error ? error.message : String(error)})`);
+        }
+      }
+      console.log(`  ✓ YouTube sync complete: ${processed} processed, ${skipped} skipped, ${failed} failed`);
+      if (failed > 0) process.exitCode = 1;
     }));
 
   // ── search ──────────────────────────────────────────────────────────────

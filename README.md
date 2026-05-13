@@ -48,7 +48,44 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 | `ft sync-browser --browser chrome --bookmarks-file <path>` | Sync Chrome bookmarks from a Chromium `Bookmarks` file into the unified index |
 | `ft sync-browser --browser vivaldi --bookmarks-file <path>` | Sync Vivaldi bookmarks from a Chromium `Bookmarks` file into the unified index |
 | `ft sync-browser --browser safari` | Safari bookmark sync is not implemented yet and exits with a clear error |
+| `ft sync-youtube --playlist <url-or-id>` | Sync a public YouTube playlist into local markdown notes and the unified index |
 | `ft auth` | Set up OAuth for API-based sync (optional) |
+
+### YouTube playlists
+
+`ft sync-youtube` turns a public YouTube playlist into local searchable artifacts:
+
+```bash
+ft sync-youtube --playlist PL... --overview none
+ft sync-youtube --playlist "https://www.youtube.com/playlist?list=PL..." --overview audio
+ft sync-youtube --playlist PL... --overview video --target-minutes 12 --slide-confidence 0.6
+```
+
+What it does:
+
+- Resolves a public playlist with `yt-dlp` when available, otherwise parses the public playlist page.
+- Fetches transcripts and metadata, then uses OpenRouter to generate structured notes.
+- Writes markdown notes to `~/.fieldtheory/library/youtube/<videoId>.md`.
+- Stores state and heavy artifacts under `~/.fieldtheory/bookmarks/youtube/`.
+- Indexes each video into the unified canonical SQLite index so `ft search --unified` can find it.
+
+LLM and TTS configuration:
+
+- `OPENROUTER_API_KEY` is required for notes/script generation. The default model chain is OpenAI via OpenRouter with Gemini fallback.
+- `--model <openrouter-model-id>` overrides the primary OpenRouter model.
+- Audio/video overview TTS uses TTS engines directly. `OPENAI_API_KEY` is the supported high-quality path; `--tts say` and `--tts piper` are local fallback options when those commands are installed. OpenRouter does not provide TTS endpoints.
+
+Optional external tools:
+
+- `yt-dlp` improves playlist, metadata, and transcript extraction.
+- `summarize` can provide Whisper transcript and slide/OCR extraction when native transcript sources fail.
+- `ffmpeg`/`ffprobe` are required for video overview assembly.
+
+Overview modes:
+
+- `--overview none` (default): notes only.
+- `--overview audio`: notes plus a local audio overview artifact when TTS succeeds; notes still write if TTS fails.
+- `--overview video`: notes plus a slide-gated video overview for slide-heavy talks/screen-shares. Non-slide-heavy videos stay notes-only; video assembly failures degrade to audio when TTS succeeds.
 
 ### Search and browse
 
@@ -206,12 +243,16 @@ Data is stored locally under `~/.fieldtheory/`:
   bookmarks.db            # SQLite FTS5 search index
   bookmarks-meta.json     # sync metadata
   oauth-token.json        # OAuth token (if using API mode, chmod 600)
+  youtube/
+    state.json            # YouTube playlist/video processing state
+    artifacts/<videoId>/  # audio/video/frames and other heavy generated artifacts
   browsers/
     chrome/Default/bookmarks.jsonl   # raw Chrome bookmark snapshot
     vivaldi/Default/bookmarks.jsonl  # raw Vivaldi bookmark snapshot
 
 ~/.fieldtheory/library/
   index.md                # markdown knowledge base (ft wiki / ft md)
+  youtube/<videoId>.md    # YouTube transcript notes
 
 ~/.fieldtheory/commands/
   *.md                    # portable commands used by Field Theory and agents

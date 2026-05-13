@@ -1,5 +1,5 @@
 Goal (incl. success criteria):
-- ACTIVE: Add `ft sync-youtube --playlist <url|id>` — turn a public YouTube watch-later playlist into local artifacts: structured text notes (transcript→LLM) for every new video, written to the markdown library and indexed in the existing SQLite FTS DB; plus an optional local AI overview — `--overview audio` (condensed ~12-min script→TTS→mp3) or `--overview video` (slide-gated: only slide-heavy videos get a script→TTS→ffmpeg slideshow mp4). Idempotent reruns. LLM via OpenRouter (OpenAI primary, Gemini fallback); TTS via real OpenAI API (OpenRouter has no TTS endpoint), Gemini/`say`/`piper` fallback. Reuse `bookmark_sources`/`canonical_bookmarks` (source `youtube`), no schema change. Optional external bins: `summarize` (steipete/summarize), `yt-dlp`, `ffmpeg`, `tesseract` — all runtime-detected with fallbacks. Implemented by sub-agents; every implementation task paired with an orchestrator review task.
+- ACTIVE: Add `ft sync-youtube --playlist <url|id>` — turn a public YouTube watch-later playlist into local artifacts: structured text notes (transcript→LLM) for every new video, written to the markdown library and indexed in the existing SQLite FTS DB; plus an optional local AI overview — `--overview audio` (condensed ~12-min script→TTS→mp3) or `--overview video` (slide-gated: only slide-heavy videos get a script→TTS→ffmpeg slideshow mp4, with audio degradation when assembly fails). Idempotent reruns. LLM via OpenRouter (OpenAI primary, Gemini fallback); TTS via real OpenAI API (OpenRouter has no TTS endpoint), with local `say`/`piper` options when installed. Reuse `bookmark_sources`/`canonical_bookmarks` (source `youtube`), no schema change. Optional external bins: `summarize` (steipete/summarize), `yt-dlp`, `ffmpeg`, `ffprobe` — runtime-detected with fallbacks where available. Implemented by sub-agents with one consolidated Oracle review at the end.
 - DONE (prior): browser bookmark sync (Chrome/Vivaldi) with hybrid raw caches + canonical dedupe index; `ft sync` media opt-in (`--media`); docs under `docs/specs/`+`docs/plans/`; remote → `manikanda-kumar/fieldtheory-cli`. All committed on `main` through `50e19c9`.
 
 Constraints/Assumptions:
@@ -148,15 +148,18 @@ Done:
   - Code quality reviewer approved.
 
 Now:
-- Wrote the YouTube playlist → notes/overviews implementation plan: `docs/plans/2026-05-12-youtube-playlist-overviews.md` (14 tasks across 6 phases, each impl task + a review task; new files under `src/youtube/*` and `src/llm/*`; CLI `ft sync-youtube`).
-- Browser bookmark work + `--media` opt-in already committed on `main` through `50e19c9`; only untracked review artifacts (`review.md`, `docs/reviews/`) plus the new plan doc remain in the worktree.
+- Implemented the YouTube playlist → notes/overviews plan through the v1 CLI surface:
+  - `ft sync-youtube --playlist <url-or-id>` with `--overview none|audio|video`, `--limit`, `--force`, `--dry-run`, `--model`, `--target-minutes`, `--tts`, and `--slide-confidence` flags.
+  - New OpenRouter and TTS clients under `src/llm/`.
+  - New YouTube modules under `src/youtube/` for state, playlist resolution, fetching, summarize bridge, notes, script, slide gate, overview orchestration, and ffmpeg assembly.
+  - YouTube videos are indexed into the canonical SQLite index as `source='youtube'`.
+  - Docs added in README and `docs/specs/2026-05-12-youtube-overviews-design.md`.
 
 Next:
-- User to review the plan; then sub-agents implement Task 1 onward; orchestrator runs Review N after each.
-- Verify `summarize` CLI's actual JSON-output flags before/while doing plan Task 5 (most likely spot needing a small correction).
-- (Carryover, low priority) decide on Vivaldi fixture CLI smoke + `ft sync --media` smoke; decide fate of untracked review artifacts.
+- Optional follow-up: tune slide extraction limits/thresholds for large playlists after more real-world runs.
 
 Open questions (UNCONFIRMED if needed):
+- UNCONFIRMED: whether Gemini TTS should be implemented or kept out of the public `--tts` surface.
 - UNCONFIRMED: whether unified search should become the default after the explicit `--unified` rollout proves stable.
 - UNCONFIRMED: whether `--all` and `--all-profiles` should be implemented in the first browser sync PR or deferred after single-browser sync is stable.
 - UNCONFIRMED: whether to implement Safari plist parsing in a follow-up or keep Safari explicitly unsupported.

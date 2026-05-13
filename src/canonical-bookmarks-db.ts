@@ -99,6 +99,14 @@ export interface SearchCanonicalOptions {
   limit?: number;
 }
 
+export interface YoutubeSourceVideoInput {
+  videoId: string;
+  title: string;
+  tldr: string;
+  topics: string[];
+  published?: string | null;
+}
+
 function initCanonicalSchema(db: Database): void {
   db.run(`CREATE TABLE IF NOT EXISTS bookmark_sources (
     id TEXT PRIMARY KEY,
@@ -251,6 +259,55 @@ function browserSourceFromRecord(record: BrowserBookmarkRecord): CanonicalSource
     folderPath: record.folderPath ?? [],
     links: [],
   };
+}
+
+function youtubeSourceFromVideo(video: YoutubeSourceVideoInput, savedAt: string): CanonicalSourceInput {
+  const sourceUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
+  return {
+    id: `youtube:${video.videoId}`,
+    source: 'youtube',
+    profile: null,
+    sourceItemId: video.videoId,
+    sourceUrl,
+    targetUrl: null,
+    dedupeKey: dedupeKeyForUrl(sourceUrl),
+    title: video.title,
+    text: compactText([video.tldr, video.topics]),
+    authorHandle: null,
+    savedAt,
+    createdAt: video.published ?? null,
+    modifiedAt: null,
+    folderPath: [],
+    links: [],
+  };
+}
+
+function readYoutubeSourcesFromDb(db: Database): CanonicalSourceInput[] {
+  const rows = db.exec(
+    `SELECT id, source, profile, source_item_id, source_url, target_url, dedupe_key,
+            title, text, author_handle, saved_at, created_at, modified_at,
+            folder_path_json, links_json
+     FROM bookmark_sources
+     WHERE source = 'youtube' AND active = 1`,
+  );
+
+  return (rows[0]?.values ?? []).map((row) => ({
+    id: row[0] as string,
+    source: row[1] as string,
+    profile: (row[2] as string) ?? null,
+    sourceItemId: row[3] as string,
+    sourceUrl: row[4] as string,
+    targetUrl: (row[5] as string) ?? null,
+    dedupeKey: row[6] as string,
+    title: (row[7] as string) ?? null,
+    text: (row[8] as string) ?? null,
+    authorHandle: (row[9] as string) ?? null,
+    savedAt: (row[10] as string) ?? null,
+    createdAt: (row[11] as string) ?? null,
+    modifiedAt: (row[12] as string) ?? null,
+    folderPath: parseJsonStringArray(row[13]),
+    links: parseJsonStringArray(row[14]),
+  }));
 }
 
 function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[]): CanonicalGroup {
@@ -481,6 +538,7 @@ export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions = {
         .filter((row): row is CanonicalSourceInput => row !== null);
       sourceRows.push(...normalized);
     }
+    sourceRows.push(...readYoutubeSourcesFromDb(db));
 
     const groups = new Map<string, CanonicalSourceInput[]>();
     for (const source of sourceRows) {
@@ -518,6 +576,38 @@ export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions = {
   } finally {
     db.close();
   }
+}
+
+export async function upsertYoutubeVideosAsSources(videos: YoutubeSourceVideoInput[]): Promise<CanonicalRebuildResult> {
+  const dbPath = twitterBookmarksIndexPath();
+  const db = await openDb(dbPath);
+  const savedAt = new Date().toISOString();
+
+  try {
+    initCanonicalSchema(db);
+    db.run('BEGIN TRANSACTION');
+    try {
+      const sourceStmt = db.prepare(INSERT_SOURCE_SQL);
+      try {
+        for (const video of videos) {
+          const source = youtubeSourceFromVideo(video, savedAt);
+          db.run(`DELETE FROM bookmark_sources WHERE id = ?`, [source.id]);
+          sourceStmt.run(sourceInsertParams(source, canonicalIdForDedupeKey(source.dedupeKey)));
+        }
+      } finally {
+        sourceStmt.free();
+      }
+      db.run('COMMIT');
+    } catch (error) {
+      db.run('ROLLBACK');
+      throw error;
+    }
+    saveDb(db, dbPath);
+  } finally {
+    db.close();
+  }
+
+  return rebuildCanonicalIndex();
 }
 
 export async function searchCanonicalBookmarks(options: SearchCanonicalOptions): Promise<CanonicalSearchResult[]> {
