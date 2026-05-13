@@ -1,7 +1,9 @@
 import path from 'node:path';
-import { mkdir, open, rm } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
 import { readJson, writeJson, pathExists } from '../fs.js';
 import { youtubeStatePath } from '../paths.js';
+
+const LOCK_STALE_MS = 10 * 60 * 1000;
 
 export interface YoutubePlaylistState {
   lastSyncedAt?: string;
@@ -122,8 +124,32 @@ async function acquireYoutubeStateLock(): Promise<() => Promise<void>> {
       return async () => { await rm(lockPath, { force: true }); };
     } catch (error) {
       if ((error as { code?: string }).code !== 'EEXIST') throw error;
+      if (await isStaleLock(lockPath)) {
+        await rm(lockPath, { force: true });
+        continue;
+      }
       if (Date.now() > deadline) throw new Error(`Timed out waiting for YouTube state lock: ${lockPath}`);
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+  }
+}
+
+async function isStaleLock(lockPath: string): Promise<boolean> {
+  try {
+    const [raw, lockStat] = await Promise.all([readFile(lockPath, 'utf8'), stat(lockPath)]);
+    if (Date.now() - lockStat.mtimeMs > LOCK_STALE_MS) return true;
+    const pid = Number(raw.split('\n')[0]);
+    return Number.isInteger(pid) && pid > 0 && !isPidAlive(pid);
+  } catch {
+    return false;
+  }
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as { code?: string }).code === 'EPERM';
   }
 }

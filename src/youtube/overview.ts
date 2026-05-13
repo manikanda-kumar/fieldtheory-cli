@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { OpenRouterClient } from '../llm/openrouter-client.js';
 import { createTtsClient, type TtsClient } from '../llm/tts-client.js';
 import { youtubeArtifactsDir, youtubeLibraryDir } from '../paths.js';
@@ -80,12 +80,12 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
       if (!slideDecision.isSlideHeavy) {
         artifacts.videoOverview = 'skipped-not-slides';
       } else {
+        const artifactDir = youtubeArtifactsDir(videoId);
+        const audioSegmentPaths: string[] = [];
         try {
           const script = await buildScript({ ...fetched, slides: slideDecision.slides }, options.llm, { targetMinutes: options.targetMinutes ?? 12 });
-          const artifactDir = youtubeArtifactsDir(videoId);
           await mkdir(artifactDir, { recursive: true });
           const tts = options.tts ?? createTtsClient();
-          const audioSegmentPaths: string[] = [];
           for (let i = 0; i < script.segments.length; i += 1) {
             const audioPath = path.join(artifactDir, `segment-${i}.mp3`);
             const audio = await tts.synthesize(script.segments[i].text, audioPath);
@@ -103,7 +103,9 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
           notesMarkdown += `\n## Video overview\n\n- ${videoPath}\n`;
         } catch {
           try {
-            const audioPath = await synthesizeAudioOverview(videoId, fetched, options);
+            const audioPath = audioSegmentPaths.length
+              ? await concatenateAudioSegments(videoId, audioSegmentPaths)
+              : await synthesizeAudioOverview(videoId, fetched, options);
             artifacts.audioPath = audioPath;
             artifacts.videoOverview = 'failed-degraded-to-audio';
             notesMarkdown += `\n## Audio overview\n\n- ${audioPath}\n\nVideo assembly failed, so FieldTheory kept an audio overview instead.\n`;
@@ -148,4 +150,12 @@ async function synthesizeAudioOverview(videoId: string, fetched: VideoFetchResul
   await mkdir(path.dirname(audioPath), { recursive: true });
   const result = await (options.tts ?? createTtsClient()).synthesize(audioText, audioPath);
   return result.outPath;
+}
+
+async function concatenateAudioSegments(videoId: string, audioSegmentPaths: string[]): Promise<string> {
+  const extension = path.extname(audioSegmentPaths[0]) || '.audio';
+  const outPath = path.join(youtubeArtifactsDir(videoId), `${videoId}.overview${extension}`);
+  const buffers = await Promise.all(audioSegmentPaths.map((audioPath) => readFile(audioPath)));
+  await writeFile(outPath, Buffer.concat(buffers));
+  return outPath;
 }

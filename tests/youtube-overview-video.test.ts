@@ -58,3 +58,25 @@ test('processVideo video branch records skipped state for non-slide-heavy videos
     assert.equal((await loadYoutubeState()).videos.v1.artifacts.videoOverview, 'skipped-not-slides');
   });
 });
+
+test('processVideo reuses synthesized segment audio when video assembly fails', async () => {
+  await withTempRoots(async (tmp) => {
+    const framePath = path.join(tmp, 'frame.png');
+    await fs.writeFile(framePath, 'same');
+    const result = await processVideo('v1', {
+      overview: 'video',
+      llm: {
+        chat: async () => ({ text: '{}', json: { tldr: 'Summary', keyPoints: [], chapters: [], actionItems: [], topics: [], segments: [{ text: 'A', approxSeconds: 1, slideRef: 0 }, { text: 'B', approxSeconds: 1, slideRef: 0 }] } }),
+        chatVision: async () => ({ text: '{}', json: { isSlides: true, confidence: 0.9, reason: 'slides' } }),
+      },
+      tts: { synthesize: async (text, outPath) => { await fs.writeFile(outPath, text); return { engine: 'openai', outPath }; } },
+      assembleVideo: async () => { throw new Error('ffmpeg failed'); },
+      fetchVideo: async () => ({ meta: { title: 'Video' }, transcriptText: 'Transcript', segments: [{ tSec: 0, durationSec: 1, text: 'Transcript' }], frames: [{ tSec: 0, imagePath: framePath }, { tSec: 1, imagePath: framePath }, { tSec: 2, imagePath: framePath }], contentHash: 'hash' }),
+    });
+
+    assert.equal(result.status, 'partial');
+    assert.ok(result.audioPath);
+    assert.equal(await fs.readFile(result.audioPath!, 'utf8'), 'AB');
+    assert.equal((await loadYoutubeState()).videos.v1.artifacts.videoOverview, 'failed-degraded-to-audio');
+  });
+});

@@ -14,6 +14,7 @@ import {
   markVideo,
   saveYoutubeState,
   shouldProcess,
+  updateYoutubeState,
   type YoutubeState,
 } from '../src/youtube/state.js';
 
@@ -77,6 +78,20 @@ test('youtube state round-trips through load and save', async () => {
     await saveYoutubeState(state);
 
     assert.deepEqual(await loadYoutubeState(), state);
+  });
+});
+
+test('youtube state update reclaims stale lock from dead pid', async () => {
+  await withTempEnv(async () => {
+    await fs.mkdir(path.dirname(youtubeStatePath()), { recursive: true });
+    await fs.writeFile(`${youtubeStatePath()}.lock`, '999999999\n2026-05-12T00:00:00.000Z\n', 'utf8');
+
+    await updateYoutubeState((state) => {
+      markVideo(state, 'v1', { status: 'done', artifacts: {} }, '2026-05-12T00:00:00.000Z');
+    });
+
+    assert.equal((await loadYoutubeState()).videos.v1.status, 'done');
+    await assert.rejects(fs.stat(`${youtubeStatePath()}.lock`), /ENOENT/);
   });
 });
 
