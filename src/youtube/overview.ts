@@ -39,8 +39,10 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
   const fetchVideo = options.fetchVideo ?? fetchVideoDefault;
   const state = await loadYoutubeState();
   let fetched: VideoFetchResult;
+  const slidesDir = options.overview === 'video' ? youtubeArtifactsDir(videoId) : undefined;
+  if (slidesDir) await mkdir(slidesDir, { recursive: true });
   try {
-    fetched = await fetchVideo(videoId, { wantFrames: options.overview === 'video' });
+    fetched = await fetchVideo(videoId, { wantFrames: options.overview === 'video', slidesDir });
   } catch (error) {
     if (error instanceof NoTranscriptError) {
       await updateYoutubeState((latest) => {
@@ -101,15 +103,19 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
           });
           artifacts.videoPath = videoPath;
           notesMarkdown += `\n## Video overview\n\n- ${videoPath}\n`;
-        } catch {
+        } catch (videoError) {
+          const videoErrorMessage = videoError instanceof Error ? videoError.message : String(videoError);
+          console.warn(`  ! video assembly failed for ${videoId}: ${videoErrorMessage}`);
           try {
             const audioPath = audioSegmentPaths.length
               ? await concatenateAudioSegments(videoId, audioSegmentPaths)
               : await synthesizeAudioOverview(videoId, fetched, options);
             artifacts.audioPath = audioPath;
             artifacts.videoOverview = 'failed-degraded-to-audio';
-            notesMarkdown += `\n## Audio overview\n\n- ${audioPath}\n\nVideo assembly failed, so FieldTheory kept an audio overview instead.\n`;
-          } catch {
+            notesMarkdown += `\n## Audio overview\n\n- ${audioPath}\n\nVideo assembly failed (${videoErrorMessage}), so FieldTheory kept an audio overview instead.\n`;
+          } catch (audioError) {
+            const audioErrorMessage = audioError instanceof Error ? audioError.message : String(audioError);
+            console.warn(`  ! audio fallback failed for ${videoId}: ${audioErrorMessage}`);
             artifacts.videoOverview = 'failed';
           }
           status = 'partial';
@@ -129,6 +135,15 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
   };
   if (options.indexCanonical !== false) await upsertYoutubeVideosAsSources([canonicalSource]);
 
+  // Enumerate the known artifact keys so unset ones (undefined) clear stale values
+  // from prior failed/degraded runs. markVideo merges artifacts shallowly, so omitting
+  // a key would otherwise let leftover failure markers (e.g. videoOverview) persist.
+  const artifactsForState: Record<string, string | undefined> = {
+    notesPath: artifacts.notesPath,
+    audioPath: artifacts.audioPath,
+    videoPath: artifacts.videoPath,
+    videoOverview: artifacts.videoOverview,
+  };
   await updateYoutubeState((latest) => {
     markVideo(latest, videoId, {
       status,
@@ -136,7 +151,7 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
       title: fetched.meta.title,
       channel: fetched.meta.channel,
       durationSec: fetched.meta.durationSec,
-      artifacts,
+      artifacts: artifactsForState,
     });
   });
 

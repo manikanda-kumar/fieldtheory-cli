@@ -537,7 +537,7 @@ function showSyncWelcome(): void {
 
 /** Check that bookmarks have been synced. Returns true if data exists. */
 function requireData(): boolean {
-  if (isFirstRun()) {
+  if (isFirstRun() && !fs.existsSync(twitterBookmarksIndexPath())) {
     console.log(`
   No bookmarks synced yet.
 

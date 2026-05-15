@@ -92,7 +92,7 @@ export function markVideo(
   updatedAt = new Date().toISOString(),
 ): YoutubeState {
   const existing = state.videos[videoId];
-  state.videos[videoId] = {
+  const next: YoutubeVideoState = {
     ...existing,
     ...patch,
     status: patch.status ?? existing?.status ?? 'pending',
@@ -102,6 +102,12 @@ export function markVideo(
     },
     updatedAt,
   };
+  // Clear stale error from prior failed attempts when the video reaches a
+  // successful terminal status, unless the patch explicitly carries one.
+  if ((next.status === 'done' || next.status === 'partial') && !('error' in patch)) {
+    delete next.error;
+  }
+  state.videos[videoId] = next;
   return state;
 }
 

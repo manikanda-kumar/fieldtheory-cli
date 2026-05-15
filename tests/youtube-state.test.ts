@@ -146,6 +146,55 @@ test('markVideo merges patches and refreshes updatedAt', async () => {
   });
 });
 
+test('markVideo clears stale error when transitioning to done', () => {
+  const state: YoutubeState = { version: 1, playlists: {}, videos: {} };
+
+  markVideo(state, 'v1', {
+    status: 'skipped-no-transcript',
+    error: 'No transcript available for YouTube video v1',
+    artifacts: {},
+  }, '2026-05-12T00:00:00.000Z');
+  assert.equal(state.videos.v1.error, 'No transcript available for YouTube video v1');
+
+  markVideo(state, 'v1', {
+    status: 'done',
+    contentHash: 'hash-1',
+    artifacts: { notesPath: '/tmp/v1.md' },
+  }, '2026-05-12T00:01:00.000Z');
+
+  assert.equal(state.videos.v1.status, 'done');
+  assert.equal(state.videos.v1.error, undefined);
+  assert.ok(!('error' in state.videos.v1));
+});
+
+test('markVideo preserves error on partial status when patch supplies one', () => {
+  const state: YoutubeState = { version: 1, playlists: {}, videos: {} };
+
+  markVideo(state, 'v1', {
+    status: 'partial',
+    error: 'video assembly failed',
+    artifacts: {},
+  }, '2026-05-12T00:00:00.000Z');
+
+  assert.equal(state.videos.v1.error, 'video assembly failed');
+});
+
+test('markVideo lets explicit undefined artifact values clear stale keys on serialization', async () => {
+  const state: YoutubeState = { version: 1, playlists: {}, videos: {} };
+  markVideo(state, 'v1', {
+    status: 'partial',
+    artifacts: { notesPath: '/n.md', audioPath: '/audio.mp3', videoOverview: 'failed-degraded-to-audio' },
+  }, '2026-05-12T00:00:00.000Z');
+
+  markVideo(state, 'v1', {
+    status: 'done',
+    artifacts: { notesPath: '/n.md', audioPath: undefined, videoPath: '/v.mp4', videoOverview: undefined },
+  }, '2026-05-12T00:01:00.000Z');
+
+  const serialized = JSON.parse(JSON.stringify(state.videos.v1));
+  assert.deepEqual(serialized.artifacts, { notesPath: '/n.md', videoPath: '/v.mp4' });
+});
+
 test('shouldProcess skips done videos with matching hash unless forced', () => {
   const state: YoutubeState = {
     version: 1,

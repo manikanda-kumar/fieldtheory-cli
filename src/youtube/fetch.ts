@@ -22,6 +22,8 @@ export interface VideoFetchResult {
 
 export interface FetchVideoOptions {
   wantFrames?: boolean;
+  /** Directory to pass as `--slides-dir` so slide images land alongside other per-video artifacts. */
+  slidesDir?: string;
   hasCommand?: (command: string) => boolean;
   runCommand?: (command: string, args: string[]) => Promise<string>;
   fetchText?: (url: string) => Promise<string>;
@@ -53,7 +55,7 @@ export async function fetchVideo(videoId: string, options: FetchVideoOptions = {
 
   if (!segments.length || options.wantFrames) {
     try {
-      const summarized = await (options.runSummarize ?? ((url, opts) => runSummarize(url, opts)))(videoUrl, { withSlides: options.wantFrames, withOcr: options.wantFrames });
+      const summarized = await (options.runSummarize ?? ((url, opts) => runSummarize(url, opts)))(videoUrl, { withSlides: options.wantFrames, outDir: options.slidesDir });
       if (!segments.length) segments = summarized.transcript.segments;
       meta.title = stringValue(summarized.meta.title) ?? meta.title;
       meta.channel = stringValue(summarized.meta.channel) ?? meta.channel;
