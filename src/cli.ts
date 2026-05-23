@@ -46,6 +46,9 @@ import { createOpenRouterClient } from './llm/openrouter-client.js';
 import { createTtsClient, type TtsEngine } from './llm/tts-client.js';
 import { processVideo, type OverviewMode } from './youtube/overview.js';
 import { resolvePlaylist } from './youtube/playlist.js';
+import { writeYoutubeIndexFromState } from './youtube/index-html.js';
+import { createEngineYoutubeLlmClient, createFallbackYoutubeLlmClient, type YoutubeLlmClient } from './youtube/llm.js';
+import type { YtDlpAccessOptions } from './youtube/yt-dlp.js';
 import { listBrowserIds } from './browsers.js';
 import { configureHttpProxyFromEnv } from './http-proxy.js';
 import { dataDir, ensureDataDir, isFirstRun, migrateLegacyIdeasData, twitterBookmarksIndexPath, twitterBackfillStatePath, mdDir, bookmarkMediaDir, bookmarkMediaManifestPath } from './paths.js';
@@ -258,6 +261,22 @@ export function parseCookieOption(cookies: unknown): { csrfToken?: string; cooki
   const parts = [`ct0=${csrfToken}`];
   if (authToken) parts.push(`auth_token=${authToken}`);
   return { csrfToken, cookieHeader: parts.join('; ') };
+}
+
+export function parseVideoIdsText(text: string): string[] {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const id = line.trim();
+    if (!id || id.startsWith('#') || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+function stringOption(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
 function warnIfEmpty(totalBookmarks: number): void {
@@ -1172,23 +1191,44 @@ export function buildCli() {
   program
     .command('sync-youtube')
     .description('Sync a public YouTube playlist into local notes and the canonical bookmark index')
-    .requiredOption('--playlist <url-or-id>', 'Public YouTube playlist URL or list ID')
-    .option('--overview <mode>', 'Overview mode: none, audio, or video', 'none')
+    .option('--playlist <url-or-id>', 'Public YouTube playlist URL or list ID')
+    .option('--video-ids-file <path>', 'Process newline-delimited YouTube video IDs instead of a full playlist; listed IDs are reprocessed without forcing the full playlist')
+    .option('--overview <mode>', 'Overview mode: none, slides, audio, or video', 'none')
     .option('--limit <n>', 'Max videos to consider', (v: string) => Number(v))
     .option('--force', 'Reprocess videos even when state says they are unchanged', false)
     .option('--dry-run', 'Print videos that would be processed without fetching transcripts or calling LLMs', false)
-    .option('--model <openrouter-model-id>', 'Override the primary OpenRouter model')
+    .option('--engine <name>', 'LLM CLI engine for notes/scripts: claude or codex (default comes from ft model/autodetect; OpenRouter is fallback)')
+    .option('--model <model>', 'Override the local engine model; values containing / also override the OpenRouter fallback model')
+    .option('--effort <effort>', 'Override local engine reasoning effort')
+    .option('--cookies-from-browser <spec>', 'Pass browser cookies to yt-dlp (example: chrome or "chrome:Profile 1"; env: FT_YOUTUBE_COOKIES_FROM_BROWSER)')
+    .option('--cookies-file <path>', 'Pass a Netscape cookies file to yt-dlp (env: FT_YOUTUBE_COOKIES_FILE)')
+    .option('--impersonate <target>', 'Pass a yt-dlp impersonation target, such as chrome (requires supported curl_cffi; env: FT_YOUTUBE_IMPERSONATE)')
     .option('--target-minutes <n>', 'Target overview length in minutes (reserved for audio/video)', (v: string) => Number(v), 12)
     .option('--tts <engine>', 'TTS engine for audio/video overviews: auto, openai, say, or piper', 'auto')
     .option('--slide-confidence <n>', 'Slide gate confidence threshold for video overviews', (v: string) => Number(v), 0.6)
+    .option('--request-delay-ms <n>', 'Delay between videos in ms to avoid YouTube rate limits', (v: string) => Number(v), 1500)
     .action(safe(async (options) => {
       const overview = String(options.overview ?? 'none') as OverviewMode;
-      if (!['none', 'audio', 'video'].includes(overview)) {
-        console.error('  Error: --overview must be one of: none, audio, video.');
+      if (!['none', 'slides', 'audio', 'video'].includes(overview)) {
+        console.error('  Error: --overview must be one of: none, slides, audio, video.');
         process.exitCode = 1;
         return;
       }
-      const playlist = await resolvePlaylist(String(options.playlist));
+      const ytDlp: YtDlpAccessOptions = {
+        cookiesFromBrowser: stringOption(options.cookiesFromBrowser) ?? process.env.FT_YOUTUBE_COOKIES_FROM_BROWSER,
+        cookiesFile: stringOption(options.cookiesFile) ?? process.env.FT_YOUTUBE_COOKIES_FILE,
+        impersonate: stringOption(options.impersonate) ?? process.env.FT_YOUTUBE_IMPERSONATE,
+      };
+      const videoIdsFile = stringOption(options.videoIdsFile);
+      const playlistInput = stringOption(options.playlist);
+      if (!videoIdsFile && !playlistInput) {
+        console.error('  Error: pass --playlist <url-or-id> or --video-ids-file <path>.');
+        process.exitCode = 1;
+        return;
+      }
+      const playlist = videoIdsFile
+        ? { playlistId: videoIdsFile, videos: parseVideoIdsText(fs.readFileSync(videoIdsFile, 'utf8')).map((videoId) => ({ videoId, title: videoId })) }
+        : await resolvePlaylist(String(playlistInput), { ytDlp });
       const limit = typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : playlist.videos.length;
       const videos = playlist.videos.slice(0, limit);
 
@@ -1198,7 +1238,19 @@ export function buildCli() {
         return;
       }
 
-      const llm = createOpenRouterClient({ primaryModel: options.model ? String(options.model) : undefined });
+      const openRouterModel = options.model && String(options.model).includes('/') ? String(options.model) : undefined;
+      const openRouter = createOpenRouterClient({ primaryModel: openRouterModel });
+      let llm: YoutubeLlmClient = openRouter;
+      try {
+        const engine = await resolveEngine({
+          override: options.engine ? String(options.engine) : undefined,
+          model: options.model ? String(options.model) : undefined,
+          effort: options.effort ? String(options.effort) : undefined,
+        });
+        llm = createFallbackYoutubeLlmClient(createEngineYoutubeLlmClient(engine), openRouter);
+      } catch (error) {
+        if (options.engine) throw error;
+      }
       const ttsEngine = String(options.tts ?? 'auto') as TtsEngine;
       if (!['auto', 'openai', 'say', 'piper'].includes(ttsEngine)) {
         console.error('  Error: --tts must be one of: auto, openai, say, piper.');
@@ -1211,16 +1263,19 @@ export function buildCli() {
       let skipped = 0;
       let failed = 0;
       const youtubeSources: YoutubeSourceVideoInput[] = [];
-      for (const video of videos) {
+      const requestDelayMs = Number.isFinite(Number(options.requestDelayMs)) ? Math.max(0, Number(options.requestDelayMs)) : 1500;
+      for (let i = 0; i < videos.length; i += 1) {
+        const video = videos[i];
         try {
           const result = await processVideo(video.videoId, {
             overview,
-            force: Boolean(options.force),
+            force: Boolean(options.force || videoIdsFile),
             llm,
             tts,
             indexCanonical: false,
             targetMinutes: Number(options.targetMinutes) || 12,
             slideConfidence: Number(options.slideConfidence) || 0.6,
+            ytDlp,
           });
           if (result.processed) processed += 1;
           else skipped += 1;
@@ -1230,9 +1285,13 @@ export function buildCli() {
           failed += 1;
           console.error(`  ! ${video.title} (failed: ${error instanceof Error ? error.message : String(error)})`);
         }
+        // Pace requests to YouTube between videos to reduce 429 throttling.
+        if (requestDelayMs > 0 && i < videos.length - 1) await new Promise((resolve) => setTimeout(resolve, requestDelayMs));
       }
       if (youtubeSources.length) await upsertYoutubeVideosAsSources(youtubeSources);
+      const indexPath = await writeYoutubeIndexFromState();
       console.log(`  ✓ YouTube sync complete: ${processed} processed, ${skipped} skipped, ${failed} failed`);
+      console.log(`  ✓ Index: ${indexPath}`);
       if (failed > 0) process.exitCode = 1;
     }));
 

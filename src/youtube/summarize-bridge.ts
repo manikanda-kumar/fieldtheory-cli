@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { hasCommandOnPath } from '../engine.js';
+import type { YtDlpAccessOptions } from './yt-dlp.js';
 
 export interface TranscriptSegment {
   tSec: number;
@@ -24,11 +25,16 @@ export interface RunSummarizeOptions {
   withSlides?: boolean;
   withOcr?: boolean;
   outDir?: string;
+  youtubeMode?: 'yt-dlp';
+  slidesMax?: number;
+  slidesSceneThreshold?: number;
+  debugSlides?: boolean;
+  ytDlp?: Pick<YtDlpAccessOptions, 'cookiesFromBrowser'>;
 }
 
 export interface SummarizeDeps {
   hasCommand?: (command: string) => boolean;
-  runCommand?: (command: string, args: string[]) => Promise<string>;
+  runCommand?: (command: string, args: string[], env?: NodeJS.ProcessEnv) => Promise<string>;
 }
 
 export class SummarizeUnavailableError extends Error {
@@ -46,11 +52,21 @@ export async function runSummarize(videoUrl: string, options: RunSummarizeOption
   if (!hasSummarize(deps)) throw new SummarizeUnavailableError();
 
   const args = [videoUrl, '--extract', '--json', '--timestamps', '--no-color'];
-  if (options.withSlides) args.push('--slides', '--slides-debug');
+  if (options.youtubeMode) args.push('--youtube', options.youtubeMode);
+  if (options.withSlides) args.push('--slides');
+  if (options.debugSlides) args.push('--slides-debug');
   if (options.withOcr) args.push('--slides-ocr');
   if (options.outDir) args.push('--slides-dir', options.outDir);
-  const output = await (deps.runCommand ?? runCommand)('summarize', args);
+  if (options.slidesMax != null) args.push('--slides-max', String(options.slidesMax));
+  if (options.slidesSceneThreshold != null) args.push('--slides-scene-threshold', String(options.slidesSceneThreshold));
+  const env = summarizeEnv(options.ytDlp);
+  const output = await (deps.runCommand ?? runCommand)('summarize', args, env);
   return parseSummarizeJson(output);
+}
+
+function summarizeEnv(ytDlp: RunSummarizeOptions['ytDlp']): NodeJS.ProcessEnv | undefined {
+  if (!ytDlp?.cookiesFromBrowser) return undefined;
+  return { SUMMARIZE_YT_DLP_COOKIES_FROM_BROWSER: ytDlp.cookiesFromBrowser };
 }
 
 function parseSummarizeJson(output: string): SummarizeResult {
@@ -134,9 +150,9 @@ function msToSeconds(value: unknown): number | undefined {
   return ms == null ? undefined : ms / 1000;
 }
 
-function runCommand(command: string, args: string[]): Promise<string> {
+function runCommand(command: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env: env ? { ...process.env, ...env } : process.env });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += String(chunk); });

@@ -58,6 +58,25 @@ test('resolvePlaylist uses yt-dlp flat playlist output when available', async ()
   ]);
 });
 
+test('resolvePlaylist passes yt-dlp browser cookies and impersonation options', async () => {
+  const commands: Array<{ command: string; args: string[] }> = [];
+  await resolvePlaylist('PL789', {
+    hasCommand: (command) => command === 'yt-dlp',
+    ytDlp: { cookiesFromBrowser: 'chrome:Profile 1', impersonate: 'chrome' },
+    runCommand: async (command, args) => {
+      commands.push({ command, args });
+      return 'abc\tAlpha\n';
+    },
+  });
+
+  assert.deepEqual(commands[0].args.slice(0, 4), [
+    '--cookies-from-browser',
+    'chrome:Profile 1',
+    '--impersonate',
+    'chrome',
+  ]);
+});
+
 test('resolvePlaylist fails clearly when no public playlist videos are found', async () => {
   await assert.rejects(
     resolvePlaylist('PLPRIVATE', { hasCommand: () => false, fetchText: async () => '<html></html>' }),

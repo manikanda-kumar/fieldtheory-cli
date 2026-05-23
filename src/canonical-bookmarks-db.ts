@@ -103,6 +103,7 @@ export interface YoutubeSourceVideoInput {
   videoId: string;
   title: string;
   tldr: string;
+  keyPoints?: string[];
   topics: string[];
   published?: string | null;
 }
@@ -272,7 +273,7 @@ function youtubeSourceFromVideo(video: YoutubeSourceVideoInput, savedAt: string)
     targetUrl: null,
     dedupeKey: dedupeKeyForUrl(sourceUrl),
     title: video.title,
-    text: compactText([video.tldr, video.topics]),
+    text: compactText([video.tldr, video.keyPoints, video.topics]),
     authorHandle: null,
     savedAt,
     createdAt: video.published ?? null,

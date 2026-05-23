@@ -36,6 +36,23 @@ test('upsertYoutubeVideosAsSources indexes YouTube notes into canonical search',
   });
 });
 
+test('upsertYoutubeVideosAsSources includes key points in canonical search text', async () => {
+  await withIsolatedDataDir(async () => {
+    await upsertYoutubeVideosAsSources([{
+      videoId: 'v1',
+      title: 'Agent Evaluation Talk',
+      tldr: 'A practical overview.',
+      keyPoints: ['Rubrics catch regressions before shipping.'],
+      topics: ['AI'],
+    }]);
+
+    const matches = await searchCanonicalBookmarks({ query: 'rubrics', limit: 10 });
+
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].displayTitle, 'Agent Evaluation Talk');
+  });
+});
+
 test('upsertYoutubeVideosAsSources is idempotent for the same video', async () => {
   await withIsolatedDataDir(async () => {
     await upsertYoutubeVideosAsSources([{ videoId: 'v1', title: 'Original', tldr: 'alpha', topics: [] }]);

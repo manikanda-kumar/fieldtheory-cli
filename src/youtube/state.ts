@@ -13,6 +13,7 @@ export interface YoutubeVideoArtifacts {
   notesPath?: string;
   audioPath?: string;
   videoPath?: string;
+  thumbnailPath?: string;
   [key: string]: string | undefined;
 }
 
@@ -22,6 +23,10 @@ export interface YoutubeVideoState {
   title?: string;
   channel?: string;
   durationSec?: number;
+  published?: string | null;
+  videoType?: string;
+  tldr?: string;
+  topics?: string[];
   artifacts: YoutubeVideoArtifacts;
   error?: string;
   updatedAt: string;

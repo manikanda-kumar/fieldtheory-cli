@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { hasCommandOnPath } from '../engine.js';
+import { ytDlpAccessArgs, type YtDlpAccessOptions } from './yt-dlp.js';
 
 export interface YoutubePlaylistVideo {
   videoId: string;
@@ -15,6 +16,7 @@ export interface ResolvePlaylistOptions {
   hasCommand?: (command: string) => boolean;
   runCommand?: (command: string, args: string[]) => Promise<string>;
   fetchText?: (url: string) => Promise<string>;
+  ytDlp?: YtDlpAccessOptions;
 }
 
 export async function resolvePlaylist(input: string, options: ResolvePlaylistOptions = {}): Promise<YoutubePlaylist> {
@@ -24,6 +26,7 @@ export async function resolvePlaylist(input: string, options: ResolvePlaylistOpt
 
   if (hasCommand('yt-dlp')) {
     const output = await (options.runCommand ?? runCommand)('yt-dlp', [
+      ...ytDlpAccessArgs(options.ytDlp),
       '--flat-playlist',
       '--print',
       '%(id)s\t%(title)s',

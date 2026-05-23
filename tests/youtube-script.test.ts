@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildScript } from '../src/youtube/script.js';
+import { buildScript, defaultOverviewMinutes } from '../src/youtube/script.js';
 
 const input = {
   meta: { title: 'Talk', channel: 'Channel', durationSec: 600 },
@@ -20,6 +20,49 @@ test('buildScript requests target word budget and returns script segments', asyn
   assert.match(prompt, /1800 words/);
   assert.match(prompt, /\[filtered\]/);
   assert.deepEqual(script.segments, [{ text: 'Narration text', approxSeconds: 20, slideRef: null }]);
+});
+
+test('buildScript uses notes and video type to shape overview scripts', async () => {
+  const cases = [
+    { videoType: 'tutorial', expected: /problem this solves → setup → steps → gotchas → outcome/i },
+    { videoType: 'interview', expected: /thematic synthesis with attribution/i },
+    { videoType: 'talk', expected: /problem → major ideas → implications/i },
+    { videoType: 'benchmark', expected: /question → setup → findings → caveats → recommendation/i },
+    { videoType: 'explainer', expected: /definition → why it matters → key takeaways/i },
+  ] as const;
+
+  for (const entry of cases) {
+    let prompt = '';
+    await buildScript({
+      ...input,
+      notes: {
+        videoType: entry.videoType,
+        tldr: 'Notes summary',
+        keyPoints: ['Important point'],
+        chapters: [],
+        actionItems: [],
+        topics: ['Agents'],
+      },
+    }, {
+      chat: async (options) => {
+        prompt = String(options.messages.at(-1)?.content ?? '');
+        return { text: '{}', json: { segments: [{ text: 'Narration text', approxSeconds: 20, slideRef: null }] } };
+      },
+    }, { targetMinutes: 3 });
+
+    assert.match(prompt, new RegExp(`Video type: ${entry.videoType}`));
+    assert.match(prompt, /Notes summary/);
+    assert.match(prompt, /Important point/);
+    assert.match(prompt, entry.expected);
+  }
+});
+
+test('defaultOverviewMinutes adapts to video duration and type', () => {
+  assert.equal(defaultOverviewMinutes({ videoType: 'explainer', durationSec: 300 }), 1);
+  assert.equal(defaultOverviewMinutes({ videoType: 'benchmark', durationSec: 1800 }), 5);
+  assert.equal(defaultOverviewMinutes({ videoType: 'talk', durationSec: 3600 }), 8);
+  assert.equal(defaultOverviewMinutes({ videoType: 'interview', durationSec: 5400 }), 6);
+  assert.equal(defaultOverviewMinutes({ durationSec: 600 }), 2);
 });
 
 test('buildScript keeps valid slide refs when slides are present', async () => {

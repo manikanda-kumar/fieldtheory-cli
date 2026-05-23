@@ -102,8 +102,31 @@ export function youtubeArtifactsDir(videoId: string): string {
   return path.join(youtubeDir(), 'artifacts', safePathSegment(videoId, 'youtube video id'));
 }
 
+export function youtubeSlidesDir(videoId: string): string {
+  return path.join(youtubeArtifactsDir(videoId), 'slides');
+}
+
 export function youtubeLibraryDir(): string {
   return path.join(libraryDir(), 'youtube');
+}
+
+export function youtubeLibraryIndexHtmlPath(): string {
+  return path.join(youtubeLibraryDir(), 'index.html');
+}
+
+export function youtubeNotePath(videoId: string, published?: string | null, existingPath?: string): string {
+  if (existingPath) return existingPath;
+  return path.join(youtubeLibraryDir(), youtubeMonthSegment(published), `${safePathSegment(videoId, 'youtube video id')}.md`);
+}
+
+function youtubeMonthSegment(published?: string | null): string {
+  if (published) {
+    const compact = published.match(/^(\d{4})(\d{2})\d{2}$/);
+    if (compact) return `${compact[1]}-${compact[2]}`;
+    const iso = published.match(/^(\d{4})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}`;
+  }
+  return 'undated';
 }
 
 function safePathSegment(value: string, label: string): string {

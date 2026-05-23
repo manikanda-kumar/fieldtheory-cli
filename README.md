@@ -59,21 +59,51 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 ft sync-youtube --playlist PL... --overview none
 ft sync-youtube --playlist "https://www.youtube.com/playlist?list=PL..." --overview audio
 ft sync-youtube --playlist PL... --overview video --target-minutes 12 --slide-confidence 0.6
+ft sync-youtube --playlist PL... --cookies-from-browser chrome --impersonate chrome
+ft sync-youtube --video-ids-file docs/retry-video-ids.txt --overview slides --cookies-from-browser chrome --impersonate chrome
 ```
 
 What it does:
 
 - Resolves a public playlist with `yt-dlp` when available, otherwise parses the public playlist page.
-- Fetches transcripts and metadata, then uses OpenRouter to generate structured notes.
-- Writes markdown notes to `~/.fieldtheory/library/youtube/<videoId>.md`.
+- For targeted retries, `--video-ids-file <path>` reads newline-delimited video IDs and reprocesses only those videos instead of forcing a whole playlist.
+- Fetches transcripts and metadata, then uses your Field Theory LLM engine to generate structured notes.
+- Writes markdown notes to `~/.fieldtheory/library/youtube/<YYYY-MM>/<videoId>.md` and updates `~/.fieldtheory/library/youtube/index.html`.
 - Stores state and heavy artifacts under `~/.fieldtheory/bookmarks/youtube/`.
 - Indexes each video into the unified canonical SQLite index so `ft search --unified` can find it.
 
 LLM and TTS configuration:
 
-- `OPENROUTER_API_KEY` is required for notes/script generation. The default model chain is OpenAI via OpenRouter with Gemini fallback.
-- `--model <openrouter-model-id>` overrides the primary OpenRouter model.
+- Notes and overview scripts use the same local engine design as the rest of Field Theory: `ft model` / autodetect picks `claude` or `codex`, and OpenRouter is used as the fallback when a local engine is unavailable or fails.
+- `--engine <claude|codex>` overrides the local engine for one YouTube sync.
+- `--model <model>` is passed through to the selected engine. If the value contains `/`, it is also used as the primary OpenRouter fallback model ID.
+- `--effort <level>` is passed through to the selected engine. Field Theory accepts `low`, `medium`, `high`, `xhigh`, and `max`; the installed engine may reject values it does not support.
 - Audio/video overview TTS uses TTS engines directly. `OPENAI_API_KEY` is the supported high-quality path; `--tts say` and `--tts piper` are local fallback options when those commands are installed. OpenRouter does not provide TTS endpoints.
+
+YouTube 429 mitigation:
+
+- `--cookies-from-browser <spec>` passes browser cookies to `yt-dlp` for playlist, metadata, subtitle, and slide extraction. Examples: `chrome`, `chrome:Profile 1`. You can also set `FT_YOUTUBE_COOKIES_FROM_BROWSER`.
+- `--cookies-file <path>` passes a Netscape cookies file to direct `yt-dlp` calls. You can also set `FT_YOUTUBE_COOKIES_FILE`.
+- `--impersonate <target>` passes a `yt-dlp` impersonation target such as `chrome`. You can also set `FT_YOUTUBE_IMPERSONATE`. This requires `yt-dlp --list-impersonate-targets` to show available `curl_cffi` targets.
+- If Homebrew `yt-dlp` shows `curl_cffi` as unsupported, install a supported release into its libexec environment, e.g. `/opt/homebrew/opt/yt-dlp/libexec/bin/python -m pip install 'curl_cffi>=0.14,<0.15' --force-reinstall`.
+
+Recommended YouTube model profiles:
+
+| Engine | Good default | Higher quality | Notes |
+|--------|--------------|----------------|-------|
+| `claude` | `--engine claude --model sonnet --effort medium` | `--engine claude --model opus --effort high` | Claude Code accepts aliases such as `sonnet` and `opus`, plus full model names such as `claude-sonnet-4-6`. Current Claude Code help lists effort levels `low`, `medium`, `high`, `xhigh`, and `max`. |
+| `codex` | `--engine codex --model gpt-5.4-mini --effort medium` | `--engine codex --model gpt-5.4 --effort high` | Codex model names depend on the installed Codex CLI and account access. Field Theory passes effort as `model_reasoning_effort`; if your Codex build rejects `xhigh` or `max`, use `low`, `medium`, or `high`. |
+| OpenRouter fallback | `--model openai/gpt-4o-mini` | `--model openai/gpt-4o` or another provider model ID | Used automatically as fallback. A slash-style `--model` value is treated as an OpenRouter model ID. |
+
+Examples:
+
+```bash
+ft sync-youtube --playlist PL... --engine claude --model sonnet --effort medium
+ft sync-youtube --playlist PL... --engine codex --model gpt-5.4-mini --effort medium
+ft sync-youtube --playlist PL... --model openai/gpt-4o-mini
+```
+
+Vision note: modern Claude and GPT/Codex models can be vision-capable, but Field Theory's current local YouTube engine adapter sends text prompts only. Transcript-based notes and scripts use local `claude`/`codex`; slide detection can use OCR heuristics and, when available, OpenRouter vision fallback.
 
 Optional external tools:
 

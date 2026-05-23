@@ -1,7 +1,13 @@
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { hasCommandOnPath } from '../engine.js';
-import { runSummarize, type SummarizeResult, type TranscriptSegment } from './summarize-bridge.js';
+import { youtubeArtifactsDir } from '../paths.js';
+import { runSummarize, type RunSummarizeOptions, type SummarizeResult, type TranscriptSegment } from './summarize-bridge.js';
+import type { FrameRef } from './slides.js';
+import { ytDlpAccessArgs, type YtDlpAccessOptions } from './yt-dlp.js';
 
 export type { TranscriptSegment } from './summarize-bridge.js';
 
@@ -16,16 +22,24 @@ export interface VideoFetchResult {
   meta: VideoMeta;
   transcriptText: string;
   segments: TranscriptSegment[];
-  frames: Array<{ tSec: number; imagePath: string }> | null;
+  frames: FrameRef[] | null;
   contentHash: string;
+}
+
+export interface RetryOptions {
+  attempts?: number;
+  baseDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface FetchVideoOptions {
   wantFrames?: boolean;
+  ytDlp?: YtDlpAccessOptions;
   hasCommand?: (command: string) => boolean;
   runCommand?: (command: string, args: string[]) => Promise<string>;
   fetchText?: (url: string) => Promise<string>;
-  runSummarize?: (videoUrl: string, options: { withSlides?: boolean; withOcr?: boolean; outDir?: string }) => Promise<SummarizeResult>;
+  runSummarize?: (videoUrl: string, options: RunSummarizeOptions) => Promise<SummarizeResult>;
+  retry?: RetryOptions;
 }
 
 export class NoTranscriptError extends Error {
@@ -41,24 +55,42 @@ export async function fetchVideo(videoId: string, options: FetchVideoOptions = {
   const runCommandImpl = options.runCommand ?? runCommand;
   const fetchTextImpl = options.fetchText ?? fetchText;
 
-  const meta = await fetchMeta(videoId, videoUrl, { hasCommand, runCommand: runCommandImpl, fetchText: fetchTextImpl });
-  let segments = parseTimedTextTranscript(await fetchTextImpl(`https://video.google.com/timedtext?lang=en&v=${encodeURIComponent(videoId)}`).catch(() => ''));
-  let frames: Array<{ tSec: number; imagePath: string }> | null = null;
+  // YouTube rate-limits (HTTP 429) aggressively. Retry transient 429s with
+  // exponential backoff so a momentary throttle does not collapse the lead rung
+  // straight through to the thin summarize fallback.
+  const runCommandWithRetry = (command: string, args: string[]) => retryOnRateLimit(() => runCommandImpl(command, args), options.retry);
 
-  if (!segments.length && hasCommand('yt-dlp')) {
-    const subtitleUrl = (await runCommandImpl('yt-dlp', ['--write-auto-sub', '--sub-lang', 'en', '--skip-download', '--print', 'requested_subtitles.en.url', videoUrl]).catch(() => '')).trim();
-    const vtt = subtitleUrl.startsWith('http') ? await fetchTextImpl(subtitleUrl).catch(() => '') : subtitleUrl;
+  const meta = await fetchMeta(videoId, videoUrl, { hasCommand, runCommand: runCommandWithRetry, fetchText: fetchTextImpl }, options.ytDlp);
+  let segments: TranscriptSegment[] = [];
+  let frames: FrameRef[] | null = null;
+
+  // Rung 1: cookie/impersonation-armed yt-dlp captions (manual subs first, then auto).
+  // This leads the ladder because it carries auth that the bare timedtext endpoint cannot.
+  if (hasCommand('yt-dlp')) {
+    const vtt = await fetchYtDlpTranscript(videoId, videoUrl, runCommandWithRetry, options.ytDlp).catch(() => '');
     segments = parseVttTranscript(vtt);
   }
 
+  // Rung 2: legacy timedtext endpoint (no auth; cheap but commonly 429s).
+  if (!segments.length) {
+    segments = parseTimedTextTranscript(await fetchTextImpl(`https://video.google.com/timedtext?lang=en&v=${encodeURIComponent(videoId)}`).catch(() => ''));
+  }
+
+  // Rung 3: summarize bridge transcript/slides.
   if (!segments.length || options.wantFrames) {
     try {
-      const summarized = await (options.runSummarize ?? ((url, opts) => runSummarize(url, opts)))(videoUrl, { withSlides: options.wantFrames, withOcr: options.wantFrames });
+      const summarized = await (options.runSummarize ?? ((url, opts) => runSummarize(url, opts)))(videoUrl, { withSlides: options.wantFrames, withOcr: options.wantFrames, ytDlp: options.ytDlp });
       if (!segments.length) segments = summarized.transcript.segments;
       meta.title = stringValue(summarized.meta.title) ?? meta.title;
       meta.channel = stringValue(summarized.meta.channel) ?? meta.channel;
       meta.durationSec = numberValue(summarized.meta.durationSec) ?? meta.durationSec;
-      if (options.wantFrames) frames = summarized.slides.map((slide) => ({ tSec: slide.tSec, imagePath: slide.imagePath }));
+      if (!segments.length && summarized.transcript.text.trim()) {
+        // A text-only transcript with no timing would otherwise become a single
+        // segment, which collapses chapters and forces partial notes. Chunk it
+        // into approximate timestamped segments spread across the duration.
+        segments = chunkTextIntoSegments(summarized.transcript.text.trim(), meta.durationSec);
+      }
+      if (options.wantFrames) frames = summarized.slides.map((slide) => ({ tSec: slide.tSec, imagePath: slide.imagePath, ...(slide.ocrText ? { ocrText: slide.ocrText } : {}) }));
     } catch {
       if (!segments.length) throw new NoTranscriptError(videoId);
       if (options.wantFrames) frames = null;
@@ -74,6 +106,56 @@ export async function fetchVideo(videoId: string, options: FetchVideoOptions = {
     frames,
     contentHash: crypto.createHash('sha256').update(`${videoId}\n${meta.title}\n${meta.durationSec ?? ''}\n${transcriptText}`).digest('hex'),
   };
+}
+
+export async function fetchSlidesForVideo(videoId: string, options: {
+  outDir?: string;
+  slidesMax?: number;
+  slidesSceneThreshold?: number;
+  ytDlp?: YtDlpAccessOptions;
+  runSummarize?: FetchVideoOptions['runSummarize'];
+} = {}): Promise<FrameRef[]> {
+  const videoUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+  const summarized = await (options.runSummarize ?? ((url, opts) => runSummarize(url, opts)))(videoUrl, {
+    withSlides: true,
+    withOcr: true,
+    outDir: options.outDir ?? youtubeArtifactsDir(videoId),
+    youtubeMode: 'yt-dlp',
+    ytDlp: options.ytDlp,
+    slidesMax: options.slidesMax,
+    slidesSceneThreshold: options.slidesSceneThreshold,
+  });
+  return summarized.slides.map((slide) => ({ tSec: slide.tSec, imagePath: slide.imagePath, ...(slide.ocrText ? { ocrText: slide.ocrText } : {}) }));
+}
+
+/**
+ * Split an untimestamped transcript blob into approximate timestamped segments
+ * spread evenly across the video duration. Avoids collapsing a full transcript
+ * into a single segment, which would force approximate-chapter / partial notes.
+ */
+export function chunkTextIntoSegments(text: string, durationSec: number | undefined): TranscriptSegment[] {
+  const clean = text.trim();
+  if (!clean) return [];
+  const duration = durationSec && Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 0;
+  // Roughly one chunk per 90s of video, capped, and never more than the
+  // number of available units (sentences/words) to keep chunks non-empty.
+  const sentences = clean.match(/[^.!?]+[.!?]+(\s|$)/g)?.map((s) => s.trim()).filter(Boolean) ?? [];
+  const units = sentences.length >= 2 ? sentences : clean.split(/\s+/);
+  const targetChunks = Math.max(1, Math.min(12, duration ? Math.round(duration / 90) : 1, units.length));
+  if (targetChunks <= 1) return [{ tSec: 0, durationSec: duration, text: clean }];
+
+  const perChunk = Math.ceil(units.length / targetChunks);
+  const chunks: string[] = [];
+  for (let i = 0; i < units.length; i += perChunk) {
+    const chunk = units.slice(i, i + perChunk).join(' ').trim();
+    if (chunk) chunks.push(chunk);
+  }
+  const span = duration ? duration / chunks.length : 0;
+  return chunks.map((chunk, index) => ({
+    tSec: Math.round(index * span),
+    durationSec: Math.round(span),
+    text: chunk,
+  }));
 }
 
 export function parseTimedTextTranscript(xml: string): TranscriptSegment[] {
@@ -105,9 +187,9 @@ export function parseVttTranscript(vtt: string): TranscriptSegment[] {
   return segments;
 }
 
-async function fetchMeta(videoId: string, videoUrl: string, deps: Required<Pick<FetchVideoOptions, 'hasCommand' | 'runCommand' | 'fetchText'>>): Promise<VideoMeta> {
+async function fetchMeta(videoId: string, videoUrl: string, deps: Required<Pick<FetchVideoOptions, 'hasCommand' | 'runCommand' | 'fetchText'>>, ytDlp?: YtDlpAccessOptions): Promise<VideoMeta> {
   if (deps.hasCommand('yt-dlp')) {
-    const raw = await deps.runCommand('yt-dlp', ['-J', videoUrl]).catch(() => '');
+    const raw = await deps.runCommand('yt-dlp', [...ytDlpAccessArgs(ytDlp), '-J', videoUrl]).catch(() => '');
     try {
       const json = JSON.parse(raw) as Record<string, unknown>;
       return { title: stringValue(json.title) ?? videoId, channel: stringValue(json.channel), durationSec: numberValue(json.duration), publishDate: stringValue(json.upload_date) };
@@ -161,6 +243,56 @@ async function fetchText(url: string): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) return '';
   return res.text();
+}
+
+async function fetchYtDlpTranscript(videoId: string, videoUrl: string, runCommandImpl: (command: string, args: string[]) => Promise<string>, ytDlp?: YtDlpAccessOptions): Promise<string> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'ft-youtube-subs-'));
+  try {
+    const outputTemplate = path.join(tempDir, '%(id)s.%(ext)s');
+    const stdout = await runCommandImpl('yt-dlp', [
+      ...ytDlpAccessArgs(ytDlp),
+      '--write-subs',
+      '--write-auto-sub',
+      '--sub-langs',
+      'en.*,en-orig,en',
+      '--sub-format',
+      'vtt',
+      '--skip-download',
+      '--output',
+      outputTemplate,
+      videoUrl,
+    ]).catch(() => '');
+    if (parseVttTranscript(stdout).length) return stdout;
+
+    const files = await readdir(tempDir).catch(() => []);
+    const subtitleFile = files.find((file) => file.endsWith('.vtt') && (file.startsWith(videoId) || files.length === 1));
+    return subtitleFile ? await readFile(path.join(tempDir, subtitleFile), 'utf8') : '';
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+export function isRateLimited(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b429\b|too many requests|rate.?limit/i.test(message);
+}
+
+async function retryOnRateLimit<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
+  const attempts = Math.max(1, options.attempts ?? 3);
+  const baseDelayMs = options.baseDelayMs ?? 1_000;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isRateLimited(error) || attempt === attempts - 1) throw error;
+      const backoff = baseDelayMs * 2 ** attempt + Math.floor(Math.random() * (baseDelayMs / 2));
+      await sleep(backoff);
+    }
+  }
+  throw lastError;
 }
 
 function runCommand(command: string, args: string[]): Promise<string> {

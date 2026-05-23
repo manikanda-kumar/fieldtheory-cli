@@ -28,12 +28,18 @@ test('processVideo video branch writes mp4 artifact for slide-heavy videos', asy
     const result = await processVideo('v1', {
       overview: 'video',
       llm: {
-        chat: async () => ({ text: '{}', json: { tldr: 'Summary', keyPoints: [], chapters: [], actionItems: [], topics: [], segments: [{ text: 'Video segment', approxSeconds: 5, slideRef: 0 }] } }),
+        chat: async (options) => String(options.messages[0].content).includes('condensed narration')
+          ? { text: '{}', json: { segments: [{ text: 'Video segment', approxSeconds: 5, slideRef: 0 }] } }
+          : { text: '{}', json: { videoType: 'tutorial', tldr: 'Summary', keyPoints: [], chapters: [], actionItems: [], topics: [] } },
         chatVision: async () => ({ text: '{}', json: { isSlides: true, confidence: 0.9, reason: 'slides' } }),
       },
       tts: { synthesize: async (_text, outPath) => { await fs.writeFile(outPath, 'mp3'); return { engine: 'openai', outPath }; } },
       assembleVideo: async ({ outPath }) => { await fs.writeFile(outPath, 'mp4'); return { outPath, durationSec: 5 }; },
-      fetchVideo: async () => ({ meta: { title: 'Video' }, transcriptText: 'Transcript', segments: [{ tSec: 0, durationSec: 1, text: 'Transcript' }], frames: [{ tSec: 0, imagePath: framePath }, { tSec: 1, imagePath: framePath }, { tSec: 2, imagePath: framePath }], contentHash: 'hash' }),
+      fetchVideo: async (_videoId, options) => {
+        assert.equal(options.wantFrames, false);
+        return { meta: { title: 'Video' }, transcriptText: 'Transcript', segments: [{ tSec: 0, durationSec: 1, text: 'show the code on screen' }], frames: null, contentHash: 'hash' };
+      },
+      fetchSlides: async () => [{ tSec: 0, imagePath: framePath, ocrText: 'Code walkthrough showing src/app.ts handler and routing setup' }, { tSec: 1, imagePath: framePath, ocrText: 'Architecture diagram with repository context and tool calls' }, { tSec: 2, imagePath: framePath, ocrText: 'Terminal command running the build and test pipeline' }],
     });
 
     assert.ok(result.videoPath);
@@ -49,10 +55,11 @@ test('processVideo video branch records skipped state for non-slide-heavy videos
     await processVideo('v1', {
       overview: 'video',
       llm: {
-        chat: async () => ({ text: '{}', json: { tldr: 'Summary', keyPoints: [], chapters: [], actionItems: [], topics: [] } }),
+        chat: async () => ({ text: '{}', json: { videoType: 'explainer', tldr: 'Summary', keyPoints: [], chapters: [], actionItems: [], topics: [] } }),
         chatVision: async () => ({ text: '{}', json: { isSlides: false, confidence: 0.9, reason: 'talking head' } }),
       },
-      fetchVideo: async () => ({ meta: { title: 'Video' }, transcriptText: 'Transcript', segments: [{ tSec: 0, durationSec: 1, text: 'Transcript' }], frames: [{ tSec: 0, imagePath: framePath }, { tSec: 1, imagePath: framePath }, { tSec: 2, imagePath: framePath }], contentHash: 'hash' }),
+      fetchVideo: async () => ({ meta: { title: 'Video' }, transcriptText: 'Let me show the screen and walk through the diagram.', segments: [{ tSec: 0, durationSec: 1, text: 'Let me show the screen and walk through the diagram.' }], frames: null, contentHash: 'hash' }),
+      fetchSlides: async () => [{ tSec: 0, imagePath: framePath, ocrText: 'Architecture diagram with repository context and tool calls' }, { tSec: 1, imagePath: framePath, ocrText: 'Implementation steps configure harness run tests ship' }, { tSec: 2, imagePath: framePath, ocrText: 'Error handling retries and validation checklist' }],
     });
 
     assert.equal((await loadYoutubeState()).videos.v1.artifacts.videoOverview, 'skipped-not-slides');
@@ -66,17 +73,44 @@ test('processVideo reuses synthesized segment audio when video assembly fails', 
     const result = await processVideo('v1', {
       overview: 'video',
       llm: {
-        chat: async () => ({ text: '{}', json: { tldr: 'Summary', keyPoints: [], chapters: [], actionItems: [], topics: [], segments: [{ text: 'A', approxSeconds: 1, slideRef: 0 }, { text: 'B', approxSeconds: 1, slideRef: 0 }] } }),
+        chat: async (options) => String(options.messages[0].content).includes('condensed narration')
+          ? { text: '{}', json: { segments: [{ text: 'A', approxSeconds: 1, slideRef: 0 }, { text: 'B', approxSeconds: 1, slideRef: 0 }] } }
+          : { text: '{}', json: { videoType: 'tutorial', tldr: 'Summary', keyPoints: [], chapters: [], actionItems: [], topics: [] } },
         chatVision: async () => ({ text: '{}', json: { isSlides: true, confidence: 0.9, reason: 'slides' } }),
       },
       tts: { synthesize: async (text, outPath) => { await fs.writeFile(outPath, text); return { engine: 'openai', outPath }; } },
       assembleVideo: async () => { throw new Error('ffmpeg failed'); },
-      fetchVideo: async () => ({ meta: { title: 'Video' }, transcriptText: 'Transcript', segments: [{ tSec: 0, durationSec: 1, text: 'Transcript' }], frames: [{ tSec: 0, imagePath: framePath }, { tSec: 1, imagePath: framePath }, { tSec: 2, imagePath: framePath }], contentHash: 'hash' }),
+      fetchVideo: async () => ({ meta: { title: 'Video' }, transcriptText: 'Transcript', segments: [{ tSec: 0, durationSec: 1, text: 'show the code on screen' }], frames: null, contentHash: 'hash' }),
+      fetchSlides: async () => [{ tSec: 0, imagePath: framePath, ocrText: 'Code walkthrough showing src/app.ts handler and routing setup' }, { tSec: 1, imagePath: framePath, ocrText: 'Architecture diagram with repository context and tool calls' }, { tSec: 2, imagePath: framePath, ocrText: 'Terminal command running the build and test pipeline' }],
     });
 
     assert.equal(result.status, 'partial');
     assert.ok(result.audioPath);
     assert.equal(await fs.readFile(result.audioPath!, 'utf8'), 'AB');
     assert.equal((await loadYoutubeState()).videos.v1.artifacts.videoOverview, 'failed-degraded-to-audio');
+  });
+});
+
+test('processVideo skips slide extraction for interview videos without visual cues', async () => {
+  await withTempRoots(async () => {
+    let slideFetches = 0;
+    await processVideo('v1', {
+      overview: 'video',
+      llm: {
+        chat: async () => ({ text: '{}', json: { videoType: 'interview', tldr: 'Summary', keyPoints: [], chapters: [], actionItems: [], topics: [] } }),
+        chatVision: async () => { throw new Error('vision should not be called'); },
+      },
+      fetchVideo: async (_videoId, options) => {
+        assert.equal(options.wantFrames, false);
+        return { meta: { title: 'Founder interview' }, transcriptText: 'Welcome back. Tell me about your company.', segments: [{ tSec: 0, durationSec: 1, text: 'Welcome back. Tell me about your company.' }], frames: null, contentHash: 'hash' };
+      },
+      fetchSlides: async () => {
+        slideFetches += 1;
+        return [];
+      },
+    });
+
+    assert.equal(slideFetches, 0);
+    assert.equal((await loadYoutubeState()).videos.v1.artifacts.videoOverview, 'skipped-not-candidate');
   });
 });

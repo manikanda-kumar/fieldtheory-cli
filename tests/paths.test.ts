@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { browserBookmarksCachePath, browserBookmarksMetaPath, canonicalCommandsDir, canonicalDataDir, canonicalLibraryDir, dataDir, libraryDir, mdDir, commandsDir, mdSchemaPath } from '../src/paths.js';
+import { browserBookmarksCachePath, browserBookmarksMetaPath, canonicalCommandsDir, canonicalDataDir, canonicalLibraryDir, dataDir, libraryDir, mdDir, commandsDir, mdSchemaPath, youtubeLibraryIndexHtmlPath, youtubeNotePath, youtubeSlidesDir } from '../src/paths.js';
 
 function withEnv(env: Record<string, string | undefined>, fn: () => void): void {
   const previous: Record<string, string | undefined> = {};
@@ -78,6 +78,22 @@ test('paths: browser bookmark cache paths reject traversal segments', () => {
     () => browserBookmarksCachePath('/tmp/chrome', 'Default'),
     /Invalid browser bookmark browser/,
   );
+});
+
+test('paths: youtube notes are grouped by publish month and keep existing paths stable', () => {
+  withEnv({ FT_LIBRARY_DIR: '/tmp/ft-library', FT_DATA_DIR: '/tmp/ft-data' }, () => {
+    assert.equal(youtubeLibraryIndexHtmlPath(), path.join('/tmp/ft-library', 'youtube', 'index.html'));
+    assert.equal(youtubeNotePath('abc123', '20260512'), path.join('/tmp/ft-library', 'youtube', '2026-05', 'abc123.md'));
+    assert.equal(youtubeNotePath('abc123', '2026-05-12T00:00:00.000Z'), path.join('/tmp/ft-library', 'youtube', '2026-05', 'abc123.md'));
+    assert.equal(youtubeNotePath('abc123', undefined), path.join('/tmp/ft-library', 'youtube', 'undated', 'abc123.md'));
+    assert.equal(youtubeNotePath('abc123', '20260512', '/tmp/existing/abc123.md'), '/tmp/existing/abc123.md');
+    assert.equal(youtubeSlidesDir('abc123'), path.join('/tmp/ft-data', 'youtube', 'artifacts', 'abc123', 'slides'));
+  });
+});
+
+test('paths: youtube note and slide paths reject unsafe video ids', () => {
+  assert.throws(() => youtubeNotePath('../abc', '20260512'), /Invalid youtube video id/);
+  assert.throws(() => youtubeSlidesDir('/tmp/abc'), /Invalid youtube video id/);
 });
 
 test('paths: default command root is under ~/.fieldtheory', () => {
