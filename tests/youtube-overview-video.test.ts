@@ -36,7 +36,7 @@ test('processVideo video branch writes mp4 artifact for slide-heavy videos', asy
       tts: { synthesize: async (_text, outPath) => { await fs.writeFile(outPath, 'mp3'); return { engine: 'openai', outPath }; } },
       assembleVideo: async ({ outPath }) => { await fs.writeFile(outPath, 'mp4'); return { outPath, durationSec: 5 }; },
       fetchVideo: async (_videoId, options) => {
-        assert.equal(options.wantFrames, false);
+        assert.equal(options.wantFrames, true);
         return { meta: { title: 'Video' }, transcriptText: 'Transcript', segments: [{ tSec: 0, durationSec: 1, text: 'show the code on screen' }], frames: null, contentHash: 'hash' };
       },
       fetchSlides: async () => [{ tSec: 0, imagePath: framePath, ocrText: 'Code walkthrough showing src/app.ts handler and routing setup' }, { tSec: 1, imagePath: framePath, ocrText: 'Architecture diagram with repository context and tool calls' }, { tSec: 2, imagePath: framePath, ocrText: 'Terminal command running the build and test pipeline' }],
@@ -101,7 +101,7 @@ test('processVideo skips slide extraction for interview videos without visual cu
         chatVision: async () => { throw new Error('vision should not be called'); },
       },
       fetchVideo: async (_videoId, options) => {
-        assert.equal(options.wantFrames, false);
+        assert.equal(options.wantFrames, true);
         return { meta: { title: 'Founder interview' }, transcriptText: 'Welcome back. Tell me about your company.', segments: [{ tSec: 0, durationSec: 1, text: 'Welcome back. Tell me about your company.' }], frames: null, contentHash: 'hash' };
       },
       fetchSlides: async () => {

@@ -35,6 +35,8 @@ export interface RetryOptions {
 export interface FetchVideoOptions {
   wantFrames?: boolean;
   ytDlp?: YtDlpAccessOptions;
+  /** Directory to pass as `--slides-dir` so slide images land alongside other per-video artifacts. */
+  slidesDir?: string;
   hasCommand?: (command: string) => boolean;
   runCommand?: (command: string, args: string[]) => Promise<string>;
   fetchText?: (url: string) => Promise<string>;
@@ -79,7 +81,7 @@ export async function fetchVideo(videoId: string, options: FetchVideoOptions = {
   // Rung 3: summarize bridge transcript/slides.
   if (!segments.length || options.wantFrames) {
     try {
-      const summarized = await (options.runSummarize ?? ((url, opts) => runSummarize(url, opts)))(videoUrl, { withSlides: options.wantFrames, withOcr: options.wantFrames, ytDlp: options.ytDlp });
+      const summarized = await (options.runSummarize ?? ((url, opts) => runSummarize(url, opts)))(videoUrl, { withSlides: options.wantFrames, withOcr: options.wantFrames, outDir: options.slidesDir, ytDlp: options.ytDlp });
       if (!segments.length) segments = summarized.transcript.segments;
       meta.title = stringValue(summarized.meta.title) ?? meta.title;
       meta.channel = stringValue(summarized.meta.channel) ?? meta.channel;

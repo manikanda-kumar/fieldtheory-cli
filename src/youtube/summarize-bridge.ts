@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { hasCommandOnPath } from '../engine.js';
 import type { YtDlpAccessOptions } from './yt-dlp.js';
@@ -25,16 +26,20 @@ export interface RunSummarizeOptions {
   withSlides?: boolean;
   withOcr?: boolean;
   outDir?: string;
-  youtubeMode?: 'yt-dlp';
+  youtubeMode?: 'yt-dlp' | 'auto';
+  /** Override for summarize's --slides-max. Default of 6 is too coarse for hour-long talks. */
   slidesMax?: number;
   slidesSceneThreshold?: number;
   debugSlides?: boolean;
+  /** Override for summarize's --timeout flag. Slide extraction on long videos exceeds the 2-minute default. */
+  timeout?: string;
   ytDlp?: Pick<YtDlpAccessOptions, 'cookiesFromBrowser'>;
 }
 
 export interface SummarizeDeps {
   hasCommand?: (command: string) => boolean;
   runCommand?: (command: string, args: string[], env?: NodeJS.ProcessEnv) => Promise<string>;
+  readFile?: (filePath: string) => Promise<string>;
 }
 
 export class SummarizeUnavailableError extends Error {
@@ -51,17 +56,79 @@ export function hasSummarize(deps: Pick<SummarizeDeps, 'hasCommand'> = {}): bool
 export async function runSummarize(videoUrl: string, options: RunSummarizeOptions = {}, deps: SummarizeDeps = {}): Promise<SummarizeResult> {
   if (!hasSummarize(deps)) throw new SummarizeUnavailableError();
 
-  const args = [videoUrl, '--extract', '--json', '--timestamps', '--no-color'];
-  if (options.youtubeMode) args.push('--youtube', options.youtubeMode);
-  if (options.withSlides) args.push('--slides');
-  if (options.debugSlides) args.push('--slides-debug');
-  if (options.withOcr) args.push('--slides-ocr');
-  if (options.outDir) args.push('--slides-dir', options.outDir);
-  if (options.slidesMax != null) args.push('--slides-max', String(options.slidesMax));
-  if (options.slidesSceneThreshold != null) args.push('--slides-scene-threshold', String(options.slidesSceneThreshold));
+  // Flag set follows the youtube-transcript-skill convention at
+  // ../tools/skills/youtube-transcript-skill/workflows/. `--youtube auto --format md
+  // --markdown-mode llm` are what make the top-level `--slides` flag actually extract
+  // slide frames in `--json` mode; without them slides come back null.
+  const args = [
+    videoUrl,
+    '--extract',
+    '--youtube', options.youtubeMode ?? 'auto',
+    '--format', 'md',
+    '--markdown-mode', 'llm',
+    '--timestamps',
+    '--json',
+  ];
+  if (options.withSlides) {
+    args.push('--slides');
+    if (options.debugSlides) args.push('--slides-debug');
+    args.push('--slides-max', String(options.slidesMax ?? 16));
+    if (options.withOcr) args.push('--slides-ocr');
+    if (options.outDir) args.push('--slides-dir', options.outDir);
+    if (options.slidesSceneThreshold != null) args.push('--slides-scene-threshold', String(options.slidesSceneThreshold));
+  }
+  // Slide extraction on hour-long videos exceeds summarize's 2m default — give it room.
+  args.push('--timeout', options.timeout ?? (options.withSlides ? '15m' : '5m'));
+
   const env = summarizeEnv(options.ytDlp);
   const output = await (deps.runCommand ?? runCommand)('summarize', args, env);
-  return parseSummarizeJson(output);
+  const parsed = parseSummarizeJson(output);
+
+  // `summarize`'s stdout JSON reports pre-adjust slide paths (e.g. the timestamp
+  // before the thumbnail-adjust step rewrites filenames). The on-disk `slides.json`
+  // in `slidesDir` is post-adjust and matches the actual files, so prefer it when present.
+  if (options.withSlides && parsed.slides.length) {
+    const slidesDir = extractSlidesDir(output);
+    if (slidesDir) {
+      const reconciled = await readSlidesManifest(slidesDir, deps.readFile);
+      if (reconciled) parsed.slides = reconciled;
+    }
+  }
+
+  return parsed;
+}
+
+function extractSlidesDir(output: string): string | undefined {
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    const slides = parsed.slides as Record<string, unknown> | undefined;
+    if (slides && typeof slides === 'object' && !Array.isArray(slides)) {
+      const dir = slides.slidesDir;
+      if (typeof dir === 'string' && dir) return dir;
+    }
+  } catch {
+    /* fall through */
+  }
+  return undefined;
+}
+
+async function readSlidesManifest(
+  slidesDir: string,
+  readFileImpl: SummarizeDeps['readFile'],
+): Promise<SummarizeSlide[] | null> {
+  const reader = readFileImpl ?? ((p: string) => readFile(p, 'utf8'));
+  try {
+    const manifestRaw = await reader(path.join(slidesDir, 'slides.json'));
+    const manifest = JSON.parse(manifestRaw) as Record<string, unknown>;
+    const rawSlides = Array.isArray(manifest.slides) ? manifest.slides : null;
+    if (!rawSlides) return null;
+    const reconciled = rawSlides
+      .map((slide) => normalizeSlide(slide, slidesDir))
+      .filter((slide): slide is SummarizeSlide => slide != null);
+    return reconciled.length ? reconciled : null;
+  } catch {
+    return null;
+  }
 }
 
 function summarizeEnv(ytDlp: RunSummarizeOptions['ytDlp']): NodeJS.ProcessEnv | undefined {
