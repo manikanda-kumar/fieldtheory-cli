@@ -64,7 +64,7 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
   const existingNotesPath = state.videos[videoId]?.artifacts.notesPath;
   const notesPath = youtubeNotePath(videoId, fetched.meta.publishDate, existingNotesPath);
   let notesForMarkdown = notes;
-  let slideMarkdown = '';
+  let slideImages: FrameRef[] = [];
   const artifacts: Record<string, string | undefined> = { notesPath };
   let status: 'done' | 'partial' = 'done';
 
@@ -82,14 +82,15 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
       if (hasUsableSlideFrames(usableFrames, { videoType: notes.videoType, transcriptCueScore: slidePlan.transcriptCueScore })) {
         artifacts.slideCount = String(usableFrames.length);
         artifacts.slidesDir = artifactDir;
-        const slideList = usableFrames.map((f) => `- [${formatSlideTSec(f.tSec)}](${f.imagePath})`).join('\n');
-        slideMarkdown = `\n## Slides\n\n${slideList}\n`;
+        slideImages = usableFrames;
       }
     }
   }
 
   notesForMarkdown = withApproximateChapters(notesForMarkdown, fetched.meta.durationSec);
-  let notesMarkdown = renderNotesMarkdown(videoId, fetched.meta, notesForMarkdown) + slideMarkdown;
+  // Slides are embedded inline within the chapter timeline for visual continuity,
+  // not appended as a detached link list.
+  let notesMarkdown = renderNotesMarkdown(videoId, fetched.meta, notesForMarkdown, slideImages);
 
   if (options.overview === 'audio') {
     try {
@@ -165,7 +166,7 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
     }
   }
 
-  const qualityWarnings = validateNoteQuality(fetched, notesForMarkdown, Boolean(slideMarkdown));
+  const qualityWarnings = validateNoteQuality(fetched, notesForMarkdown, slideImages.length > 0);
   if (qualityWarnings.length) {
     artifacts.validationWarnings = qualityWarnings.map((warning) => warning.message).join('; ');
     // Only serious warnings (insufficient source material) downgrade a note to
@@ -217,13 +218,6 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
   await writeYoutubeIndexFromState();
 
   return { videoId, status, processed: true, notesPath, audioPath: artifacts.audioPath, videoPath: artifacts.videoPath, canonicalSource };
-}
-
-function formatSlideTSec(tSec: number): string {
-  const total = Math.max(0, Math.floor(tSec));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 function withApproximateChapters(notes: YoutubeNotes, durationSec: number | undefined): YoutubeNotes {

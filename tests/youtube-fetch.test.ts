@@ -171,6 +171,21 @@ test('fetchVideo retries yt-dlp subtitle download after a 429 with backoff', asy
   assert.equal(delays.length, 1);
 });
 
+test('fetchVideo rejects YouTube boilerplate so a stub never overwrites a good note', async () => {
+  await assert.rejects(
+    fetchVideo('v9', {
+      hasCommand: () => false,
+      fetchText: async () => '',
+      runSummarize: async () => ({
+        transcript: { text: 'Enjoy the videos and music you love, upload original content, and share it all with friends, family, and the world on YouTube.', segments: [] },
+        slides: [],
+        meta: { title: '- YouTube' },
+      }),
+    }),
+    NoTranscriptError,
+  );
+});
+
 test('fetchVideo throws NoTranscriptError when no transcript source works', async () => {
   await assert.rejects(
     fetchVideo('v3', {

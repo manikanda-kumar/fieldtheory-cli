@@ -99,7 +99,7 @@ test('renderNotesMarkdown includes frontmatter, sections, and timestamp links', 
     chapters: [{ tSec: 42, label: 'Important', summary: 'The key part' }],
     actionItems: ['Try it'],
     topics: ['AI', 'Research'],
-  }, '2026-05-12T00:00:00.000Z');
+  }, [], '2026-05-12T00:00:00.000Z');
 
   assert.match(md, /source: youtube/);
   assert.match(md, /videoType: talk/);
@@ -109,4 +109,26 @@ test('renderNotesMarkdown includes frontmatter, sections, and timestamp links', 
   assert.match(md, /Short summary/);
   assert.match(md, /\[00:42\]\(https:\/\/youtu\.be\/v1\?t=42\).*Important/);
   assert.match(md, /- AI/);
+});
+
+test('renderNotesMarkdown embeds slide thumbnails inline under their chapter', () => {
+  const md = renderNotesMarkdown('v1', meta, {
+    videoType: 'tutorial',
+    tldr: 'Short summary',
+    keyPoints: [],
+    chapters: [
+      { tSec: 0, label: 'Intro', summary: 'Opening' },
+      { tSec: 300, label: 'Build', summary: 'Implementation' },
+    ],
+    actionItems: [],
+    topics: [],
+  }, [
+    { tSec: 30, imagePath: '/tmp/a.png' },
+    { tSec: 360, imagePath: '/tmp/b.png' },
+  ], '2026-05-12T00:00:00.000Z');
+
+  // No detached slides section; thumbnails are clickable and nested under chapters.
+  assert.doesNotMatch(md, /## Slides/);
+  assert.match(md, /\*\*Intro\*\* — Opening\n  \[!\[Slide at 00:30\]\(\/tmp\/a\.png\)\]\(https:\/\/youtu\.be\/v1\?t=30\)/);
+  assert.match(md, /\*\*Build\*\* — Implementation\n  \[!\[Slide at 06:00\]\(\/tmp\/b\.png\)\]\(https:\/\/youtu\.be\/v1\?t=360\)/);
 });

@@ -97,7 +97,11 @@ test('processVideo keeps chapter summaries separate from captured slides', async
 
     const md = await fs.readFile(result.notesPath!, 'utf8');
     assert.match(md, /\[00:00\]\(https:\/\/youtu\.be\/v1\?t=0\) \*\*Part 1\*\* — Module boundaries matter/);
-    assert.match(md, /## Slides\n\n- \[00:10\]\(\/tmp\/slide-1\.png\)/);
+    // Slides are embedded inline within the chapter timeline, not a detached list.
+    assert.doesNotMatch(md, /## Slides/);
+    assert.match(md, /  \[!\[Slide at 00:10\]\(\/tmp\/slide-1\.png\)\]\(https:\/\/youtu\.be\/v1\?t=10\)/);
+    // Slide at 05:00 (300s) falls under Part 1 [0,400); slide at 10:00 (600s) under Part 2 [400,800).
+    assert.match(md, /\*\*Part 2\*\* — Tool access needs validation\n  \[!\[Slide at 10:00\]\(\/tmp\/slide-3\.png\)\]/);
     assert.doesNotMatch(md, /\*\*Slide 1\*\* — Captured slide frame/);
   });
 });

@@ -101,6 +101,10 @@ export async function fetchVideo(videoId: string, options: FetchVideoOptions = {
 
   if (!segments.length) throw new NoTranscriptError(videoId);
   const transcriptText = segments.map((segment) => segment.text).join(' ').trim();
+  // When yt-dlp metadata/captions fail, the HTML/oEmbed fallback can leak YouTube's
+  // generic page boilerplate as the "transcript". Treat that as no transcript so a
+  // --force rerun under a transient block never overwrites a good note with a stub.
+  if (isYoutubeBoilerplate(transcriptText)) throw new NoTranscriptError(videoId);
   return {
     meta,
     transcriptText,
@@ -272,6 +276,14 @@ async function fetchYtDlpTranscript(videoId: string, videoUrl: string, runComman
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+// YouTube's generic page meta-description, surfaced when the real page/captions
+// are blocked. Distinctive enough that a real transcript will not match it.
+const YOUTUBE_BOILERPLATE_RE = /enjoy the videos and music (you|that you) love[\s\S]*share it all with (your )?friends, family/i;
+
+export function isYoutubeBoilerplate(text: string): boolean {
+  return YOUTUBE_BOILERPLATE_RE.test(text.replace(/\s+/g, ' '));
 }
 
 export function isRateLimited(error: unknown): boolean {

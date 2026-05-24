@@ -60,7 +60,13 @@ ${transcript}
   return normalizeNotes(result.json, initialVideoType);
 }
 
-export function renderNotesMarkdown(videoId: string, meta: VideoMeta, notes: YoutubeNotes, syncedAt = new Date().toISOString()): string {
+export interface SlideImage {
+  tSec: number;
+  imagePath: string;
+  ocrText?: string;
+}
+
+export function renderNotesMarkdown(videoId: string, meta: VideoMeta, notes: YoutubeNotes, slides: SlideImage[] = [], syncedAt = new Date().toISOString()): string {
   const url = `https://www.youtube.com/watch?v=${videoId}`;
   return `---
 source: youtube
@@ -83,7 +89,7 @@ ${renderList(notes.keyPoints)}
 
 ## Chapters
 
-${notes.chapters.map((chapter) => `- [${formatTimestamp(chapter.tSec)}](https://youtu.be/${videoId}?t=${Math.max(0, Math.floor(chapter.tSec))}) **${chapter.label}** — ${chapter.summary}`).join('\n') || '- None'}
+${renderChapters(videoId, notes.chapters, slides)}
 
 ## Action items
 
@@ -93,6 +99,39 @@ ${renderList(notes.actionItems)}
 
 ${renderList(notes.topics)}
 `;
+}
+
+/**
+ * Render chapters with slide thumbnails embedded inline at their timeline
+ * position. Each slide is bucketed under the last chapter whose timestamp it
+ * follows (slides before the first chapter attach to it), so the captured
+ * visuals flow alongside the summary instead of living in a detached list.
+ */
+function renderChapters(videoId: string, chapters: YoutubeNotes['chapters'], slides: SlideImage[]): string {
+  const sortedSlides = [...slides].sort((a, b) => a.tSec - b.tSec);
+  if (!chapters.length) {
+    if (!sortedSlides.length) return '- None';
+    return sortedSlides.map((slide) => renderSlide(videoId, slide)).join('\n');
+  }
+  const buckets: SlideImage[][] = chapters.map(() => []);
+  for (const slide of sortedSlides) {
+    let index = 0;
+    for (let i = 0; i < chapters.length; i += 1) {
+      if (slide.tSec >= chapters[i].tSec) index = i;
+    }
+    buckets[index].push(slide);
+  }
+  return chapters.map((chapter, i) => {
+    const line = `- [${formatTimestamp(chapter.tSec)}](https://youtu.be/${videoId}?t=${Math.max(0, Math.floor(chapter.tSec))}) **${chapter.label}** — ${chapter.summary}`;
+    const images = buckets[i].map((slide) => `  ${renderSlide(videoId, slide)}`);
+    return [line, ...images].join('\n');
+  }).join('\n');
+}
+
+function renderSlide(videoId: string, slide: SlideImage): string {
+  const ts = formatTimestamp(slide.tSec);
+  const link = `https://youtu.be/${videoId}?t=${Math.max(0, Math.floor(slide.tSec))}`;
+  return `[![Slide at ${ts}](${slide.imagePath})](${link})`;
 }
 
 export function classifyYoutubeVideoType(meta: Pick<VideoMeta, 'title' | 'channel' | 'durationSec'>): YoutubeVideoType {
