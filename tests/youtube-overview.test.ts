@@ -194,6 +194,7 @@ test('processVideo post-validates thin long notes and marks them partial', async
 test('processVideo ships single-segment notes as done when transcript coverage is strong', async () => {
   await withTempRoots(async () => {
     const transcriptText = Array.from({ length: 60 }, (_, i) => `Sentence ${i + 1} carries enough substance to cover the topic in depth.`).join(' ');
+    const richSummary = Array.from({ length: 45 }, (_, i) => `Detailed evidence sentence ${i + 1} explains a concrete claim from the talk with enough specificity to avoid boilerplate.`).join(' ');
     const result = await processVideo('v1', {
       overview: 'none',
       force: true,
@@ -206,12 +207,12 @@ test('processVideo ships single-segment notes as done when transcript coverage i
       }),
       llm: { chat: async () => ({ text: '{}', json: {
         videoType: 'talk',
-        tldr: 'Summary',
-        keyPoints: ['Point one', 'Point two', 'Point three'],
+        tldr: richSummary,
+        keyPoints: [richSummary, richSummary, richSummary],
         chapters: [
-          { tSec: 0, label: 'Open', summary: 'Opening' },
-          { tSec: 400, label: 'Middle', summary: 'Body' },
-          { tSec: 800, label: 'Close', summary: 'Wrap up' },
+          { tSec: 0, label: 'Open', summary: richSummary },
+          { tSec: 400, label: 'Middle', summary: richSummary },
+          { tSec: 800, label: 'Close', summary: richSummary },
         ],
         actionItems: [],
         topics: [],

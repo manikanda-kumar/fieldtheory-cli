@@ -917,6 +917,84 @@ test('syncBookmarksGraphQL: continue scans stop when old pages add no local reco
   }, existing);
 });
 
+test('syncBookmarksGraphQL: large incremental sync stops after reaching newest stored bookmark', async () => {
+  const newestStored = makeTweetResult({
+    rest_id: '1234567890',
+    legacy: {
+      id_str: '1234567890',
+      full_text: 'Newest stored bookmark',
+      created_at: 'Tue Mar 10 12:00:00 +0000 2026',
+    },
+  });
+  const newerBookmark = makeTweetResult({
+    rest_id: '1234567891',
+    legacy: {
+      id_str: '1234567891',
+      full_text: 'New bookmark since last sync',
+      created_at: 'Wed Mar 11 12:00:00 +0000 2026',
+    },
+  });
+  const page1 = makeGraphQLResponse([newerBookmark, newestStored], 'cursor-2');
+  const page2 = makeGraphQLResponse([
+    makeTweetResult({
+      rest_id: '1234567892',
+      legacy: {
+        id_str: '1234567892',
+        full_text: 'Older page should not be fetched',
+        created_at: 'Mon Mar 09 12:00:00 +0000 2026',
+      },
+    }),
+  ]);
+
+  const existing = [
+    makeRecord({
+      id: '1234567890',
+      tweetId: '1234567890',
+      text: 'Newest stored bookmark',
+      postedAt: 'Tue Mar 10 12:00:00 +0000 2026',
+    }),
+    ...Array.from({ length: 9499 }, (_, index) => {
+      const id = String(2000000000 + index);
+      return makeRecord({
+        id,
+        tweetId: id,
+        text: `Existing bookmark ${index}`,
+        postedAt: 'Mon Mar 09 12:00:00 +0000 2026',
+      });
+    }),
+  ];
+
+  await withIsolatedGapFillDataDir(async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      const body = fetchCalls === 0 ? page1 : page2;
+      fetchCalls += 1;
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await syncBookmarksGraphQL({
+        incremental: true,
+        csrfToken: 'ct0',
+        cookieHeader: 'ct0=ct0; auth_token=auth',
+        delayMs: 0,
+        stalePageLimit: 1,
+      });
+
+      assert.equal(fetchCalls, 1);
+      assert.equal(result.pages, 1);
+      assert.equal(result.added, 1);
+      assert.equal(result.stopReason, 'caught up to newest stored bookmark');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }, existing);
+});
+
 test('syncBookmarksGraphQL: rate limit stops cleanly and saves cursor for continue', async () => {
   const page1 = makeGraphQLResponse([makeTweetResult()], 'cursor-2');
 

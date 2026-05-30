@@ -11,7 +11,9 @@ import {
 } from '../src/paths.js';
 import {
   loadYoutubeState,
+  markPlaylistSynced,
   markVideo,
+  reconcileYoutubeStateFromLibrary,
   saveYoutubeState,
   shouldProcess,
   updateYoutubeState,
@@ -213,4 +215,54 @@ test('shouldProcess skips done videos with matching hash unless forced', () => {
   assert.equal(shouldProcess(state, 'v1', 'hash-2', false), true);
   assert.equal(shouldProcess(state, 'v1', 'hash-1', true), true);
   assert.equal(shouldProcess(state, 'new-video', 'hash-1', false), true);
+});
+
+test('markPlaylistSynced persists playlist video ids for delta sync', () => {
+  const state: YoutubeState = { version: 1, playlists: {}, videos: {} };
+
+  markPlaylistSynced(state, 'PL1', ['v1', 'v2'], '2026-05-12T00:00:00.000Z');
+
+  assert.deepEqual(state.playlists.PL1, {
+    lastSyncedAt: '2026-05-12T00:00:00.000Z',
+    videoIds: ['v1', 'v2'],
+  });
+});
+
+test('reconcileYoutubeStateFromLibrary restores notes that are present on disk but missing from state', async () => {
+  await withTempEnv(async ({ libraryDir }) => {
+    const notesPath = path.join(libraryDir, 'youtube', '2026-05', 'v1.md');
+    await fs.mkdir(path.dirname(notesPath), { recursive: true });
+    await fs.writeFile(notesPath, `---
+source: youtube
+videoType: interview
+videoId: v1
+url: https://www.youtube.com/watch?v=v1
+channel: Example Channel
+duration: 4861
+published: 20260512
+synced: 2026-05-28T00:00:00.000Z
+---
+
+# Recovered Video
+
+Recovered summary from the markdown body.
+
+## Topics
+
+- Agents
+- Tools
+`, 'utf8');
+
+    const added = await reconcileYoutubeStateFromLibrary();
+    const state = await loadYoutubeState();
+
+    assert.equal(added, 1);
+    assert.equal(state.videos.v1.status, 'done');
+    assert.equal(state.videos.v1.title, 'Recovered Video');
+    assert.equal(state.videos.v1.channel, 'Example Channel');
+    assert.equal(state.videos.v1.durationSec, 4861);
+    assert.equal(state.videos.v1.videoType, 'interview');
+    assert.deepEqual(state.videos.v1.topics, ['Agents', 'Tools']);
+    assert.equal(state.videos.v1.artifacts.notesPath, notesPath);
+  });
 });

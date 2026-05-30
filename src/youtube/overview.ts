@@ -255,6 +255,17 @@ function validateNoteQuality(fetched: VideoFetchResult, notes: YoutubeNotes, has
   if (!hasSlidesSection && /\b(slide|screen|demo|terminal|code)\b/i.test(fetched.transcriptText) && notes.videoType === 'tutorial') {
     warnings.push({ message: 'No usable slides/screenshots passed validation for this tutorial.', severity: 'minor' });
   }
+  // Serious: generated notes are too thin relative to video length. This usually
+  // means the model produced boilerplate instead of extracting real content.
+  const totalContentLength = [
+    notes.tldr,
+    ...notes.keyPoints,
+    ...notes.chapters.map((c) => c.summary),
+  ].join(' ').length;
+  const expectedMin = duration >= 45 * 60 ? 8_000 : duration >= 20 * 60 ? 5_000 : duration >= 10 * 60 ? 2_500 : 0;
+  if (expectedMin > 0 && totalContentLength < expectedMin) {
+    warnings.push({ message: `Generated notes are too thin (${totalContentLength} chars) for a ${Math.round(duration / 60)}min video; expected at least ${expectedMin}. The model likely produced boilerplate.`, severity: 'serious' });
+  }
   return warnings;
 }
 

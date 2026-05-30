@@ -44,12 +44,15 @@ test('generateNotes truncates oversized transcripts in the prompt', async () => 
   }, { transcriptCharBudget: 20 });
 
   assert.match(prompt, /\[truncated\]/);
-  assert.ok(prompt.length < 2000);
+  const transcriptMatch = prompt.match(/<untrusted_transcript>\n([\s\S]*?)\n<\/untrusted_transcript>/);
+  assert.ok(transcriptMatch);
+  assert.ok(transcriptMatch[1].length < 80);
 });
 
 test('classifyYoutubeVideoType recognizes common playlist video types from metadata', () => {
   assert.equal(classifyYoutubeVideoType({ title: 'Full Tutorial: Build a Mobile App with Codex', durationSec: 1650 }), 'tutorial');
   assert.equal(classifyYoutubeVideoType({ title: 'Skill Issue: Andrej Karpathy on Code Agents', channel: 'No Priors', durationSec: 3992 }), 'interview');
+  assert.equal(classifyYoutubeVideoType({ title: 'Building OpenCode with Dax Raad', channel: 'The Pragmatic Engineer', durationSec: 4861 }), 'interview');
   assert.equal(classifyYoutubeVideoType({ title: 'Simple Made Easy - Rich Hickey conference talk', channel: 'Strange Loop Conference', durationSec: 3699 }), 'talk');
   assert.equal(classifyYoutubeVideoType({ title: 'I Tested Ollama vs oMLX on Apple M5 Max — 4x Faster Prefill', durationSec: 1078 }), 'benchmark');
   assert.equal(classifyYoutubeVideoType({ title: 'What is an RLM? The Truth Behind Recursive Language Models', durationSec: 280 }), 'explainer');

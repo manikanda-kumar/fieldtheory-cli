@@ -716,7 +716,7 @@ export async function syncBookmarksGraphQL(
   // and there's a cursor to keep going, automatically page through to
   // find bookmarks the old 20-per-page × 500-page cap missed.
   const OLD_CAP_THRESHOLD = 9_500;
-  const terminalStops = new Set(['end of bookmarks']);
+  const terminalStops = new Set(['end of bookmarks', 'caught up to newest stored bookmark']);
   const shouldAutoContinue =
     incremental &&
     !options.resumeCursor &&

@@ -48,6 +48,7 @@ import { processVideo, type OverviewMode } from './youtube/overview.js';
 import { resolvePlaylist } from './youtube/playlist.js';
 import { writeYoutubeIndexFromState } from './youtube/index-html.js';
 import { createEngineYoutubeLlmClient, createFallbackYoutubeLlmClient, type YoutubeLlmClient } from './youtube/llm.js';
+import { markPlaylistSynced, updateYoutubeState } from './youtube/state.js';
 import type { YtDlpAccessOptions } from './youtube/yt-dlp.js';
 import { listBrowserIds } from './browsers.js';
 import { configureHttpProxyFromEnv } from './http-proxy.js';
@@ -1197,7 +1198,7 @@ export function buildCli() {
     .option('--limit <n>', 'Max videos to consider', (v: string) => Number(v))
     .option('--force', 'Reprocess videos even when state says they are unchanged', false)
     .option('--dry-run', 'Print videos that would be processed without fetching transcripts or calling LLMs', false)
-    .option('--engine <name>', 'LLM CLI engine for notes/scripts: claude or codex (default comes from ft model/autodetect; OpenRouter is fallback)')
+    .option('--engine <name>', 'LLM CLI engine for notes/scripts: claude, codex, or none for OpenRouter-only (default comes from ft model/autodetect; OpenRouter is fallback)')
     .option('--model <model>', 'Override the local engine model; values containing / also override the OpenRouter fallback model')
     .option('--effort <effort>', 'Override local engine reasoning effort')
     .option('--cookies-from-browser <spec>', 'Pass browser cookies to yt-dlp (example: chrome or "chrome:Profile 1"; env: FT_YOUTUBE_COOKIES_FROM_BROWSER)')
@@ -1241,15 +1242,18 @@ export function buildCli() {
       const openRouterModel = options.model && String(options.model).includes('/') ? String(options.model) : undefined;
       const openRouter = createOpenRouterClient({ primaryModel: openRouterModel });
       let llm: YoutubeLlmClient = openRouter;
-      try {
-        const engine = await resolveEngine({
-          override: options.engine ? String(options.engine) : undefined,
-          model: options.model ? String(options.model) : undefined,
-          effort: options.effort ? String(options.effort) : undefined,
-        });
-        llm = createFallbackYoutubeLlmClient(createEngineYoutubeLlmClient(engine), openRouter);
-      } catch (error) {
-        if (options.engine) throw error;
+      const engineName = stringOption(options.engine);
+      if (engineName !== 'none') {
+        try {
+          const engine = await resolveEngine({
+            override: engineName,
+            model: options.model ? String(options.model) : undefined,
+            effort: options.effort ? String(options.effort) : undefined,
+          });
+          llm = createFallbackYoutubeLlmClient(createEngineYoutubeLlmClient(engine), openRouter);
+        } catch (error) {
+          if (engineName) throw error;
+        }
       }
       const ttsEngine = String(options.tts ?? 'auto') as TtsEngine;
       if (!['auto', 'openai', 'say', 'piper'].includes(ttsEngine)) {
@@ -1289,6 +1293,11 @@ export function buildCli() {
         if (requestDelayMs > 0 && i < videos.length - 1) await new Promise((resolve) => setTimeout(resolve, requestDelayMs));
       }
       if (youtubeSources.length) await upsertYoutubeVideosAsSources(youtubeSources);
+      if (!videoIdsFile) {
+        await updateYoutubeState((state) => {
+          markPlaylistSynced(state, playlist.playlistId, playlist.videos.map((video) => video.videoId));
+        });
+      }
       const indexPath = await writeYoutubeIndexFromState();
       console.log(`  ✓ YouTube sync complete: ${processed} processed, ${skipped} skipped, ${failed} failed`);
       console.log(`  ✓ Index: ${indexPath}`);

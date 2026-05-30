@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { youtubeLibraryDir, youtubeLibraryIndexHtmlPath } from '../paths.js';
-import { loadYoutubeState } from './state.js';
+import { loadYoutubeState, reconcileYoutubeStateFromLibrary } from './state.js';
 
 export interface YoutubeIndexEntry {
   videoId: string;
@@ -34,6 +34,7 @@ export async function writeYoutubeIndexHtml(entries: YoutubeIndexEntry[], genera
 }
 
 export async function writeYoutubeIndexFromState(generatedAt = new Date().toISOString()): Promise<string> {
+  await reconcileYoutubeStateFromLibrary();
   const state = await loadYoutubeState();
   const entries: YoutubeIndexEntry[] = Object.entries(state.videos)
     .filter(([, video]) => Boolean(video.artifacts.notesPath))
