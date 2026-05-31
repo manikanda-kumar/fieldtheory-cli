@@ -118,20 +118,16 @@ test('ft sync: media is off by default and exposes --media opt-in', () => {
   assert.equal(mediaOption.long, '--media');
 });
 
-test('ft sync-browser: exposes only current first-cut flags', () => {
+test('ft sync-browser: is deprecated and prints a notice', async () => {
   const program = buildCli();
   const syncBrowserCmd = program.commands.find((c: any) => c.name() === 'sync-browser');
   assert.ok(syncBrowserCmd, 'sync-browser command should be registered');
   const opts = syncBrowserCmd.options.map((o: any) => o.long);
-  assert.ok(opts.includes('--browser'));
-  assert.ok(opts.includes('--profile'));
-  assert.ok(opts.includes('--bookmarks-file'));
-  assert.ok(!opts.includes('--all'), '--all should not be advertised');
-  assert.ok(!opts.includes('--all-profiles'), '--all-profiles should not be advertised');
-});
+  assert.ok(!opts.includes('--browser'), '--browser should not be advertised');
+  assert.ok(!opts.includes('--profile'), '--profile should not be advertised');
+  assert.ok(!opts.includes('--bookmarks-file'), '--bookmarks-file should not be advertised');
 
-test('ft sync-browser: requires --bookmarks-file for supported browsers', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-sync-browser-cli-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-sync-browser-deprecation-'));
   const origEnv = process.env.FT_DATA_DIR;
   const origExitCode = process.exitCode;
   process.env.FT_DATA_DIR = tmpDir;
@@ -140,11 +136,11 @@ test('ft sync-browser: requires --bookmarks-file for supported browsers', async 
 
   try {
     const errors = await captureConsoleErrors(async () => {
-      await buildCli().parseAsync(['node', 'ft', 'sync-browser', '--browser', 'chrome']);
+      await buildCli().parseAsync(['node', 'ft', 'sync-browser']);
     });
     assert.ok(
-      errors.includes('--bookmarks-file <path> is required for chrome bookmark sync.'),
-      `expected required bookmarks-file error, got:\n${errors}`,
+      errors.includes('deprecated') || errors.includes('sync-raindrop'),
+      `expected deprecation notice, got:\n${errors}`,
     );
     assert.equal(process.exitCode, 1);
   } finally {
@@ -153,6 +149,17 @@ test('ft sync-browser: requires --bookmarks-file for supported browsers', async 
     process.exitCode = origExitCode;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('ft sync-raindrop: exposes expected options', () => {
+  const program = buildCli();
+  const syncRaindropCmd = program.commands.find((c: any) => c.name() === 'sync-raindrop');
+  assert.ok(syncRaindropCmd, 'sync-raindrop command should be registered');
+  const opts = syncRaindropCmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--rebuild'));
+  assert.ok(opts.includes('--dry-run'));
+  assert.ok(opts.includes('--classify'));
+  assert.ok(opts.includes('--collections'));
 });
 
 test('shouldDownloadSyncMedia enables media only when --media is truthy', () => {

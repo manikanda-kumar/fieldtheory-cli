@@ -14,6 +14,7 @@ import {
 } from '../src/canonical-bookmarks-db.js';
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
+import type { RaindropRecord } from '../src/raindrop/types.js';
 
 async function withIsolatedDataDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-canonical-'));
@@ -28,19 +29,13 @@ async function withIsolatedDataDir(fn: (dir: string) => Promise<void>): Promise<
   }
 }
 
-async function writeBrowserBookmarks(
-  dir: string,
-  records: unknown[],
-  options: { browser?: 'chrome' | 'vivaldi'; profile?: string } = {},
-): Promise<void> {
-  const browser = options.browser ?? 'chrome';
-  const profile = options.profile ?? 'Default';
-  const browserCacheDir = path.join(dir, 'browsers', browser, profile);
-  await mkdir(browserCacheDir, { recursive: true });
-  await writeJsonLines(path.join(browserCacheDir, 'bookmarks.jsonl'), records);
+async function writeRaindropBookmarks(dir: string, records: RaindropRecord[]): Promise<void> {
+  const raindropDir = path.join(dir, 'raindrop');
+  await mkdir(raindropDir, { recursive: true });
+  await writeJsonLines(path.join(raindropDir, 'bookmarks.jsonl'), records);
 }
 
-test('rebuildCanonicalIndex dedupes X external link with browser bookmark URL', async () => {
+test('rebuildCanonicalIndex dedupes X external link with raindrop bookmark URL', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [{
       id: 'x-1',
@@ -50,32 +45,30 @@ test('rebuildCanonicalIndex dedupes X external link with browser bookmark URL', 
       links: ['https://github.com/example/tool?utm_source=x'],
       syncedAt: '2026-05-10T00:00:00.000Z',
     }]);
-    await writeBrowserBookmarks(dir, [{
-      id: 'chrome:Default:10',
-      browser: 'chrome',
-      profile: 'Default',
-      sourceItemId: '10',
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
       url: 'https://github.com/example/tool',
       title: 'Acme Tool',
-      folderPath: ['Dev'],
+      collectionPath: ['Dev'],
+      createdAt: '2026-05-10T00:00:00.000Z',
       syncedAt: '2026-05-10T00:00:00.000Z',
     }]);
 
-    const result = await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    const result = await rebuildCanonicalIndex();
     assert.equal(result.sourceCount, 2);
     assert.equal(result.canonicalCount, 1);
 
     const matches = await searchCanonicalBookmarks({ query: 'Acme', limit: 10 });
     assert.equal(matches.length, 1);
     assert.equal(matches[0].sourceCount, 2);
-    assert.deepEqual(matches[0].sources.sort(), ['chrome:Default', 'x']);
+    assert.deepEqual(matches[0].sources.sort(), ['raindrop', 'x']);
 
-    const listed = await listCanonicalBookmarks({ source: 'chrome', limit: 10 });
+    const listed = await listCanonicalBookmarks({ source: 'raindrop', limit: 10 });
     assert.equal(listed.length, 1);
     assert.equal(listed[0].canonicalUrl, 'https://github.com/example/tool');
     assert.equal(listed[0].displayTitle, 'Acme Tool');
     assert.equal(listed[0].sourceCount, 2);
-    assert.deepEqual(listed[0].sources.sort(), ['chrome:Default', 'x']);
+    assert.deepEqual(listed[0].sources.sort(), ['raindrop', 'x']);
 
     const byId = await getCanonicalBookmarkById(listed[0].id);
     assert.ok(byId);
@@ -83,20 +76,18 @@ test('rebuildCanonicalIndex dedupes X external link with browser bookmark URL', 
   });
 });
 
-test('rebuildCanonicalIndex stores browser source rows with null target_url', async () => {
+test('rebuildCanonicalIndex stores raindrop source rows with null target_url', async () => {
   await withIsolatedDataDir(async (dir) => {
-    await writeBrowserBookmarks(dir, [{
-      id: 'chrome:Default:10',
-      browser: 'chrome',
-      profile: 'Default',
-      sourceItemId: '10',
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
       url: 'https://github.com/example/tool',
       title: 'Acme Tool',
-      folderPath: ['Dev'],
+      collectionPath: ['Dev'],
+      createdAt: '2026-05-10T00:00:00.000Z',
       syncedAt: '2026-05-10T00:00:00.000Z',
     }]);
 
-    await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    await rebuildCanonicalIndex();
 
     const db = await openDb(twitterBookmarksIndexPath());
     try {
@@ -104,7 +95,7 @@ test('rebuildCanonicalIndex stores browser source rows with null target_url', as
         `SELECT source_url, target_url
          FROM bookmark_sources
          WHERE id = ?`,
-        ['browser:chrome:Default:10'],
+        ['raindrop:10'],
       )[0]?.values?.[0];
       assert.deepEqual(row, ['https://github.com/example/tool', null]);
     } finally {
@@ -120,7 +111,7 @@ test('formatCanonicalSearchResults includes title, source badges, url, and empty
     displayTitle: 'Acme Tool',
     searchText: 'Acme Tool',
     sourceCount: 2,
-    sources: ['chrome:Default', 'x'],
+    sources: ['raindrop', 'x'],
     categories: 'tool',
     primaryCategory: 'tool',
     domains: 'github.com',
@@ -128,7 +119,7 @@ test('formatCanonicalSearchResults includes title, source badges, url, and empty
   }]);
 
   assert.match(formatted, /Acme Tool/);
-  assert.match(formatted, /\[chrome:Default\]/);
+  assert.match(formatted, /\[raindrop\]/);
   assert.match(formatted, /\[x\]/);
   assert.match(formatted, /https:\/\/github\.com\/example\/tool/);
   assert.match(formatted, /tool/);
@@ -136,32 +127,30 @@ test('formatCanonicalSearchResults includes title, source badges, url, and empty
   assert.equal(formatCanonicalSearchResults([]), 'No unified bookmarks found.');
 });
 
-test('classifyCanonicalBookmarks classifies browser-only GitHub bookmarks as tool', async () => {
+test('classifyCanonicalBookmarks classifies raindrop-only GitHub bookmarks as tool', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), []);
-    await writeBrowserBookmarks(dir, [{
-      id: 'chrome:Default:10',
-      browser: 'chrome',
-      profile: 'Default',
-      sourceItemId: '10',
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
       url: 'https://github.com/example/tool',
       title: 'Acme Tool',
-      folderPath: ['Dev', 'Tools'],
+      collectionPath: ['Dev', 'Tools'],
+      createdAt: '2026-05-10T00:00:00.000Z',
       syncedAt: '2026-05-10T00:00:00.000Z',
     }]);
 
-    await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    await rebuildCanonicalIndex();
     const summary = await classifyCanonicalBookmarks();
     assert.deepEqual(summary, { total: 1, classified: 1 });
 
-    const rows = await listCanonicalBookmarks({ source: 'chrome', limit: 10 });
+    const rows = await listCanonicalBookmarks({ source: 'raindrop', limit: 10 });
     assert.equal(rows.length, 1);
     assert.equal(rows[0].canonicalUrl, 'https://github.com/example/tool');
     assert.equal(rows[0].primaryCategory, 'tool');
     assert.equal(rows[0].categories, 'tool');
     assert.equal(rows[0].primaryDomain, 'github.com');
     assert.equal(rows[0].domains, 'github.com');
-    assert.deepEqual(rows[0].sources, ['chrome:Default']);
+    assert.deepEqual(rows[0].sources, ['raindrop']);
 
     const matches = await searchCanonicalBookmarks({ query: 'Acme', limit: 10 });
     assert.equal(matches.length, 1);
@@ -169,7 +158,7 @@ test('classifyCanonicalBookmarks classifies browser-only GitHub bookmarks as too
   });
 });
 
-test('rebuildCanonicalIndex does not dedupe X bookmark with multiple external links against browser URL', async () => {
+test('rebuildCanonicalIndex does not dedupe X bookmark with multiple external links against raindrop URL', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [{
       id: 'x-1',
@@ -182,154 +171,67 @@ test('rebuildCanonicalIndex does not dedupe X bookmark with multiple external li
       ],
       syncedAt: '2026-05-10T00:00:00.000Z',
     }]);
-    await writeBrowserBookmarks(dir, [{
-      id: 'chrome:Default:10',
-      browser: 'chrome',
-      profile: 'Default',
-      sourceItemId: '10',
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
       url: 'https://github.com/example/tool',
       title: 'Acme Tool',
-      folderPath: ['Dev'],
+      collectionPath: ['Dev'],
+      createdAt: '2026-05-10T00:00:00.000Z',
       syncedAt: '2026-05-10T00:00:00.000Z',
     }]);
 
-    const result = await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    const result = await rebuildCanonicalIndex();
     assert.equal(result.sourceCount, 2);
     assert.equal(result.canonicalCount, 2);
 
     const matches = await searchCanonicalBookmarks({ query: 'Acme', limit: 10 });
     assert.equal(matches.length, 1);
     assert.equal(matches[0].sourceCount, 1);
-    assert.deepEqual(matches[0].sources, ['chrome:Default']);
+    assert.deepEqual(matches[0].sources, ['raindrop']);
   });
 });
 
-test('rebuildCanonicalIndex skips malformed browser URLs without crashing', async () => {
+test('rebuildCanonicalIndex skips malformed raindrop URLs without crashing', async () => {
   await withIsolatedDataDir(async (dir) => {
-    await writeBrowserBookmarks(dir, [
+    await writeRaindropBookmarks(dir, [
       {
-        id: 'chrome:Default:10',
-        browser: 'chrome',
-        profile: 'Default',
-        sourceItemId: '10',
+        id: 10,
         url: 'https://example.com/ok',
         title: 'Good',
-        folderPath: [],
+        createdAt: '2026-05-10T00:00:00.000Z',
         syncedAt: '2026-05-10T00:00:00.000Z',
       },
       {
-        id: 'chrome:Default:11',
-        browser: 'chrome',
-        profile: 'Default',
-        sourceItemId: '11',
+        id: 11,
         url: 'not a valid url',
         title: 'Bad',
-        folderPath: [],
+        createdAt: '2026-05-10T00:00:00.000Z',
         syncedAt: '2026-05-10T00:00:00.000Z',
       },
     ]);
-    await writeBrowserBookmarks(
-      dir,
-      [
-        {
-          id: 'vivaldi:Default:20',
-          browser: 'vivaldi',
-          profile: 'Default',
-          sourceItemId: '20',
-          url: 'https://example.org/keep',
-          title: 'Keep',
-          folderPath: [],
-          syncedAt: '2026-05-10T00:00:00.000Z',
-        },
-      ],
-      { browser: 'vivaldi', profile: 'Default' },
-    );
 
-    const result = await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
-    const chromeRows = await listCanonicalBookmarks({ source: 'chrome', limit: 10 });
-    const vivaldiRows = await listCanonicalBookmarks({ source: 'vivaldi', limit: 10 });
+    const result = await rebuildCanonicalIndex();
+    const rows = await listCanonicalBookmarks({ source: 'raindrop', limit: 10 });
 
-    assert.equal(result.sourceCount, 2);
-    assert.equal(result.canonicalCount, 2);
-    assert.equal(chromeRows.length, 1);
-    assert.equal(chromeRows[0].canonicalUrl, 'https://example.com/ok');
-    assert.equal(vivaldiRows.length, 1);
-    assert.equal(vivaldiRows[0].canonicalUrl, 'https://example.org/keep');
-  });
-});
-
-test('rebuildCanonicalIndex isolates malformed URLs across browser profiles', async () => {
-  await withIsolatedDataDir(async (dir) => {
-    await writeBrowserBookmarks(
-      dir,
-      [
-        {
-          id: 'chrome:Default:10',
-          browser: 'chrome',
-          profile: 'Default',
-          sourceItemId: '10',
-          url: 'https://example.com/default-ok',
-          title: 'Default OK',
-          folderPath: [],
-          syncedAt: '2026-05-10T00:00:00.000Z',
-        },
-      ],
-      { browser: 'chrome', profile: 'Default' },
-    );
-    await writeBrowserBookmarks(
-      dir,
-      [
-        {
-          id: 'chrome:Work:20',
-          browser: 'chrome',
-          profile: 'Work',
-          sourceItemId: '20',
-          url: 'not a valid url',
-          title: 'Work Bad',
-          folderPath: [],
-          syncedAt: '2026-05-10T00:00:00.000Z',
-        },
-        {
-          id: 'chrome:Work:21',
-          browser: 'chrome',
-          profile: 'Work',
-          sourceItemId: '21',
-          url: 'https://example.com/work-ok',
-          title: 'Work OK',
-          folderPath: [],
-          syncedAt: '2026-05-10T00:00:00.000Z',
-        },
-      ],
-      { browser: 'chrome', profile: 'Work' },
-    );
-
-    const result = await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
-    const rows = await listCanonicalBookmarks({ source: 'chrome', limit: 10 });
-
-    assert.equal(result.sourceCount, 2);
-    assert.equal(result.canonicalCount, 2);
-    assert.equal(rows.length, 2);
-    const urls = rows.map((row) => row.canonicalUrl).sort();
-    assert.deepEqual(urls, ['https://example.com/default-ok', 'https://example.com/work-ok']);
-    const sources = rows.flatMap((row) => row.sources).sort();
-    assert.deepEqual(sources, ['chrome:Default', 'chrome:Work']);
+    assert.equal(result.sourceCount, 1);
+    assert.equal(result.canonicalCount, 1);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].canonicalUrl, 'https://example.com/ok');
   });
 });
 
 test('rebuildCanonicalIndex preserves canonical classification metadata across rebuilds', async () => {
   await withIsolatedDataDir(async (dir) => {
-    await writeBrowserBookmarks(dir, [{
-      id: 'chrome:Default:10',
-      browser: 'chrome',
-      profile: 'Default',
-      sourceItemId: '10',
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
       url: 'https://github.com/example/tool',
       title: 'Acme Tool',
-      folderPath: ['Dev'],
+      collectionPath: ['Dev'],
+      createdAt: '2026-05-10T00:00:00.000Z',
       syncedAt: '2026-05-10T00:00:00.000Z',
     }]);
 
-    await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    await rebuildCanonicalIndex();
 
     const dbPath = twitterBookmarksIndexPath();
     const db = await openDb(dbPath);
@@ -344,7 +246,7 @@ test('rebuildCanonicalIndex preserves canonical classification metadata across r
       db.close();
     }
 
-    await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    await rebuildCanonicalIndex();
 
     const after = await openDb(dbPath);
     try {
@@ -361,18 +263,16 @@ test('rebuildCanonicalIndex preserves canonical classification metadata across r
 
 test('searchCanonicalBookmarks treats FTS punctuation as literal query text', async () => {
   await withIsolatedDataDir(async (dir) => {
-    await writeBrowserBookmarks(dir, [{
-      id: 'chrome:Default:10',
-      browser: 'chrome',
-      profile: 'Default',
-      sourceItemId: '10',
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
       url: 'https://example.com/foo',
       title: 'foo(bar) notes',
-      folderPath: ['Dev'],
+      collectionPath: ['Dev'],
+      createdAt: '2026-05-10T00:00:00.000Z',
       syncedAt: '2026-05-10T00:00:00.000Z',
     }]);
 
-    await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    await rebuildCanonicalIndex();
     const matches = await searchCanonicalBookmarks({ query: 'foo(bar)', limit: 10 });
 
     assert.equal(matches.length, 1);
@@ -420,20 +320,18 @@ test('rebuildCanonicalIndex migrates older canonical tables without classificati
       db.close();
     }
 
-    await writeBrowserBookmarks(dir, [{
-      id: 'chrome:Default:10',
-      browser: 'chrome',
-      profile: 'Default',
-      sourceItemId: '10',
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
       url: 'https://github.com/example/tool',
       title: 'Acme Tool',
-      folderPath: ['Dev'],
+      collectionPath: ['Dev'],
+      createdAt: '2026-05-10T00:00:00.000Z',
       syncedAt: '2026-05-10T00:00:00.000Z',
     }]);
 
-    await rebuildCanonicalIndex({ browserSources: [{ browser: 'chrome', profile: 'Default' }] });
+    await rebuildCanonicalIndex();
     const summary = await classifyCanonicalBookmarks();
-    const rows = await listCanonicalBookmarks({ source: 'chrome', limit: 10 });
+    const rows = await listCanonicalBookmarks({ source: 'raindrop', limit: 10 });
 
     assert.deepEqual(summary, { total: 1, classified: 1 });
     assert.equal(rows[0].primaryCategory, 'tool');

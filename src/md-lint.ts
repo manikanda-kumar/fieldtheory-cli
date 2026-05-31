@@ -12,7 +12,7 @@ import {
   mdDir, mdIndexPath, mdCategoriesDir, mdDomainsDir, mdEntitiesDir,
   mdStatePath,
 } from './paths.js';
-import { getCategoryCounts, getDomainCounts, openBookmarksDb } from './bookmarks-db.js';
+import { getCategoryCounts, getDomainCounts, getTopAuthorHandles, openBookmarksDb } from './bookmarks-db.js';
 import { slug, type MdState } from './md.js';
 
 const MIN_PAGE_COUNT    = 5;
@@ -117,9 +117,13 @@ export async function lintMd(): Promise<LintResult> {
   const db = await openBookmarksDb();
   let categoryCounts: Record<string, number>;
   let domainCounts: Record<string, number>;
+  let entityCounts: Record<string, number>;
   try {
     categoryCounts = await getCategoryCounts(db);
     domainCounts   = await getDomainCounts(db);
+    entityCounts   = Object.fromEntries(
+      (await getTopAuthorHandles(MIN_PAGE_COUNT, db)).map(({ handle, count }) => [handle, count]),
+    );
   } finally {
     db.close();
   }
@@ -153,6 +157,7 @@ export async function lintMd(): Promise<LintResult> {
       let currentCount    = 0;
       if (type === 'categories') currentCount = categoryCounts[name] ?? 0;
       if (type === 'domains')    currentCount = domainCounts[name] ?? 0;
+      if (type === 'entities')   currentCount = entityCounts[name] ?? 0;
 
       const s = slug(name);
       if (currentCount === 0) {

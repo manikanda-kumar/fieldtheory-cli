@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { browserBookmarksCachePath, browserBookmarksMetaPath, canonicalCommandsDir, canonicalDataDir, canonicalLibraryDir, dataDir, libraryDir, mdDir, commandsDir, mdSchemaPath, youtubeLibraryIndexHtmlPath, youtubeNotePath, youtubeSlidesDir } from '../src/paths.js';
+import { canonicalCommandsDir, canonicalDataDir, canonicalLibraryDir, dataDir, libraryDir, mdDir, commandsDir, mdSchemaPath, youtubeLibraryIndexHtmlPath, youtubeNotePath, youtubeSlidesDir } from '../src/paths.js';
+import { raindropBookmarksCachePath, raindropMetaPath } from '../src/raindrop/paths.js';
 
 function withEnv(env: Record<string, string | undefined>, fn: () => void): void {
   const previous: Record<string, string | undefined> = {};
@@ -50,34 +51,19 @@ test('paths: FT_DATA_DIR keeps the legacy md child unless FT_LIBRARY_DIR is set'
   });
 });
 
-test('paths: browser bookmark cache paths are scoped under FT_DATA_DIR browsers root', () => {
+test('paths: raindrop bookmark cache paths are scoped under FT_DATA_DIR raindrop root', () => {
   withEnv({
     FT_DATA_DIR: '/tmp/ft-data',
   }, () => {
     assert.equal(
-      browserBookmarksCachePath('chrome', 'Default'),
-      path.join('/tmp/ft-data', 'browsers', 'chrome', 'Default', 'bookmarks.jsonl'),
+      raindropBookmarksCachePath(),
+      path.join('/tmp/ft-data', 'raindrop', 'bookmarks.jsonl'),
     );
     assert.equal(
-      browserBookmarksMetaPath('safari', 'default'),
-      path.join('/tmp/ft-data', 'browsers', 'safari', 'default', 'meta.json'),
+      raindropMetaPath(),
+      path.join('/tmp/ft-data', 'raindrop', 'meta.json'),
     );
   });
-});
-
-test('paths: browser bookmark cache paths reject traversal segments', () => {
-  assert.throws(
-    () => browserBookmarksCachePath('../chrome', 'Default'),
-    /Invalid browser bookmark browser/,
-  );
-  assert.throws(
-    () => browserBookmarksMetaPath('chrome', '../Default'),
-    /Invalid browser bookmark profile/,
-  );
-  assert.throws(
-    () => browserBookmarksCachePath('/tmp/chrome', 'Default'),
-    /Invalid browser bookmark browser/,
-  );
 });
 
 test('paths: youtube notes are grouped by publish month and keep existing paths stable', () => {

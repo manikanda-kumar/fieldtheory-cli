@@ -26,6 +26,7 @@ import {
   formatCanonicalSearchResults,
   getCanonicalBookmarkById,
   listCanonicalBookmarks,
+  rebuildCanonicalIndex,
   searchCanonicalBookmarks,
   upsertYoutubeVideosAsSources,
   type YoutubeSourceVideoInput,
@@ -38,10 +39,10 @@ import { compileMd } from './md.js';
 import { cleanWikiFences } from './md-fence.js';
 import { askMd } from './md-ask.js';
 import { lintMd, fixLintIssues } from './md-lint.js';
-import { exportBookmarks } from './md-export.js';
+import { exportBookmarks, exportCanonicalBookmarks } from './md-export.js';
 import { renderViz } from './bookmarks-viz.js';
-import { syncBrowserBookmarks } from './browser-bookmarks.js';
-import type { BrowserBookmarkProvider } from './browser-bookmarks.js';
+import { syncRaindropBookmarks } from './raindrop/sync.js';
+import type { SyncRaindropOptions } from './raindrop/sync.js';
 import { createOpenRouterClient } from './llm/openrouter-client.js';
 import { createTtsClient, type TtsEngine } from './llm/tts-client.js';
 import { processVideo, type OverviewMode } from './youtube/overview.js';
@@ -132,6 +133,7 @@ import { formatSeedOrganization, organizeSeedCandidatesBy } from './seeds-organi
 import { modelOrganizeSeeds } from './seeds-model.js';
 import { saveSeedFromCandidates } from './seeds-save.js';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -295,11 +297,6 @@ function printJson(value: unknown): void {
 
 export function shouldDownloadSyncMedia(options: { media?: unknown }): boolean {
   return Boolean(options.media);
-}
-
-function parseBrowserBookmarkProvider(value: unknown): BrowserBookmarkProvider | null {
-  if (value !== 'chrome' && value !== 'vivaldi' && value !== 'safari') return null;
-  return value;
 }
 
 // ── Update checker ────────────────────────────────────────────────────────
@@ -594,8 +591,7 @@ function requireUnifiedIndex(): boolean {
   Unified index not built yet.
 
   Run one of:
-    ft sync-browser --browser chrome --bookmarks-file <path>
-    ft sync-browser --browser vivaldi --bookmarks-file <path>
+    ft sync-raindrop
     ft sync
 `);
     process.exitCode = 1;
@@ -1145,48 +1141,76 @@ export function buildCli() {
       }
     });
 
-  // ── sync-browser ───────────────────────────────────────────────────────
+  // ── sync-raindrop ──────────────────────────────────────────────────────
+
+  program
+    .command('sync-raindrop')
+    .description('Sync browser bookmarks from Raindrop.io into the canonical bookmark index')
+    .option('--rebuild', 'Clear JSONL cache and refetch everything')
+    .option('--full', 'Fetch all pages even if state says complete')
+    .option('--collections <ids>', 'Sync only specified collection IDs (comma-separated)')
+    .option('--classify', 'Run regex classification after sync')
+    .option('--dry-run', 'Fetch and show counts without writing JSONL')
+    .option('--perpage <n>', 'Items per API page', (v: string) => Number(v), 50)
+    .option('--limit <n>', 'Max total bookmarks to fetch (useful for testing)')
+    .action(safe(async (options) => {
+      ensureDataDir();
+
+      const syncOptions: SyncRaindropOptions = {
+        rebuild: Boolean(options.rebuild),
+        full: Boolean(options.full),
+        dryRun: Boolean(options.dryRun),
+        perPage: Number(options.perpage) || 50,
+      };
+
+      if (options.limit) {
+        syncOptions.limit = Number(options.limit);
+      }
+
+      if (options.collections) {
+        syncOptions.collections = String(options.collections)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((s) => Number(s))
+          .filter((n) => !Number.isNaN(n));
+      }
+
+      const result = await syncRaindropBookmarks(syncOptions);
+
+      if (options.dryRun) {
+        console.log(`  Dry run complete:`);
+        console.log(`    Total fetched:   ${result.total}`);
+        console.log(`    New:             ${result.newCount}`);
+        console.log(`    Modified:        ${result.modifiedCount}`);
+        console.log(`    Collections:     ${result.collections}`);
+        return;
+      }
+
+      console.log(`  Raindrop sync complete:`);
+      console.log(`    Total bookmarks: ${result.total}`);
+      console.log(`    New this sync:   ${result.newCount}`);
+      console.log(`    Modified:        ${result.modifiedCount}`);
+      console.log(`    Collections:     ${result.collections}`);
+
+      await rebuildCanonicalIndex();
+      console.log(`  ✓ Canonical index rebuilt`);
+
+      if (options.classify) {
+        const classifyResult = await classifyCanonicalBookmarks();
+        console.log(`  ✓ Classified ${classifyResult.classified}/${classifyResult.total} bookmarks`);
+      }
+    }));
+
+  // ── sync-browser (deprecated) ──────────────────────────────────────────
 
   program
     .command('sync-browser')
-    .description('Sync browser bookmarks into the canonical bookmark index')
-    .option('--browser <name>', 'Browser to sync (chrome or vivaldi; safari is currently unsupported)')
-    .option('--profile <name>', 'Browser profile name', 'Default')
-    .option('--bookmarks-file <path>', 'Path to a Chromium Bookmarks file')
-    .action(safe(async (options) => {
-      const browserName = options.browser ? String(options.browser).trim().toLowerCase() : '';
-      if (!browserName) {
-        console.error('  Error: --browser is required. Supported browsers: chrome, vivaldi.');
-        process.exitCode = 1;
-        return;
-      }
-      if (browserName === 'safari') {
-        console.error('  Error: Safari bookmark sync is not supported yet.');
-        process.exitCode = 1;
-        return;
-      }
-      const browser = parseBrowserBookmarkProvider(browserName);
-      if (!browser) {
-        console.error(`  Error: unsupported browser "${browserName}". Supported browsers: chrome, vivaldi.`);
-        process.exitCode = 1;
-        return;
-      }
-      if (!options.bookmarksFile) {
-        console.error(`  Error: --bookmarks-file <path> is required for ${browser} bookmark sync.`);
-        process.exitCode = 1;
-        return;
-      }
-
-      ensureDataDir();
-      const result = await syncBrowserBookmarks({
-        browser,
-        profile: String(options.profile ?? 'Default'),
-        bookmarksPath: String(options.bookmarksFile),
-        rebuildCanonical: true,
-      });
-
-      console.log(`  ✓ ${result.synced} browser bookmarks synced`);
-      console.log(`  ✓ Cache: ${result.cachePath}`);
+    .description('Deprecated — use sync-raindrop instead')
+    .action(safe(async () => {
+      console.error('  Error: Browser bookmark file sync is deprecated.');
+      console.error('  Use "ft sync-raindrop" to sync browser bookmarks from Raindrop.io.');
+      process.exitCode = 1;
     }));
 
   program
@@ -1315,7 +1339,7 @@ export function buildCli() {
     .option('--before <date>', 'Bookmarks posted before this date (YYYY-MM-DD)')
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 20)
     .option('--json', 'JSON output')
-    .option('--unified', 'Search unified X and browser bookmarks')
+    .option('--unified', 'Search unified X, Raindrop, and YouTube bookmarks')
     .action(safe(async (query: string, options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
@@ -1360,7 +1384,7 @@ export function buildCli() {
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 30)
     .option('--offset <n>', 'Offset into results', (v: string) => Number(v), 0)
     .option('--json', 'JSON output')
-    .option('--unified', 'List unified X and browser bookmarks')
+    .option('--unified', 'List unified X, Raindrop, and YouTube bookmarks')
     .action(safe(async (options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
@@ -1810,8 +1834,66 @@ export function buildCli() {
     .description('Export bookmarks as individual markdown files')
     .option('--force', 'Re-export all bookmarks (overwrite existing files)')
     .option('--changed', 'Re-export bookmarks whose source data changed since markdown was written')
+    .option('--canonical', 'Export from the unified canonical index (includes Raindrop, X, YouTube)')
+    .option('--preview', 'Export to a temporary directory for preview (implies --canonical)')
+    .option('--source <source>', 'Filter by source: raindrop, x, youtube (requires --canonical or --preview)')
+    .option('--limit <n>', 'Max bookmarks to export', (v: string) => Number(v))
     .action(safe(async (options) => {
       if (!requireIndex()) return;
+
+      const useCanonical = options.canonical || options.preview;
+
+      if (useCanonical) {
+        const previewDir = options.preview
+          ? path.join(os.tmpdir(), `fieldtheory-md-preview-${Date.now()}`)
+          : undefined;
+
+        let lastLine = '';
+        const spinner = createSpinner(() => lastLine);
+        const result = await exportCanonicalBookmarks({
+          outputDir: previewDir,
+          source: options.source,
+          limit: options.limit,
+          onProgress: (s) => {
+            lastLine = s;
+            spinner.update();
+          },
+        });
+        spinner.stop();
+
+        console.log(`Exported ${result.exported} bookmarks (${result.elapsed}s)`);
+        console.log(`  Output: ${result.outputDir}`);
+
+        if (options.preview) {
+          const files = fs.readdirSync(result.outputDir).filter((f) => f.endsWith('.md')).sort();
+          if (files.length > 0) {
+            const samplePath = path.join(result.outputDir, files[0]);
+            console.log(`\n  Preview of ${files[0]}:`);
+            console.log('  ' + '─'.repeat(60));
+            const content = fs.readFileSync(samplePath, 'utf8');
+            const lines = content.split('\n');
+            const preview = lines.slice(0, 30).join('\n');
+            for (const line of preview.split('\n')) {
+              console.log('  ' + line);
+            }
+            if (lines.length > 30) {
+              console.log('  ...');
+            }
+            console.log('  ' + '─'.repeat(60));
+          }
+          console.log(`\n  Preview directory: ${result.outputDir}`);
+        } else {
+          console.log(`\n  Open in your markdown viewer:\n  ${result.outputDir}`);
+        }
+        return;
+      }
+
+      if (options.source || options.limit) {
+        console.error('  Error: --source and --limit require --canonical or --preview.');
+        process.exitCode = 1;
+        return;
+      }
+
       if (options.force && options.changed) {
         console.error('  Error: --force and --changed cannot be used together.');
         process.exitCode = 1;
@@ -3106,7 +3188,7 @@ export function buildCli() {
 
   const bookmarksAlias = program.command('bookmarks').description('(alias) Bookmark commands').helpOption(false);
   for (const cmd of ['sync', 'search', 'list', 'show', 'stats', 'viz', 'classify', 'classify-domains',
-    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media', 'sync-browser']) {
+    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media', 'sync-raindrop']) {
     bookmarksAlias.command(cmd).description(`Alias for: ft ${cmd}`).allowUnknownOption(true)
       .action(async () => {
         const args = ['node', 'ft', cmd, ...process.argv.slice(4)];

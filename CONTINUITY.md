@@ -1,3 +1,39 @@
+LATEST SESSION (2026-05-31) — Raindrop.io replaces browser bookmark sync + review fixes + canonical markdown export preview:
+- **Replaced local browser bookmark sync with Raindrop.io cloud sync.**
+  - New module `src/raindrop/` (`types.ts`, `paths.ts`, `client.ts`, `sync.ts`) — API client with Bearer auth, pagination, 429 retry, 401 fast-fail.
+  - `ft sync-raindrop` command with `--rebuild`, `--full`, `--collections`, `--classify`, `--dry-run`, `--perpage`, `--limit`.
+  - `ft sync-browser` deprecated — prints notice directing to `sync-raindrop` and exits 1.
+  - Removed `src/browser-bookmarks.ts`, `tests/browser-bookmarks.test.ts`, and all browser path helpers from `src/paths.ts`.
+  - Raindrop JSONL cache at `~/.fieldtheory/bookmarks/raindrop/bookmarks.jsonl`.
+  - Canonical DB integration: `raindropSourceFromRecord()` in `src/canonical-bookmarks-db.ts`; `rebuildCanonicalIndex()` reads Raindrop JSONL alongside X and YouTube.
+  - Deduplication works automatically via `dedupeKeyForUrl()` — Raindrop URLs merge with X/YouTube equivalents.
+  - Malformed URL resilience: `raindropSourceFromRecord()` catches parse errors and returns `null`, filtered before insertion.
+  - Collection nesting: `buildCollectionMap` resolves full breadcrumb paths with cycle guard (`visited` set).
+  - Token env: client checks both `RAINDROP_TOKEN` and `RAINDROP_TEST_TOKEN`.
+- **Review fixes applied** (from `docs/review_raindrop_integration.md`):
+  - Bug: `collectionName` extracted root ancestor `[0]` → fixed to `.at(-1)` (leaf name).
+  - Bug: resume pagination broken (always restarted page 0) → writes incremental state after each page; uses `completed` boolean flag in `RaindropBackfillState` to distinguish crash recovery from fresh re-fetch.
+  - Bug: `important: false` silently dropped → changed `||` to `??`.
+  - Bug: modified count always matched total → `mergeRaindropRecord` now tracks material changes (title, excerpt, note, tags, highlights, updatedAt) and only bumps count when true.
+  - Bug: `--unified` help text still said "browser" → updated to "Search/List unified X, Raindrop, and YouTube bookmarks".
+  - Edge: no max-page guard → added `MAX_PAGES = 10_000` with warning.
+  - Edge: circular parent collections → added `visited` Set to `resolvePath`.
+  - Enhancement: `--limit <n>` option added for testing large accounts (dry-run of 100 bookmarks / 7 collections succeeded live).
+- **Canonical markdown export** (temporary preview stage):
+  - Added `exportCanonicalBookmarks()` to `src/md-export.ts` — exports from canonical DB instead of legacy X-only table.
+  - Added `getCanonicalBookmarkSources()` to `src/canonical-bookmarks-db.ts` — queries `bookmark_sources` rows by `canonical_id`.
+  - Raindrop-specific frontmatter: `source: raindrop`, `raindrop_id`, `collection`, `tags`, `starred`, `highlights_count`, `category`, `domain`, `saved_at`.
+  - Raindrop-specific body sections: excerpt blockquote, `## Note`, `## Highlights` with color badges, `## Links`, `## Related` wikilinks.
+  - Accepts configurable `outputDir` for temporary preview before writing to real library.
+- **Tests updated and passing:**
+  - `tests/canonical-bookmarks-db.test.ts` — all browser bookmark tests converted to Raindrop equivalents.
+  - `tests/cli.test.ts` — sync-browser deprecation tests + sync-raindrop option tests.
+  - `tests/paths.test.ts` — browser path tests replaced with Raindrop path tests.
+  - Build passes (`npm run build`), all 663 tests pass (`npm run test`).
+- **Docs:**
+  - Plan created: `docs/plans/2026-05-31-raindrop-bookmarks-integration.md`.
+  - Review doc created: `docs/review_raindrop_integration.md`.
+
 LATEST SESSION (2026-05-28) — index reconcile + rich-notes prompt verified live:
 - Bug: `index.html` showed only 58/256 library videos after latest playlist sync — state.json had 49 entries (only current sync), 207 older notes orphaned. Root cause: state load/save only carries forward what's in `state.json`; nothing reseeds from disk after wipe.
 - Fix: added `reconcileYoutubeStateFromLibrary()` in `src/youtube/state.ts` — walks `youtubeLibraryDir()/**/*.md`, parses frontmatter + H1 + topics, inserts entries whose videoId is missing or has no `notesPath`. Called from `writeYoutubeIndexFromState()` before reading state. Idempotent. Recovery run: +210 entries, total 259 videos, index now 256 cards.
@@ -25,53 +61,36 @@ Goal (incl. success criteria):
 
 Constraints/Assumptions:
 - Existing X bookmark model is tweet-centric: `BookmarkRecord` requires `tweetId`, and the current SQLite `bookmarks` table requires `tweet_id TEXT NOT NULL`.
-- Do not merge browser bookmark raw records into the existing X `BookmarkRecord` cache or `bookmarks` table.
-- Browser bookmark sync should be additive and should not destabilize GraphQL sync, OAuth sync, gap fill, X folders, existing search/list/show behavior, media fetching, or markdown/wiki exports.
+- Raindrop bookmarks flow through a separate JSONL cache (`raindrop/bookmarks.jsonl`) and feed into the canonical `bookmark_sources` table with `source = 'raindrop'`.
+- Local file-based browser sync (`sync-browser`) has been deprecated and removed in favor of Raindrop cloud sync.
 - First implementation should expose unified behavior explicitly, e.g. `--unified`, before changing existing command defaults.
-- Safari import is currently unsupported and should fail clearly until a dedicated extractor is implemented.
-- Chrome/Vivaldi bookmark extraction should read Chromium `Bookmarks` JSON files by copying to temp first to avoid partial live-file reads.
 - Remote `origin` has been updated to `https://github.com/manikanda-kumar/fieldtheory-cli`.
 
 Key decisions:
-- Use hybrid storage: raw provider-specific browser JSONL caches, plus additive canonical tables in the existing `bookmarks.db`.
+- Use hybrid storage: raw provider-specific JSONL caches (X, Raindrop), plus additive canonical tables in the existing `bookmarks.db`.
 - Keep existing X raw cache and X `bookmarks` SQL table intact.
 - Add canonical SQL tables: `bookmark_sources`, `canonical_bookmarks`, and a canonical FTS table.
 - Deduplicate with a conservative `dedupe_key`:
-  - Browser bookmark: `url:<normalized browser bookmark URL>`
+  - Raindrop/browser bookmark: `url:<normalized bookmark URL>`
   - X bookmark with exactly one clear external link: `url:<normalized external link>`
   - X bookmark with zero or multiple ambiguous external links: `x:<tweetId>`
 - URL normalization v1: lowercase scheme/host, remove fragments/default ports, strip known tracking params, preserve meaningful query params, no network canonicalization.
-- Classify canonical bookmarks, not raw source rows, using merged evidence from title, folder path, URL/domain, X tweet text, and enriched X article text when available.
+- Classify canonical bookmarks, not raw source rows, using merged evidence from title, folder path, URL/domain, X tweet text, enriched X article text, and Raindrop excerpt/note/highlights when available.
+- Browser bookmarks now synced exclusively via Raindrop.io API (`ft sync-raindrop`); local Chromium file parsing (`sync-browser`) has been removed.
 - Add explicit browser sync command first: `ft sync-browser --browser chrome|vivaldi|safari` (Safari path currently reserved and fails clearly).
 - Browser bookmark sync does not fetch media.
 - Change X `ft sync` media behavior to no media by default, with opt-in `--media`.
 - Add repo-level AGENTS.md instructions to keep future docs under `docs/specs/` and `docs/plans/`.
 
 State:
-- Task 1 is committed as `fa2d995 feat: add bookmark URL dedupe keys`.
-- Task 2 is committed as `bf3b930 feat: add browser bookmark cache paths`.
-- Task 3 is committed as `25db8b6 feat: parse browser bookmarks`.
-- Task 4 is committed as `4d227ea feat: build canonical bookmark index`.
-- Task 5 is committed as `a0a9418 feat: classify canonical bookmarks`.
-- Task 6 is committed as `58ca24f feat: add browser bookmark sync command`.
-- Task 6 passed sub-agent spec review and code-quality review.
-- Task 6 local verification passed:
-  - `npm run build`
-  - `npm run test -- tests/browser-bookmarks.test.ts tests/canonical-bookmarks-db.test.ts` (repo script ran full suite: 559 pass, 0 fail)
-- Task 7 is committed as `f57dfdf feat: add unified bookmark search`.
-- Task 8 is committed as `cb30a14 feat: make sync media opt-in`.
-- Task 9 docs + verification are committed as `130f719 docs: document browser bookmark sync`; verification previously completed locally:
-  - `npm run build` passed.
-  - `npm run test` passed (561 pass, 0 fail).
-  - `npm run dev -- sync --help` passed and shows `--media` is opt-in (`default: off`).
-  - Manual smoke with local fixture under `FT_DATA_DIR=/tmp/ft-task9-smoke-ZCtcZB` succeeded:
-    - `sync-browser --browser chrome` synced 2 bookmarks and wrote `/tmp/ft-task9-smoke-ZCtcZB/browsers/chrome/Default/bookmarks.jsonl`.
-    - Unified search returned canonical rows with source badges (`[chrome:Default]`).
-- Design spec exists and is committed at `docs/specs/2026-05-10-browser-bookmarks-design.md`.
-- Implementation plan exists and is committed at `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`.
-- Repo instruction file exists and is committed at `AGENTS.md`.
-- Worktree has no tracked browser-bookmark implementation changes; only untracked review artifacts are present (`review.md`, `docs/reviews/`, `.claude/settings.local.json`).
+- Raindrop integration implemented and all review fixes applied.
+- Build passes (`npm run build`), all 663 tests pass (`npm run test`).
+- Live dry-run smoke test verified: 100 bookmarks / 7 collections via Raindrop API.
+- Design spec: `docs/plans/2026-05-31-raindrop-bookmarks-integration.md`.
+- Review doc: `docs/review_raindrop_integration.md`.
+- Browser bookmark sync fully removed (no references in `src/` or `tests/`).
 - Current remote verified as `origin https://github.com/manikanda-kumar/fieldtheory-cli` for fetch and push.
+- Uncommitted: `CONTINUITY.md` (this ledger), plus pre-existing `docs/reviews/`, `review.md`, `.claude/settings.local.json`.
 
 Done:
 - Explored current repo structure and relevant files:
@@ -177,21 +196,23 @@ Now:
   - Docs added in README and `docs/specs/2026-05-12-youtube-overviews-design.md`.
 
 Next:
-- Optional follow-up: tune slide extraction limits/thresholds for large playlists after more real-world runs.
+- Markdown export review: user requested temporary preview in a tmp directory before approving Raindrop-specific frontmatter/body output.
+- Pending: progress bar during `sync-raindrop` for large accounts (current run silently hangs for 400+ API calls).
+- Optional: enhance `bookmark-classify.ts` with Raindrop signals (`important`, `type`, `tags`)
 
 Open questions (UNCONFIRMED if needed):
 - UNCONFIRMED: whether Gemini TTS should be implemented or kept out of the public `--tts` surface.
 - UNCONFIRMED: whether unified search should become the default after the explicit `--unified` rollout proves stable.
-- UNCONFIRMED: whether `--all` and `--all-profiles` should be implemented in the first browser sync PR or deferred after single-browser sync is stable.
-- UNCONFIRMED: whether to implement Safari plist parsing in a follow-up or keep Safari explicitly unsupported.
-- UNCONFIRMED: whether browser bookmark deletion history should be retained long-term or raw snapshots should remain current-state only with `bookmark_sources.active` preserving provenance.
-- UNCONFIRMED: whether webpage fetching/canonical URL resolution should be added later to improve browser-only classification and dedupe quality.
+- UNCONFIRMED: whether Raindrop markdown export frontmatter/body format should be approved after temp preview.
+- UNCONFIRMED: whether progress bar/spinner should be added to `sync-raindrop` for large accounts.
+- UNCONFIRMED: whether `--collections` cache scoping should be implemented (isolating per-collection sync from global "All" collection).
 
 Working set (files/ids/commands):
-- Docs: `docs/specs/2026-05-10-browser-bookmarks-design.md`, `docs/plans/2026-05-10-browser-bookmarks-unified-index.md`, `AGENTS.md`, `CONTINUITY.md`.
-- Current implementation files: `src/browser-bookmarks.ts`, `src/cli.ts`, `tests/browser-bookmarks.test.ts`.
-- Remaining implementation plan target files: `src/cli.ts`, `README.md`.
-- Planned tests: `tests/url-normalize.test.ts`, `tests/browser-bookmarks.test.ts`, `tests/canonical-bookmarks-db.test.ts`, plus existing X regression tests.
-- Recent commits: `50e19c9 fix: prepare canonical insert statements and close db on discovery failure`, `9afddff fix: address browser bookmark review findings`, `130f719 docs: document browser bookmark sync`, `cb30a14 feat: make sync media opt-in`, `f57dfdf feat: add unified bookmark search`.
+- Docs: `docs/plans/2026-05-31-raindrop-bookmarks-integration.md`, `docs/review_raindrop_integration.md`, `AGENTS.md`, `CONTINUITY.md`.
+- Current implementation files: `src/raindrop/types.ts`, `src/raindrop/paths.ts`, `src/raindrop/client.ts`, `src/raindrop/sync.ts`, `src/canonical-bookmarks-db.ts`, `src/md-export.ts`, `src/cli.ts`, `src/paths.ts`.
+- Tests: `tests/canonical-bookmarks-db.test.ts`, `tests/cli.test.ts`, `tests/paths.test.ts`.
+- Build passes: `npm run build`.
+- All tests pass: `npm run test` (663 pass, 0 fail).
+- Smoke test verified: `npm run dev -- sync-raindrop --dry-run --limit 100` → 100 bookmarks / 7 collections.
 - Remote: `origin https://github.com/manikanda-kumar/fieldtheory-cli`.
-- Useful commands: `npm run build`, `npm run test`, `npm run dev -- sync --help`, `npm run dev -- sync-browser --browser chrome --profile Default --bookmarks-file <path>`, `npm run dev -- search --unified <query>`.
+- Useful commands: `npm run build`, `npm run test`, `npm run dev -- sync-raindrop --help`, `npm run dev -- search --unified <query>`.

@@ -1,15 +1,15 @@
 import crypto from 'node:crypto';
-import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { Database } from 'sql.js';
 import { openDb, saveDb } from './db.js';
 import { pathExists, readJsonLines } from './fs.js';
-import { browserBookmarksCachePath, dataDir, twitterBookmarksCachePath, twitterBookmarksIndexPath } from './paths.js';
-import type { BrowserBookmarkProvider, BrowserBookmarkRecord } from './browser-bookmarks.js';
+import { dataDir, twitterBookmarksCachePath, twitterBookmarksIndexPath } from './paths.js';
 import type { BookmarkRecord } from './types.js';
 import { dedupeKeyForUrl, dedupeKeyForXBookmark } from './url-normalize.js';
 import { sanitizeFtsQuery } from './bookmarks-db.js';
 import { classifyBookmarkInput } from './bookmark-classify.js';
+import { raindropBookmarksCachePath } from './raindrop/paths.js';
+import type { RaindropRecord } from './raindrop/types.js';
 
 export interface CanonicalRebuildResult {
   dbPath: string;
@@ -33,6 +33,8 @@ export interface CanonicalBookmarkListResult {
   displayTitle: string | null;
   searchText: string;
   sourceCount: number;
+  firstSavedAt: string | null;
+  lastSavedAt: string | null;
   sources: string[];
   categories: string | null;
   primaryCategory: string | null;
@@ -78,11 +80,6 @@ interface CanonicalGroup {
   sources: string[];
 }
 
-interface BrowserSourceRef {
-  browser: BrowserBookmarkProvider;
-  profile: string;
-}
-
 interface PreservedCanonicalFields {
   categories: string | null;
   primaryCategory: string | null;
@@ -91,7 +88,8 @@ interface PreservedCanonicalFields {
 }
 
 export interface RebuildCanonicalOptions {
-  browserSources?: Array<{ browser: BrowserBookmarkProvider; profile: string }>;
+  // Browser bookmark sync has been replaced by Raindrop; this interface is kept
+  // empty for backward compatibility and may be removed in a future cleanup.
 }
 
 export interface SearchCanonicalOptions {
@@ -235,7 +233,7 @@ function xSourceFromRecord(record: BookmarkRecord): CanonicalSourceInput {
   };
 }
 
-function browserSourceFromRecord(record: BrowserBookmarkRecord): CanonicalSourceInput | null {
+export function raindropSourceFromRecord(record: RaindropRecord): CanonicalSourceInput | null {
   let dedupeKey: string;
   try {
     dedupeKey = dedupeKeyForUrl(record.url);
@@ -243,22 +241,39 @@ function browserSourceFromRecord(record: BrowserBookmarkRecord): CanonicalSource
     return null;
   }
 
+  const folderPaths = record.collectionPath?.length
+    ? [record.collectionPath.join(' / ')]
+    : record.collectionName
+      ? [record.collectionName]
+      : [];
+
+  // Combine excerpt + note + highlights text for search_text enrichment
+  const textParts: string[] = [];
+  if (record.excerpt) textParts.push(record.excerpt);
+  if (record.note) textParts.push(record.note);
+  if (record.highlights?.length) {
+    for (const h of record.highlights) {
+      textParts.push(h.text);
+      if (h.note) textParts.push(h.note);
+    }
+  }
+
   return {
-    id: `browser:${record.id}`,
-    source: record.browser,
-    profile: record.profile,
-    sourceItemId: record.sourceItemId,
+    id: `raindrop:${record.id}`,
+    source: 'raindrop',
+    profile: null,
+    sourceItemId: String(record.id),
     sourceUrl: record.url,
     targetUrl: null,
     dedupeKey,
-    title: record.title || record.url,
-    text: null,
-    authorHandle: null,
-    savedAt: record.dateAdded ?? record.syncedAt ?? null,
-    createdAt: record.dateAdded ?? null,
-    modifiedAt: record.dateModified ?? null,
-    folderPath: record.folderPath ?? [],
-    links: [],
+    title: record.title,
+    text: textParts.join('\n\n') || null,
+    authorHandle: record.domain || null,
+    savedAt: record.createdAt,
+    createdAt: record.createdAt,
+    modifiedAt: record.updatedAt ?? null,
+    folderPath: folderPaths,
+    links: record.links ?? [],
   };
 }
 
@@ -415,58 +430,6 @@ function isSchemaMissingError(error: unknown): boolean {
     || message.includes('has no column named');
 }
 
-const SUPPORTED_BROWSER_PROVIDERS: ReadonlySet<BrowserBookmarkProvider> = new Set(['chrome', 'vivaldi']);
-
-function isBrowserProvider(value: string): value is BrowserBookmarkProvider {
-  return SUPPORTED_BROWSER_PROVIDERS.has(value as BrowserBookmarkProvider);
-}
-
-function mergeBrowserSources(sources: BrowserSourceRef[]): BrowserSourceRef[] {
-  const deduped = new Map<string, BrowserSourceRef>();
-  for (const source of sources) {
-    deduped.set(`${source.browser}\u0000${source.profile}`, source);
-  }
-  return [...deduped.values()].sort((a, b) => {
-    const browserCompare = a.browser.localeCompare(b.browser);
-    if (browserCompare !== 0) return browserCompare;
-    return a.profile.localeCompare(b.profile);
-  });
-}
-
-async function discoverBrowserSources(): Promise<BrowserSourceRef[]> {
-  const root = path.join(dataDir(), 'browsers');
-  let browserEntries: Array<{ isDirectory(): boolean; name: string }>;
-  try {
-    browserEntries = await readdir(root, { withFileTypes: true, encoding: 'utf8' });
-  } catch (error) {
-    if (errorCode(error) === 'ENOENT') return [];
-    throw error;
-  }
-
-  const discovered: BrowserSourceRef[] = [];
-  for (const browserEntry of browserEntries) {
-    if (!browserEntry.isDirectory() || !isBrowserProvider(browserEntry.name)) continue;
-    const browser = browserEntry.name;
-    const browserDir = path.join(root, browserEntry.name);
-    let profileEntries: Array<{ isDirectory(): boolean; name: string }>;
-    try {
-      profileEntries = await readdir(browserDir, { withFileTypes: true, encoding: 'utf8' });
-    } catch (error) {
-      if (errorCode(error) === 'ENOENT') continue;
-      throw error;
-    }
-    for (const profileEntry of profileEntries) {
-      if (!profileEntry.isDirectory()) continue;
-      const profile = profileEntry.name;
-      if (await pathExists(browserBookmarksCachePath(browser, profile))) {
-        discovered.push({ browser, profile });
-      }
-    }
-  }
-
-  return mergeBrowserSources(discovered);
-}
-
 const INSERT_CANONICAL_SQL = `INSERT INTO canonical_bookmarks (
   id, dedupe_key, canonical_url, display_title, search_text,
   categories, primary_category, domains, primary_domain,
@@ -510,18 +473,18 @@ function mapListRow(row: unknown[]): CanonicalBookmarkListResult {
     displayTitle: (row[2] as string) ?? null,
     searchText: row[3] as string,
     sourceCount: Number(row[4] ?? 0),
-    sources: parseSources(row[5]),
-    categories: (row[6] as string) ?? null,
-    primaryCategory: (row[7] as string) ?? null,
-    domains: (row[8] as string) ?? null,
-    primaryDomain: (row[9] as string) ?? null,
+    firstSavedAt: (row[5] as string) ?? null,
+    lastSavedAt: (row[6] as string) ?? null,
+    sources: parseSources(row[7]),
+    categories: (row[8] as string) ?? null,
+    primaryCategory: (row[9] as string) ?? null,
+    domains: (row[10] as string) ?? null,
+    primaryDomain: (row[11] as string) ?? null,
   };
 }
 
-export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions = {}): Promise<CanonicalRebuildResult> {
+export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = {}): Promise<CanonicalRebuildResult> {
   const dbPath = twitterBookmarksIndexPath();
-  const discoveredBrowserSources = await discoverBrowserSources();
-  const browserSources = mergeBrowserSources([...(options.browserSources ?? []), ...discoveredBrowserSources]);
   const db = await openDb(dbPath);
 
   try {
@@ -532,13 +495,16 @@ export async function rebuildCanonicalIndex(options: RebuildCanonicalOptions = {
     const xRecords = await readJsonLines<BookmarkRecord>(twitterBookmarksCachePath());
     sourceRows.push(...xRecords.map(xSourceFromRecord));
 
-    for (const source of browserSources) {
-      const records = await readJsonLines<BrowserBookmarkRecord>(browserBookmarksCachePath(source.browser, source.profile));
-      const normalized = records
-        .map(browserSourceFromRecord)
+    // Raindrop sources (replaces browser bookmarks)
+    const raindropCachePath = raindropBookmarksCachePath();
+    if (await pathExists(raindropCachePath)) {
+      const raindropRecords = await readJsonLines<RaindropRecord>(raindropCachePath);
+      const normalized = raindropRecords
+        .map(raindropSourceFromRecord)
         .filter((row): row is CanonicalSourceInput => row !== null);
       sourceRows.push(...normalized);
     }
+
     sourceRows.push(...readYoutubeSourcesFromDb(db));
 
     const groups = new Map<string, CanonicalSourceInput[]>();
@@ -654,7 +620,8 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
   try {
     initCanonicalSchema(db);
 
-    const select = `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count, c.sources_json,
+    const select = `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count,
+                           c.first_saved_at, c.last_saved_at, c.sources_json,
                            c.categories, c.primary_category, c.domains, c.primary_domain
                     FROM canonical_bookmarks c`;
     const order = `ORDER BY COALESCE(c.last_saved_at, c.first_saved_at, '') DESC, c.id ASC
@@ -678,6 +645,56 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
   }
 }
 
+export interface CanonicalSourceRow {
+  id: string;
+  source: string;
+  profile: string | null;
+  sourceItemId: string;
+  sourceUrl: string;
+  targetUrl: string | null;
+  title: string | null;
+  text: string | null;
+  authorHandle: string | null;
+  savedAt: string | null;
+  createdAt: string | null;
+  modifiedAt: string | null;
+  folderPath: string[];
+  links: string[];
+}
+
+export async function getCanonicalBookmarkSources(canonicalId: string): Promise<CanonicalSourceRow[]> {
+  const db = await openDb(twitterBookmarksIndexPath());
+  try {
+    initCanonicalSchema(db);
+    const rows = db.exec(
+      `SELECT id, source, profile, source_item_id, source_url, target_url,
+              title, text, author_handle, saved_at, created_at, modified_at,
+              folder_path_json, links_json
+       FROM bookmark_sources
+       WHERE canonical_id = ? AND active = 1`,
+      [canonicalId],
+    );
+    return (rows[0]?.values ?? []).map((row) => ({
+      id: row[0] as string,
+      source: row[1] as string,
+      profile: (row[2] as string) ?? null,
+      sourceItemId: row[3] as string,
+      sourceUrl: row[4] as string,
+      targetUrl: (row[5] as string) ?? null,
+      title: (row[6] as string) ?? null,
+      text: (row[7] as string) ?? null,
+      authorHandle: (row[8] as string) ?? null,
+      savedAt: (row[9] as string) ?? null,
+      createdAt: (row[10] as string) ?? null,
+      modifiedAt: (row[11] as string) ?? null,
+      folderPath: parseJsonStringArray(row[12]),
+      links: parseJsonStringArray(row[13]),
+    }));
+  } finally {
+    db.close();
+  }
+}
+
 export async function getCanonicalBookmarkById(id: string): Promise<CanonicalBookmarkListResult | null> {
   const db = await openDb(twitterBookmarksIndexPath());
 
@@ -685,7 +702,8 @@ export async function getCanonicalBookmarkById(id: string): Promise<CanonicalBoo
     initCanonicalSchema(db);
 
     const rows = db.exec(
-      `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count, c.sources_json,
+      `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count,
+              c.first_saved_at, c.last_saved_at, c.sources_json,
               c.categories, c.primary_category, c.domains, c.primary_domain
        FROM canonical_bookmarks c
        WHERE c.id = ?

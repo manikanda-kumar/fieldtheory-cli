@@ -78,18 +78,6 @@ export function twitterBookmarksMetaPath(): string {
   return path.join(dataDir(), 'bookmarks-meta.json');
 }
 
-export function browserBookmarksDir(browser: string, profile: string): string {
-  return path.join(dataDir(), 'browsers', safeBrowserPathSegment(browser, 'browser'), safeBrowserPathSegment(profile, 'profile'));
-}
-
-export function browserBookmarksCachePath(browser: string, profile: string): string {
-  return path.join(browserBookmarksDir(browser, profile), 'bookmarks.jsonl');
-}
-
-export function browserBookmarksMetaPath(browser: string, profile: string): string {
-  return path.join(browserBookmarksDir(browser, profile), 'meta.json');
-}
-
 export function youtubeDir(): string {
   return path.join(dataDir(), 'youtube');
 }
@@ -134,10 +122,6 @@ function safePathSegment(value: string, label: string): string {
     throw new Error(`Invalid ${label}: ${value}`);
   }
   return value;
-}
-
-function safeBrowserPathSegment(value: string, label: string): string {
-  return safePathSegment(value, `browser bookmark ${label}`);
 }
 
 export function twitterOauthTokenPath(): string {

@@ -12,11 +12,19 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureDir, writeMd } from './fs.js';
+import { ensureDir, writeMd, readJsonLines } from './fs.js';
 import { mdDir } from './paths.js';
 import { listBookmarks, countBookmarks, type BookmarkTimelineItem } from './bookmarks-db.js';
 import { parseTimestampMs, toIsoDate } from './date-utils.js';
 import { slug } from './md.js';
+import {
+  listCanonicalBookmarks,
+  getCanonicalBookmarkSources,
+  type CanonicalBookmarkListResult,
+  type CanonicalSourceRow,
+} from './canonical-bookmarks-db.js';
+import { raindropBookmarksCachePath } from './raindrop/paths.js';
+import type { RaindropRecord } from './raindrop/types.js';
 
 export interface ExportOptions {
   force?: boolean;
@@ -189,4 +197,225 @@ export async function exportBookmarks(options: ExportOptions = {}): Promise<Expo
 
   const elapsed = Math.round((Date.now() - startTime) / 1000);
   return { exported, skipped, total, elapsed };
+}
+
+// ── Canonical bookmark export (includes Raindrop) ────────────────────────
+
+export interface ExportCanonicalOptions {
+  outputDir?: string;
+  source?: string;
+  limit?: number;
+  onProgress?: (status: string) => void;
+}
+
+export interface ExportCanonicalResult {
+  exported: number;
+  total: number;
+  outputDir: string;
+  elapsed: number;
+}
+
+function canonicalFilename(canonical: CanonicalBookmarkListResult): string {
+  const date = exportDate(canonical.lastSavedAt ?? canonical.firstSavedAt) ?? 'undated';
+  const domain = canonical.primaryDomain ? slug(canonical.primaryDomain) : 'unknown';
+  const titleSlug = slug((canonical.displayTitle ?? canonical.canonicalUrl ?? canonical.id).slice(0, 50));
+  return `${date}-${domain}-${titleSlug}.md`;
+}
+
+function findRaindropRecord(
+  sources: CanonicalSourceRow[],
+  raindropMap: Map<string, RaindropRecord>,
+): RaindropRecord | null {
+  for (const source of sources) {
+    if (source.source !== 'raindrop') continue;
+    const record = raindropMap.get(source.sourceUrl);
+    if (record) return record;
+    // fallback: try by normalized URL
+    for (const [url, rec] of raindropMap) {
+      if (source.sourceUrl === url) return rec;
+    }
+  }
+  return null;
+}
+
+function escapeYaml(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ');
+}
+
+function buildCanonicalBookmarkMd(
+  canonical: CanonicalBookmarkListResult,
+  sources: CanonicalSourceRow[],
+  raindropRecord: RaindropRecord | null,
+): string {
+  const lines: string[] = [];
+  const title = canonical.displayTitle ?? 'Untitled';
+  const url = canonical.canonicalUrl ?? '#';
+  const categories = canonical.categories ? canonical.categories.split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const domains = canonical.domains ? canonical.domains.split(',').map((s) => s.trim()).filter(Boolean) : [];
+
+  // ── Frontmatter ─────────────────────────────────────────────────────
+  lines.push('---');
+  lines.push(`title: "${escapeYaml(title)}"`);
+  lines.push(`url: ${url}`);
+  if (canonical.primaryDomain) lines.push(`domain: ${canonical.primaryDomain}`);
+  if (canonical.primaryCategory) lines.push(`category: ${canonical.primaryCategory}`);
+  if (categories.length > 0) lines.push(`categories: [${categories.join(', ')}]`);
+  if (domains.length > 0) lines.push(`domains: [${domains.join(', ')}]`);
+
+  const raindropSource = sources.find((s) => s.source === 'raindrop');
+  const xSource = sources.find((s) => s.source === 'x');
+  const youtubeSource = sources.find((s) => s.source === 'youtube');
+
+  if (raindropSource) {
+    lines.push(`source: raindrop`);
+    if (raindropRecord) {
+      lines.push(`raindrop_id: ${raindropRecord.id}`);
+      if (raindropRecord.collectionPath?.length) {
+        lines.push(`collection: "${escapeYaml(raindropRecord.collectionPath.join(' / '))}"`);
+      }
+      if (raindropRecord.tags?.length) {
+        lines.push(`tags: [${raindropRecord.tags.map((t) => `"${escapeYaml(t)}"`).join(', ')}]`);
+      }
+      if (raindropRecord.important === true) {
+        lines.push(`starred: true`);
+      }
+      if (raindropRecord.highlights?.length) {
+        lines.push(`highlights_count: ${raindropRecord.highlights.length}`);
+      }
+    }
+  } else if (xSource) {
+    lines.push(`source: x`);
+  } else if (youtubeSource) {
+    lines.push(`source: youtube`);
+  }
+
+  if (canonical.firstSavedAt) lines.push(`saved_at: ${exportDate(canonical.firstSavedAt)}`);
+  lines.push('---');
+  lines.push('');
+
+  // ── Title ───────────────────────────────────────────────────────────
+  lines.push(`# ${title}`);
+  lines.push('');
+
+  // ── Excerpt (Raindrop) ──────────────────────────────────────────────
+  if (raindropRecord?.excerpt) {
+    lines.push('> ' + raindropRecord.excerpt.replace(/\n/g, '\n> '));
+    lines.push('');
+  }
+
+  // ── Note (Raindrop) ─────────────────────────────────────────────────
+  if (raindropRecord?.note) {
+    lines.push('## Note');
+    lines.push(raindropRecord.note);
+    lines.push('');
+  }
+
+  // ── Highlights (Raindrop) ─────────────────────────────────────────
+  if (raindropRecord?.highlights?.length) {
+    lines.push('## Highlights');
+    for (const h of raindropRecord.highlights) {
+      const color = h.color ? `**${h.color}**: ` : '';
+      lines.push(`- ${color}"${h.text}"`);
+      if (h.note) {
+        lines.push(`  - *Note: ${h.note}*`);
+      }
+    }
+    lines.push('');
+  }
+
+  // ── Links ───────────────────────────────────────────────────────────
+  const allLinks = new Set<string>();
+  for (const s of sources) {
+    if (s.sourceUrl) allLinks.add(s.sourceUrl);
+    if (s.targetUrl) allLinks.add(s.targetUrl);
+    for (const l of s.links) allLinks.add(l);
+  }
+  if (allLinks.size > 0) {
+    lines.push('## Links');
+    for (const link of allLinks) lines.push(`- ${link}`);
+    lines.push('');
+  }
+
+  // ── Wikilinks to wiki pages ─────────────────────────────────────────
+  const refs: string[] = [];
+  if (canonical.primaryCategory) refs.push(`[[categories/${slug(canonical.primaryCategory)}]]`);
+  if (canonical.primaryDomain) refs.push(`[[domains/${slug(canonical.primaryDomain)}]]`);
+
+  if (refs.length > 0) {
+    lines.push('## Related');
+    for (const ref of refs) lines.push(`- ${ref}`);
+    lines.push('');
+  }
+
+  // ── Source ──────────────────────────────────────────────────────────
+  lines.push(`[Source](${url})`);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+export async function exportCanonicalBookmarks(
+  options: ExportCanonicalOptions = {},
+): Promise<ExportCanonicalResult> {
+  const progress = options.onProgress ?? ((s: string) => fs.writeSync(2, s + '\n'));
+  const startTime = Date.now();
+
+  const outputDir = options.outputDir ?? path.join(mdDir(), 'bookmarks');
+  await ensureDir(outputDir);
+
+  // Load Raindrop records for enrichment
+  let raindropMap = new Map<string, RaindropRecord>();
+  try {
+    const raindropRecords = await readJsonLines<RaindropRecord>(raindropBookmarksCachePath());
+    for (const r of raindropRecords) {
+      raindropMap.set(r.url, r);
+    }
+  } catch {
+    // Raindrop cache may not exist yet
+  }
+
+  progress(`Exporting canonical bookmarks to ${outputDir}...`);
+
+  let exported = 0;
+  let offset = 0;
+  const batchSize = 100;
+  let hasMore = true;
+
+  while (hasMore) {
+    const limit = options.limit ? Math.min(batchSize, options.limit - exported) : batchSize;
+    if (limit <= 0) break;
+
+    const canonicals = await listCanonicalBookmarks({
+      source: options.source,
+      limit,
+      offset,
+    });
+
+    if (canonicals.length === 0) break;
+
+    for (const c of canonicals) {
+      const sources = await getCanonicalBookmarkSources(c.id);
+      const raindropRecord = findRaindropRecord(sources, raindropMap);
+      const content = buildCanonicalBookmarkMd(c, sources, raindropRecord);
+      const filename = canonicalFilename(c);
+      const filePath = path.join(outputDir, filename);
+      await writeMd(filePath, content);
+      exported++;
+    }
+
+    if (options.limit && exported >= options.limit) {
+      hasMore = false;
+    } else {
+      offset += canonicals.length;
+      hasMore = canonicals.length === limit;
+    }
+
+    if (exported % 100 === 0) {
+      progress(`  ${exported} exported...`);
+    }
+  }
+
+  const elapsed = Math.round((Date.now() - startTime) / 1000);
+  progress(`Exported ${exported} bookmarks to ${outputDir} (${elapsed}s)`);
+  return { exported, total: exported, outputDir, elapsed };
 }
