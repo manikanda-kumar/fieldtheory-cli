@@ -35,6 +35,7 @@ const KNOWN_ENGINES: Record<string, EngineConfig> = {
     args: (p, engine) => [
       'exec',
       '--skip-git-repo-check',
+      '--config', 'personality="none"',
       ...(engine?.model ? ['--model', engine.model] : []),
       ...(engine?.effort ? ['--config', `model_reasoning_effort="${engine.effort}"`] : []),
       p,
