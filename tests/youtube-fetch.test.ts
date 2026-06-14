@@ -33,6 +33,64 @@ test('fetchVideo uses timedtext transcript before summarize fallback', async () 
   assert.match(result.contentHash, /^[a-f0-9]{64}$/);
 });
 
+test('fetchVideo prefers web caption extraction over timedtext and summarize', async () => {
+  const bootstrap = JSON.stringify({
+    INNERTUBE_API_KEY: 'key123',
+    INNERTUBE_CONTEXT: { client: { visitorData: 'visitor' } },
+    INNERTUBE_CONTEXT_CLIENT_NAME: 1,
+    INNERTUBE_CONTEXT_CLIENT_VERSION: '2.2024',
+    INNERTUBE_CLIENT_VERSION: '2.2024',
+    VISITOR_DATA: 'visitor',
+  });
+  const watchHtml = `<!DOCTYPE html><html><script>ytcfg.set(${bootstrap});</script><script>"getTranscriptEndpoint":{"params":"params123"}</script><body></body></html>`;
+  const summarizeCalls: string[] = [];
+
+  const result = await fetchVideo('v1', {
+    hasCommand: () => false,
+    fetchText: async (url, init) => {
+      if (url === 'https://www.youtube.com/watch?v=v1') return watchHtml;
+      if (url.includes('/youtubei/v1/get_transcript')) {
+        assert.equal(init?.method, 'POST');
+        return JSON.stringify({
+          actions: [{
+            updateEngagementPanelAction: {
+              content: {
+                transcriptRenderer: {
+                  content: {
+                    transcriptSearchPanelRenderer: {
+                      body: {
+                        transcriptSegmentListRenderer: {
+                          initialSegments: [{
+                            transcriptSegmentRenderer: {
+                              startMs: 1200,
+                              durationMs: 1800,
+                              snippet: { runs: [{ text: 'Web caption line' }] },
+                            },
+                          }],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          }],
+        });
+      }
+      if (url.includes('timedtext')) return '<transcript><text start="0" dur="1">Timed fallback</text></transcript>';
+      return JSON.stringify({ title: 'Fallback title' });
+    },
+    runSummarize: async () => {
+      summarizeCalls.push('summarize');
+      return { transcript: { text: 'Summarize fallback', segments: [] }, slides: [], meta: {} };
+    },
+  });
+
+  assert.equal(result.transcriptText, 'Web caption line');
+  assert.deepEqual(result.segments, [{ tSec: 1.2, durationSec: 1.8, text: 'Web caption line' }]);
+  assert.equal(summarizeCalls.length, 0, 'summarize bridge should not be invoked when web captions succeed');
+});
+
 test('fetchVideo passes yt-dlp browser cookies and impersonation to metadata and subtitles', async () => {
   const commands: Array<{ command: string; args: string[] }> = [];
   const result = await fetchVideo('v1', {

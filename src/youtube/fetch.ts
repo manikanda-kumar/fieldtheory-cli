@@ -8,6 +8,7 @@ import { youtubeArtifactsDir } from '../paths.js';
 import { runSummarize, type RunSummarizeOptions, type SummarizeResult, type TranscriptSegment } from './summarize-bridge.js';
 import type { FrameRef } from './slides.js';
 import { ytDlpAccessArgs, type YtDlpAccessOptions } from './yt-dlp.js';
+import { fetchWebCaptionTranscript } from './captions.js';
 
 export type { TranscriptSegment } from './summarize-bridge.js';
 
@@ -39,7 +40,7 @@ export interface FetchVideoOptions {
   slidesDir?: string;
   hasCommand?: (command: string) => boolean;
   runCommand?: (command: string, args: string[]) => Promise<string>;
-  fetchText?: (url: string) => Promise<string>;
+  fetchText?: (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<string>;
   runSummarize?: (videoUrl: string, options: RunSummarizeOptions) => Promise<SummarizeResult>;
   retry?: RetryOptions;
 }
@@ -73,12 +74,19 @@ export async function fetchVideo(videoId: string, options: FetchVideoOptions = {
     segments = parseVttTranscript(vtt);
   }
 
-  // Rung 2: legacy timedtext endpoint (no auth; cheap but commonly 429s).
+  // Rung 2: web caption extraction (youtubei internal endpoint or caption tracks).
+  // Often succeeds when the legacy timedtext endpoint is blocked or 429'd.
+  if (!segments.length) {
+    const webTranscript = await fetchWebCaptionTranscript(videoId, fetchTextImpl).catch(() => null);
+    if (webTranscript) segments = webTranscript.segments;
+  }
+
+  // Rung 3: legacy timedtext endpoint (no auth; cheap but commonly 429s).
   if (!segments.length) {
     segments = parseTimedTextTranscript(await fetchTextImpl(`https://video.google.com/timedtext?lang=en&v=${encodeURIComponent(videoId)}`).catch(() => ''));
   }
 
-  // Rung 3: summarize bridge transcript/slides.
+  // Rung 4: summarize bridge transcript/slides.
   if (!segments.length || options.wantFrames) {
     try {
       const summarized = await (options.runSummarize ?? ((url, opts) => runSummarize(url, opts)))(videoUrl, { withSlides: options.wantFrames, withOcr: options.wantFrames, outDir: options.slidesDir, ytDlp: options.ytDlp });
@@ -245,8 +253,8 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url);
+async function fetchText(url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<string> {
+  const res = await fetch(url, init);
   if (!res.ok) return '';
   return res.text();
 }
