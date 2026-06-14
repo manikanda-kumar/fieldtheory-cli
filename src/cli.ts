@@ -43,6 +43,8 @@ import { exportBookmarks, exportCanonicalBookmarks } from './md-export.js';
 import { renderViz } from './bookmarks-viz.js';
 import { syncRaindropBookmarks } from './raindrop/sync.js';
 import type { SyncRaindropOptions } from './raindrop/sync.js';
+import { syncGitHubStars } from './github-stars/sync.js';
+import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
 import { createOpenRouterClient } from './llm/openrouter-client.js';
 import { createTtsClient, type TtsEngine } from './llm/tts-client.js';
 import { processVideo, type OverviewMode } from './youtube/overview.js';
@@ -591,6 +593,7 @@ function requireUnifiedIndex(): boolean {
   Unified index not built yet.
 
   Run one of:
+    ft sync-github-stars
     ft sync-raindrop
     ft sync
 `);
@@ -1202,6 +1205,49 @@ export function buildCli() {
       }
     }));
 
+  // ── sync-github-stars ──────────────────────────────────────────────────
+
+  program
+    .command('sync-github-stars')
+    .description('Sync GitHub starred repositories into the canonical bookmark index')
+    .option('--rebuild', 'Ignore the incremental checkpoint and refetch all current stars')
+    .option('--dry-run', 'Fetch and report without writing cache files or rebuilding the canonical index')
+    .option('--limit <n>', 'Max repositories to fetch (useful for testing)', (v: string) => Number(v))
+    .option('--classify', 'Run regex classification after rebuilding the canonical index')
+    .action(safe(async (options) => {
+      ensureDataDir();
+
+      const syncOptions: SyncGitHubStarsOptions = {
+        rebuild: Boolean(options.rebuild),
+        dryRun: Boolean(options.dryRun),
+        limit: typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : undefined,
+      };
+
+      const result = await syncGitHubStars(syncOptions);
+
+      console.log(`  GitHub Stars sync complete:`);
+      console.log(`    fetched: ${result.fetched}`);
+      console.log(`    added: ${result.added}`);
+      console.log(`    updated: ${result.updated}`);
+      if (result.skipped > 0) console.log(`    ⚠ skipped (malformed/missing repo URL): ${result.skipped}`);
+      console.log(`    total: ${result.total}`);
+      if (result.newestStarredAt) console.log(`    newest starred_at: ${result.newestStarredAt}`);
+      console.log(`    data: ${result.cachePath}`);
+
+      if (options.dryRun) {
+        console.log(`    Canonical index not rebuilt (dry run)`);
+        return;
+      }
+
+      await rebuildCanonicalIndex();
+      console.log(`  ✓ Canonical index rebuilt`);
+
+      if (options.classify) {
+        const classifyResult = await classifyCanonicalBookmarks();
+        console.log(`  ✓ Classified ${classifyResult.classified}/${classifyResult.total} bookmarks`);
+      }
+    }));
+
   // ── sync-browser (deprecated) ──────────────────────────────────────────
 
   program
@@ -1339,7 +1385,7 @@ export function buildCli() {
     .option('--before <date>', 'Bookmarks posted before this date (YYYY-MM-DD)')
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 20)
     .option('--json', 'JSON output')
-    .option('--unified', 'Search unified X, Raindrop, and YouTube bookmarks')
+    .option('--unified', 'Search unified X, Raindrop, GitHub Stars, and YouTube bookmarks')
     .action(safe(async (query: string, options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
@@ -1383,8 +1429,9 @@ export function buildCli() {
     .option('--folder <name>', 'Filter by X bookmark folder name (exact or unambiguous prefix)')
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 30)
     .option('--offset <n>', 'Offset into results', (v: string) => Number(v), 0)
+    .option('--source <source>', 'Filter unified list by source: x, raindrop, github-stars, youtube')
     .option('--json', 'JSON output')
-    .option('--unified', 'List unified X, Raindrop, and YouTube bookmarks')
+    .option('--unified', 'List unified X, Raindrop, GitHub Stars, and YouTube bookmarks')
     .action(safe(async (options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
@@ -1396,6 +1443,7 @@ export function buildCli() {
           return;
         }
         const items = await listCanonicalBookmarks({
+          source: options.source ? String(options.source) : undefined,
           limit: Number(options.limit) || 30,
           offset: Number(options.offset) || 0,
         });
@@ -1455,7 +1503,7 @@ export function buildCli() {
     .description('Show one bookmark in detail')
     .argument('<id>', 'Bookmark id')
     .option('--json', 'JSON output')
-    .option('--unified', 'Show one unified X or browser bookmark')
+    .option('--unified', 'Show one unified canonical bookmark')
     .action(safe(async (id: string, options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
@@ -1834,9 +1882,9 @@ export function buildCli() {
     .description('Export bookmarks as individual markdown files')
     .option('--force', 'Re-export all bookmarks (overwrite existing files)')
     .option('--changed', 'Re-export bookmarks whose source data changed since markdown was written')
-    .option('--canonical', 'Export from the unified canonical index (includes Raindrop, X, YouTube)')
+    .option('--canonical', 'Export from the unified canonical index (includes Raindrop, X, GitHub Stars, YouTube)')
     .option('--preview', 'Export to a temporary directory for preview (implies --canonical)')
-    .option('--source <source>', 'Filter by source: raindrop, x, youtube (requires --canonical or --preview)')
+    .option('--source <source>', 'Filter by source: raindrop, x, github-stars, youtube (requires --canonical or --preview)')
     .option('--limit <n>', 'Max bookmarks to export', (v: string) => Number(v))
     .action(safe(async (options) => {
       if (!requireIndex()) return;
@@ -3188,7 +3236,7 @@ export function buildCli() {
 
   const bookmarksAlias = program.command('bookmarks').description('(alias) Bookmark commands').helpOption(false);
   for (const cmd of ['sync', 'search', 'list', 'show', 'stats', 'viz', 'classify', 'classify-domains',
-    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media', 'sync-raindrop']) {
+    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media', 'sync-raindrop', 'sync-github-stars']) {
     bookmarksAlias.command(cmd).description(`Alias for: ft ${cmd}`).allowUnknownOption(true)
       .action(async () => {
         const args = ['node', 'ft', cmd, ...process.argv.slice(4)];

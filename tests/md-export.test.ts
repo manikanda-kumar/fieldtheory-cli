@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { buildIndex, updateArticleContent } from '../src/bookmarks-db.js';
-import { exportBookmarks } from '../src/md-export.js';
+import { rebuildCanonicalIndex } from '../src/canonical-bookmarks-db.js';
+import { writeJsonLines } from '../src/fs.js';
+import { exportBookmarks, exportCanonicalBookmarks } from '../src/md-export.js';
 
 async function withIsolatedDataDir(fn: (dir: string) => Promise<void>, fixtures: any[]): Promise<void> {
   const dir = await mkdtemp(path.join(tmpdir(), 'ft-md-export-'));
@@ -165,4 +167,59 @@ test('exportBookmarks: changed mode rewrites only stale enriched markdown', asyn
     assert.match(content, /## Article/);
     assert.match(content, /The article body was added after the first markdown export/);
   }, fixtures);
+});
+
+test('exportCanonicalBookmarks: writes GitHub repository metadata markdown', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const githubDir = path.join(dir, 'github-stars');
+    await mkdir(githubDir, { recursive: true });
+    await writeJsonLines(path.join(githubDir, 'stars.jsonl'), [{
+      id: 123456789,
+      fullName: 'owner/repo',
+      owner: 'owner',
+      name: 'repo',
+      htmlUrl: 'https://github.com/owner/repo',
+      description: 'Repository description from GitHub.',
+      homepageUrl: 'https://example.com',
+      language: 'TypeScript',
+      topics: ['cli', 'markdown', 'knowledge-management'],
+      stargazersCount: 12345,
+      forksCount: 678,
+      openIssuesCount: 12,
+      isArchived: false,
+      isFork: false,
+      defaultBranch: 'main',
+      pushedAt: '2026-05-20T10:00:00Z',
+      updatedAt: '2026-05-25T09:00:00Z',
+      starredAt: '2026-05-31T12:34:56Z',
+      syncedAt: '2026-05-31T13:00:00Z',
+    }]);
+
+    await rebuildCanonicalIndex();
+    const out = path.join(dir, 'out');
+    const result = await exportCanonicalBookmarks({
+      outputDir: out,
+      source: 'github-stars',
+      onProgress: () => {},
+    });
+
+    assert.equal(result.exported, 1);
+    const files = await readdir(out);
+    assert.equal(files.length, 1);
+    const content = await readFile(path.join(out, files[0]), 'utf8');
+
+    assert.match(content, /^source: github-stars$/m);
+    assert.match(content, /^item_type: github_repository$/m);
+    assert.match(content, /^repo: "owner\/repo"$/m);
+    assert.match(content, /^github_id: "123456789"$/m);
+    assert.match(content, /^topics:\n  - "cli"\n  - "markdown"\n  - "knowledge-management"/m);
+    assert.match(content, /^# owner\/repo$/m);
+    assert.match(content, /> Repository description from GitHub\./);
+    assert.match(content, /## Repository context/);
+    assert.match(content, /- Repository: \[owner\/repo\]\(https:\/\/github\.com\/owner\/repo\)/);
+    assert.match(content, /## Signals/);
+    assert.match(content, /- Stars: 12,345/);
+    assert.match(content, /## Related/);
+    assert.match(content, /\[\[domains\/github-com\]\]/);
+  }, []);
 });

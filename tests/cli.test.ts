@@ -162,6 +162,26 @@ test('ft sync-raindrop: exposes expected options', () => {
   assert.ok(opts.includes('--collections'));
 });
 
+test('ft sync-github-stars: exposes expected options', () => {
+  const program = buildCli();
+  const syncGitHubStarsCmd = program.commands.find((c: any) => c.name() === 'sync-github-stars');
+  assert.ok(syncGitHubStarsCmd, 'sync-github-stars command should be registered');
+  const opts = syncGitHubStarsCmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--rebuild'));
+  assert.ok(opts.includes('--dry-run'));
+  assert.ok(opts.includes('--limit'));
+  assert.ok(opts.includes('--classify'));
+});
+
+test('ft list --unified exposes --source filter', () => {
+  const program = buildCli();
+  const listCmd = program.commands.find((c: any) => c.name() === 'list');
+  assert.ok(listCmd, 'list command should be registered');
+  const opts = listCmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--unified'));
+  assert.ok(opts.includes('--source'));
+});
+
 test('shouldDownloadSyncMedia enables media only when --media is truthy', () => {
   assert.equal(shouldDownloadSyncMedia({}), false);
   assert.equal(shouldDownloadSyncMedia({ media: false }), false);

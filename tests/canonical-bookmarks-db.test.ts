@@ -15,6 +15,7 @@ import {
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
 import type { RaindropRecord } from '../src/raindrop/types.js';
+import type { GitHubStarRecord } from '../src/github-stars/types.js';
 
 async function withIsolatedDataDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-canonical-'));
@@ -33,6 +34,37 @@ async function writeRaindropBookmarks(dir: string, records: RaindropRecord[]): P
   const raindropDir = path.join(dir, 'raindrop');
   await mkdir(raindropDir, { recursive: true });
   await writeJsonLines(path.join(raindropDir, 'bookmarks.jsonl'), records);
+}
+
+async function writeGitHubStars(dir: string, records: GitHubStarRecord[]): Promise<void> {
+  const githubDir = path.join(dir, 'github-stars');
+  await mkdir(githubDir, { recursive: true });
+  await writeJsonLines(path.join(githubDir, 'stars.jsonl'), records);
+}
+
+function githubStarRecord(overrides: Partial<GitHubStarRecord> = {}): GitHubStarRecord {
+  return {
+    id: 123,
+    fullName: 'example/tool',
+    owner: 'example',
+    name: 'tool',
+    htmlUrl: 'https://github.com/example/tool',
+    description: 'Agent memory command line tool',
+    homepageUrl: 'https://example.com',
+    language: 'TypeScript',
+    topics: ['agents', 'memory'],
+    stargazersCount: 12345,
+    forksCount: 678,
+    openIssuesCount: 12,
+    isArchived: false,
+    isFork: false,
+    defaultBranch: 'main',
+    pushedAt: '2026-05-20T10:00:00Z',
+    updatedAt: '2026-05-25T09:00:00Z',
+    starredAt: '2026-05-31T12:34:56Z',
+    syncedAt: '2026-05-31T13:00:00Z',
+    ...overrides,
+  };
 }
 
 test('rebuildCanonicalIndex dedupes X external link with raindrop bookmark URL', async () => {
@@ -101,6 +133,49 @@ test('rebuildCanonicalIndex stores raindrop source rows with null target_url', a
     } finally {
       db.close();
     }
+  });
+});
+
+test('rebuildCanonicalIndex indexes GitHub stars and searches repo metadata', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeGitHubStars(dir, [githubStarRecord()]);
+
+    const result = await rebuildCanonicalIndex();
+    assert.equal(result.sourceCount, 1);
+    assert.equal(result.canonicalCount, 1);
+
+    const listed = await listCanonicalBookmarks({ source: 'github-stars', limit: 10 });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].canonicalUrl, 'https://github.com/example/tool');
+    assert.equal(listed[0].displayTitle, 'example/tool');
+    assert.deepEqual(listed[0].sources, ['github-stars']);
+
+    const matches = await searchCanonicalBookmarks({ query: 'agent memory TypeScript example', limit: 10 });
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].id, listed[0].id);
+  });
+});
+
+test('rebuildCanonicalIndex dedupes GitHub star with raindrop bookmark URL', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeGitHubStars(dir, [githubStarRecord()]);
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
+      url: 'https://github.com/example/tool?utm_source=raindrop',
+      title: 'Example Tool',
+      collectionPath: ['Dev'],
+      createdAt: '2026-05-10T00:00:00.000Z',
+      syncedAt: '2026-05-10T00:00:00.000Z',
+    }]);
+
+    const result = await rebuildCanonicalIndex();
+    assert.equal(result.sourceCount, 2);
+    assert.equal(result.canonicalCount, 1);
+
+    const listed = await listCanonicalBookmarks({ source: 'github-stars', limit: 10 });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].sourceCount, 2);
+    assert.deepEqual(listed[0].sources.sort(), ['github-stars', 'raindrop']);
   });
 });
 

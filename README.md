@@ -45,9 +45,9 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 | `ft sync --folder <name>` | Sync a single folder by name (exact or unambiguous prefix) |
 | `ft sync --classify` | Sync then classify new bookmarks with LLM |
 | `ft sync --api` | Sync via OAuth API (cross-platform) |
-| `ft sync-browser --browser chrome --bookmarks-file <path>` | Sync Chrome bookmarks from a Chromium `Bookmarks` file into the unified index |
-| `ft sync-browser --browser vivaldi --bookmarks-file <path>` | Sync Vivaldi bookmarks from a Chromium `Bookmarks` file into the unified index |
-| `ft sync-browser --browser safari` | Safari bookmark sync is not implemented yet and exits with a clear error |
+| `ft sync-raindrop` | Sync browser bookmarks from Raindrop.io into the unified index |
+| `ft sync-github-stars` | Sync GitHub starred repositories into the unified index |
+| `ft sync-github-stars --limit 200 --classify` | Partial GitHub stars sync, then regex-classify canonical rows |
 | `ft sync-youtube --playlist <url-or-id>` | Sync a public YouTube playlist into local markdown notes and the unified index |
 | `ft auth` | Set up OAuth for API-based sync (optional) |
 
@@ -122,8 +122,9 @@ Overview modes:
 | Command | Description |
 |---------|-------------|
 | `ft search <query>` | Full-text search with BM25 ranking |
-| `ft search --unified <query>` | Search deduped X and browser bookmarks |
+| `ft search --unified <query>` | Search deduped X, Raindrop, GitHub Stars, and YouTube bookmarks |
 | `ft list --unified` | List unified canonical bookmarks |
+| `ft list --unified --source github-stars` | List canonical rows that include a GitHub star source |
 | `ft show --unified <id>` | Show one unified canonical bookmark |
 | `ft list` | Filter by author, date, category, domain, or folder |
 | `ft list --folder <name>` | Show bookmarks in an X bookmark folder |
@@ -152,6 +153,7 @@ Overview modes:
 |---------|-------------|
 | `ft md` | Export bookmarks as individual markdown files, including enriched article text |
 | `ft md --changed` | Re-export only markdown files whose source bookmark data changed |
+| `ft md --canonical --source github-stars` | Export deterministic GitHub repository markdown pages |
 | `ft wiki` | Compile a Karpathy-style interlinked knowledge base |
 | `ft ask <question>` | Ask questions against the knowledge base |
 | `ft ask <question> --save` | Ask and save the answer as a concept page |
@@ -276,9 +278,11 @@ Data is stored locally under `~/.fieldtheory/`:
   youtube/
     state.json            # YouTube playlist/video processing state
     artifacts/<videoId>/  # audio/video/frames and other heavy generated artifacts
-  browsers/
-    chrome/Default/bookmarks.jsonl   # raw Chrome bookmark snapshot
-    vivaldi/Default/bookmarks.jsonl  # raw Vivaldi bookmark snapshot
+  raindrop/
+    bookmarks.jsonl       # raw Raindrop bookmark cache
+  github-stars/
+    stars.jsonl           # raw GitHub starred repository cache
+    meta.json             # GitHub stars incremental sync metadata
 
 ~/.fieldtheory/library/
   index.md                # markdown knowledge base (ft wiki / ft md)

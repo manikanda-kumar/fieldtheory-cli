@@ -10,6 +10,8 @@ import { sanitizeFtsQuery } from './bookmarks-db.js';
 import { classifyBookmarkInput } from './bookmark-classify.js';
 import { raindropBookmarksCachePath } from './raindrop/paths.js';
 import type { RaindropRecord } from './raindrop/types.js';
+import { githubStarsCachePath } from './github-stars/paths.js';
+import type { GitHubStarRecord } from './github-stars/types.js';
 
 export interface CanonicalRebuildResult {
   dbPath: string;
@@ -277,6 +279,44 @@ export function raindropSourceFromRecord(record: RaindropRecord): CanonicalSourc
   };
 }
 
+export function githubStarsSourceFromRecord(record: GitHubStarRecord): CanonicalSourceInput | null {
+  let dedupeKey: string;
+  try {
+    dedupeKey = dedupeKeyForUrl(record.htmlUrl);
+  } catch {
+    return null;
+  }
+
+  return {
+    id: `github-stars:${record.id}`,
+    source: 'github-stars',
+    profile: null,
+    sourceItemId: String(record.id),
+    sourceUrl: record.htmlUrl,
+    targetUrl: null,
+    dedupeKey,
+    title: record.fullName,
+    text: compactText([
+      record.fullName,
+      record.description,
+      record.language,
+      record.topics,
+      record.owner,
+    ]),
+    authorHandle: record.owner,
+    savedAt: record.starredAt,
+    createdAt: null,
+    modifiedAt: record.updatedAt ?? record.pushedAt,
+    folderPath: record.language ? ['GitHub Stars', record.language] : ['GitHub Stars'],
+    links: [
+      `https://github.com/${record.owner}`,
+      record.homepageUrl,
+      `${record.htmlUrl}/issues`,
+      record.defaultBranch ? `${record.htmlUrl}/tree/${record.defaultBranch}` : null,
+    ].filter((link): link is string => Boolean(link)),
+  };
+}
+
 function youtubeSourceFromVideo(video: YoutubeSourceVideoInput, savedAt: string): CanonicalSourceInput {
   const sourceUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
   return {
@@ -501,6 +541,15 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
       const raindropRecords = await readJsonLines<RaindropRecord>(raindropCachePath);
       const normalized = raindropRecords
         .map(raindropSourceFromRecord)
+        .filter((row): row is CanonicalSourceInput => row !== null);
+      sourceRows.push(...normalized);
+    }
+
+    const githubStarsPath = githubStarsCachePath();
+    if (await pathExists(githubStarsPath)) {
+      const githubStarRecords = await readJsonLines<GitHubStarRecord>(githubStarsPath);
+      const normalized = githubStarRecords
+        .map(githubStarsSourceFromRecord)
         .filter((row): row is CanonicalSourceInput => row !== null);
       sourceRows.push(...normalized);
     }

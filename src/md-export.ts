@@ -25,6 +25,8 @@ import {
 } from './canonical-bookmarks-db.js';
 import { raindropBookmarksCachePath } from './raindrop/paths.js';
 import type { RaindropRecord } from './raindrop/types.js';
+import { githubStarsCachePath } from './github-stars/paths.js';
+import type { GitHubStarRecord } from './github-stars/types.js';
 
 export interface ExportOptions {
   force?: boolean;
@@ -238,26 +240,54 @@ function findRaindropRecord(
   return null;
 }
 
+function findGitHubStarRecord(
+  sources: CanonicalSourceRow[],
+  githubStarsMap: Map<string, GitHubStarRecord>,
+): GitHubStarRecord | null {
+  for (const source of sources) {
+    if (source.source !== 'github-stars') continue;
+    const byId = githubStarsMap.get(source.sourceItemId);
+    if (byId) return byId;
+    const byUrl = githubStarsMap.get(source.sourceUrl);
+    if (byUrl) return byUrl;
+  }
+  return null;
+}
+
 function escapeYaml(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ');
+}
+
+function yamlQuoted(value: string): string {
+  return `"${escapeYaml(value)}"`;
+}
+
+function yamlList(values: string[]): string[] {
+  return values.map((value) => `  - ${yamlQuoted(value)}`);
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat('en-US').format(value);
 }
 
 function buildCanonicalBookmarkMd(
   canonical: CanonicalBookmarkListResult,
   sources: CanonicalSourceRow[],
   raindropRecord: RaindropRecord | null,
+  githubStarRecord: GitHubStarRecord | null,
 ): string {
   const lines: string[] = [];
-  const title = canonical.displayTitle ?? 'Untitled';
-  const url = canonical.canonicalUrl ?? '#';
+  const title = githubStarRecord?.fullName ?? canonical.displayTitle ?? 'Untitled';
+  const url = githubStarRecord?.htmlUrl ?? canonical.canonicalUrl ?? '#';
   const categories = canonical.categories ? canonical.categories.split(',').map((s) => s.trim()).filter(Boolean) : [];
   const domains = canonical.domains ? canonical.domains.split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const sourceLabels = [...new Set(sources.map((source) => source.source))];
 
   // ── Frontmatter ─────────────────────────────────────────────────────
   lines.push('---');
-  lines.push(`title: "${escapeYaml(title)}"`);
-  lines.push(`url: ${url}`);
-  if (canonical.primaryDomain) lines.push(`domain: ${canonical.primaryDomain}`);
+  lines.push(`title: ${yamlQuoted(title)}`);
+  lines.push(`url: ${yamlQuoted(url)}`);
+  if (!githubStarRecord && canonical.primaryDomain) lines.push(`domain: ${canonical.primaryDomain}`);
   if (canonical.primaryCategory) lines.push(`category: ${canonical.primaryCategory}`);
   if (categories.length > 0) lines.push(`categories: [${categories.join(', ')}]`);
   if (domains.length > 0) lines.push(`domains: [${domains.join(', ')}]`);
@@ -265,9 +295,39 @@ function buildCanonicalBookmarkMd(
   const raindropSource = sources.find((s) => s.source === 'raindrop');
   const xSource = sources.find((s) => s.source === 'x');
   const youtubeSource = sources.find((s) => s.source === 'youtube');
+  const githubStarsSource = sources.find((s) => s.source === 'github-stars');
 
-  if (raindropSource) {
+  if (githubStarsSource && githubStarRecord) {
+    lines.push(`source: github-stars`);
+    lines.push(`sources:`);
+    lines.push(...yamlList(sourceLabels));
+    lines.push(`item_type: github_repository`);
+    lines.push(`repo: ${yamlQuoted(githubStarRecord.fullName)}`);
+    lines.push(`owner: ${yamlQuoted(githubStarRecord.owner)}`);
+    lines.push(`name: ${yamlQuoted(githubStarRecord.name)}`);
+    lines.push(`github_id: ${yamlQuoted(String(githubStarRecord.id))}`);
+    if (githubStarRecord.description) lines.push(`description: ${yamlQuoted(githubStarRecord.description)}`);
+    if (githubStarRecord.language) lines.push(`language: ${yamlQuoted(githubStarRecord.language)}`);
+    if (githubStarRecord.topics.length) {
+      lines.push(`topics:`);
+      lines.push(...yamlList(githubStarRecord.topics));
+    }
+    lines.push(`stargazers_count: ${githubStarRecord.stargazersCount}`);
+    lines.push(`forks_count: ${githubStarRecord.forksCount}`);
+    lines.push(`open_issues_count: ${githubStarRecord.openIssuesCount}`);
+    lines.push(`is_archived: ${githubStarRecord.isArchived}`);
+    lines.push(`is_fork: ${githubStarRecord.isFork}`);
+    if (githubStarRecord.defaultBranch) lines.push(`default_branch: ${yamlQuoted(githubStarRecord.defaultBranch)}`);
+    if (canonical.firstSavedAt) lines.push(`saved_at: ${yamlQuoted(canonical.firstSavedAt)}`);
+    if (githubStarRecord.starredAt) lines.push(`starred_at: ${yamlQuoted(githubStarRecord.starredAt)}`);
+    if (githubStarRecord.pushedAt) lines.push(`pushed_at: ${yamlQuoted(githubStarRecord.pushedAt)}`);
+    if (githubStarRecord.updatedAt) lines.push(`updated_at: ${yamlQuoted(githubStarRecord.updatedAt)}`);
+    lines.push(`synced_at: ${yamlQuoted(githubStarRecord.syncedAt)}`);
+    lines.push(`domain: github.com`);
+  } else if (raindropSource) {
     lines.push(`source: raindrop`);
+    lines.push(`sources:`);
+    lines.push(...yamlList(sourceLabels));
     if (raindropRecord) {
       lines.push(`raindrop_id: ${raindropRecord.id}`);
       if (raindropRecord.collectionPath?.length) {
@@ -285,17 +345,61 @@ function buildCanonicalBookmarkMd(
     }
   } else if (xSource) {
     lines.push(`source: x`);
+    lines.push(`sources:`);
+    lines.push(...yamlList(sourceLabels));
   } else if (youtubeSource) {
     lines.push(`source: youtube`);
+    lines.push(`sources:`);
+    lines.push(...yamlList(sourceLabels));
   }
 
-  if (canonical.firstSavedAt) lines.push(`saved_at: ${exportDate(canonical.firstSavedAt)}`);
+  if (!githubStarRecord && canonical.firstSavedAt) lines.push(`saved_at: ${exportDate(canonical.firstSavedAt)}`);
   lines.push('---');
   lines.push('');
 
   // ── Title ───────────────────────────────────────────────────────────
   lines.push(`# ${title}`);
   lines.push('');
+
+  if (githubStarRecord) {
+    if (githubStarRecord.description) {
+      lines.push('> ' + githubStarRecord.description.replace(/\n/g, '\n> '));
+      lines.push('');
+    }
+
+    lines.push('## Repository context');
+    lines.push(`- Repository: [${githubStarRecord.fullName}](${githubStarRecord.htmlUrl})`);
+    lines.push(`- Owner: [${githubStarRecord.owner}](https://github.com/${githubStarRecord.owner})`);
+    if (githubStarRecord.language) lines.push(`- Primary language: ${githubStarRecord.language}`);
+    if (githubStarRecord.topics.length) lines.push(`- Topics: ${githubStarRecord.topics.map((topic) => `\`${topic}\``).join(', ')}`);
+    if (githubStarRecord.defaultBranch) lines.push(`- Default branch: \`${githubStarRecord.defaultBranch}\``);
+    lines.push(`- Status: ${githubStarRecord.isArchived ? 'archived' : 'not archived'}; ${githubStarRecord.isFork ? 'fork' : 'not a fork'}`);
+    lines.push('');
+
+    lines.push('## Signals');
+    if (githubStarRecord.starredAt) lines.push(`- Starred: ${githubStarRecord.starredAt}`);
+    lines.push(`- Stars: ${formatNumber(githubStarRecord.stargazersCount)}`);
+    lines.push(`- Forks: ${formatNumber(githubStarRecord.forksCount)}`);
+    lines.push(`- Open issues: ${formatNumber(githubStarRecord.openIssuesCount)}`);
+    if (githubStarRecord.pushedAt) lines.push(`- Last pushed: ${githubStarRecord.pushedAt}`);
+    if (githubStarRecord.updatedAt) lines.push(`- Last updated: ${githubStarRecord.updatedAt}`);
+    lines.push('');
+
+    lines.push('## Links');
+    lines.push(`- [Repository](${githubStarRecord.htmlUrl})`);
+    lines.push(`- [Owner](https://github.com/${githubStarRecord.owner})`);
+    if (githubStarRecord.homepageUrl) lines.push(`- [Homepage](${githubStarRecord.homepageUrl})`);
+    if (githubStarRecord.defaultBranch) lines.push(`- [Default branch](${githubStarRecord.htmlUrl}/tree/${githubStarRecord.defaultBranch})`);
+    lines.push(`- [Issues](${githubStarRecord.htmlUrl}/issues)`);
+    lines.push('');
+
+    lines.push('## Related');
+    lines.push(`- [[domains/github-com]]`);
+    lines.push(`- [[entities/${slug(`github-${githubStarRecord.owner}`)}]]`);
+    lines.push('');
+
+    return lines.join('\n');
+  }
 
   // ── Excerpt (Raindrop) ──────────────────────────────────────────────
   if (raindropRecord?.excerpt) {
@@ -374,6 +478,17 @@ export async function exportCanonicalBookmarks(
     // Raindrop cache may not exist yet
   }
 
+  let githubStarsMap = new Map<string, GitHubStarRecord>();
+  try {
+    const githubStarRecords = await readJsonLines<GitHubStarRecord>(githubStarsCachePath());
+    for (const r of githubStarRecords) {
+      githubStarsMap.set(String(r.id), r);
+      githubStarsMap.set(r.htmlUrl, r);
+    }
+  } catch {
+    // GitHub stars cache may not exist yet
+  }
+
   progress(`Exporting canonical bookmarks to ${outputDir}...`);
 
   let exported = 0;
@@ -396,7 +511,8 @@ export async function exportCanonicalBookmarks(
     for (const c of canonicals) {
       const sources = await getCanonicalBookmarkSources(c.id);
       const raindropRecord = findRaindropRecord(sources, raindropMap);
-      const content = buildCanonicalBookmarkMd(c, sources, raindropRecord);
+      const githubStarRecord = findGitHubStarRecord(sources, githubStarsMap);
+      const content = buildCanonicalBookmarkMd(c, sources, raindropRecord, githubStarRecord);
       const filename = canonicalFilename(c);
       const filePath = path.join(outputDir, filename);
       await writeMd(filePath, content);
