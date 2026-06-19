@@ -153,6 +153,7 @@ function renderTweet(tweet: XListHtmlTweet): string {
   const byline = [tweet.authorName, tweet.author ? `@${tweet.author}` : undefined].filter(Boolean).join(' · ');
   const e = tweet.engagement;
   const postedMs = Date.parse(tweet.postedAt ?? '');
+  const linkSlugs = Array.from(new Set((tweet.links ?? []).map((link) => linkType(link).slug)));
   const dataAttrs = [
     `data-likes="${metricValue(e?.likeCount)}"`,
     `data-reposts="${metricValue(e?.repostCount)}"`,
@@ -160,6 +161,7 @@ function renderTweet(tweet: XListHtmlTweet): string {
     `data-quotes="${metricValue(e?.quoteCount)}"`,
     `data-views="${metricValue(e?.viewCount)}"`,
     `data-time="${Number.isFinite(postedMs) ? postedMs : 0}"`,
+    `data-link-types="${escapeHtml(linkSlugs.join(' '))}"`,
   ].join(' ');
   return `
     <article class="tweet-card ${escapeHtml(tweet.timelineKind)}" ${dataAttrs}>
@@ -286,6 +288,10 @@ export function renderXListHtml(input: XListHtmlInput): string {
   .sortbar button:hover { color: var(--text); border-color: var(--line-strong); }
   .sortbar button.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
   .sortbar #sort-dir { margin-left: auto; color: var(--accent); background: var(--accent-soft); border-color: oklch(50% 0.06 235); font-weight: 750; }
+  .filterbar { position: sticky; top: 62px; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 18px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: oklch(20% 0.012 255 / .96); backdrop-filter: blur(8px); }
+  .filterbar button { cursor: pointer; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 12px; font-weight: 650; font-family: inherit; }
+  .filterbar button:hover { color: var(--text); border-color: var(--line-strong); }
+  .filterbar button.active { color: var(--bg); background: var(--context); border-color: var(--context); }
   @media (max-width: 860px) { .page-header, .layout { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: repeat(2, 1fr); } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 640px) { main { width: min(100% - 20px, 1180px); padding-top: 20px; } h1 { font-size: 30px; } .tweet-card header, .tweet-card footer { display: grid; } .rail { grid-template-columns: 1fr; } }
 </style>
@@ -326,6 +332,10 @@ export function renderXListHtml(input: XListHtmlInput): string {
         <button type="button" data-sort="time">Recent</button>
         <button type="button" id="sort-dir" data-dir="desc" title="Toggle sort direction" aria-label="Toggle sort direction">↓ High to low</button>
       </div>
+      <div class="filterbar" role="toolbar" aria-label="Filter by link type">
+        <span class="sortbar-label">Links</span>
+        <button type="button" data-filter="" class="active">All</button>
+      </div>
       ${renderSection('List tweets', listTweets)}
       ${renderSection('Conversation context', conversationTweets)}
       ${unknownTweets.length ? renderSection('Unknown timeline records', unknownTweets) : ''}
@@ -338,13 +348,35 @@ export function renderXListHtml(input: XListHtmlInput): string {
     if (!bar) return;
     let key = 'reposts';
     let dir = 'desc';
+    let filter = '';
     const dirBtn = document.getElementById('sort-dir');
+    const filterBar = document.querySelector('.filterbar');
+    const allCards = Array.from(document.querySelectorAll('.tweet-card'));
+
+    const LABELS = {
+      github: 'GitHub', youtube: 'YouTube', huggingface: 'Hugging Face', arxiv: 'arXiv',
+      blog: 'Blog', npm: 'npm', hn: 'HN', reddit: 'Reddit', notebook: 'Notebook', x: 'X', other: 'Other',
+    };
+
+    function cardTypes(card) {
+      return (card.dataset.linkTypes || '').split(' ').filter(Boolean);
+    }
+
+    function applyFilter() {
+      allCards.forEach((card) => {
+        const match = !filter || cardTypes(card).includes(filter);
+        card.style.display = match ? '' : 'none';
+      });
+      document.querySelectorAll('section').forEach((section) => {
+        const visible = Array.from(section.querySelectorAll('.tweet-card')).filter((c) => c.style.display !== 'none').length;
+        const count = section.querySelector('h2 span');
+        if (count) count.textContent = visible;
+      });
+    }
 
     function sortAll() {
-      const sections = document.querySelectorAll('section');
-      sections.forEach((section) => {
-        const cards = Array.from(section.querySelectorAll('.tweet-card'));
-        cards
+      document.querySelectorAll('section').forEach((section) => {
+        Array.from(section.querySelectorAll('.tweet-card'))
           .sort((a, b) => {
             const av = Number(a.dataset[key] || 0);
             const bv = Number(b.dataset[key] || 0);
@@ -369,7 +401,28 @@ export function renderXListHtml(input: XListHtmlInput): string {
       sortAll();
     });
 
+    // Build filter chips only for link types actually present, ordered by frequency.
+    if (filterBar) {
+      const counts = {};
+      allCards.forEach((card) => cardTypes(card).forEach((t) => { counts[t] = (counts[t] || 0) + 1; }));
+      Object.keys(counts).sort((a, b) => counts[b] - counts[a]).forEach((slug) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.filter = slug;
+        btn.textContent = (LABELS[slug] || slug) + ' ' + counts[slug];
+        filterBar.appendChild(btn);
+      });
+      filterBar.querySelectorAll('button[data-filter]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          filter = btn.dataset.filter;
+          filterBar.querySelectorAll('button[data-filter]').forEach((b) => b.classList.toggle('active', b === btn));
+          applyFilter();
+        });
+      });
+    }
+
     sortAll();
+    applyFilter();
   })();
 </script>
 </body>

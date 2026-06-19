@@ -80,6 +80,18 @@ test('renderXListHtml badges links by source type', () => {
   assert.match(html, /<span class="link-badge other">example\.com<\/span>/);
 });
 
+test('renderXListHtml tags cards with link-type slugs and renders a filter bar', () => {
+  const html = renderXListHtml({
+    listId: '197',
+    fetchedAt: '2026-06-04T00:00:00Z',
+    tweets: [{ ...baseTweet, links: ['https://github.com/foo/bar', 'https://youtu.be/abc'] }],
+  });
+
+  assert.match(html, /data-link-types="github youtube"/);
+  assert.match(html, /class="filterbar"/);
+  assert.match(html, /button type="button" data-filter="" class="active">All</);
+});
+
 test('renderXListHtml renders inline images from media objects', () => {
   const html = renderXListHtml({
     listId: '197',
