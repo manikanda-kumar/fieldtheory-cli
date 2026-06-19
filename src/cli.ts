@@ -57,7 +57,7 @@ import { fetchXListDigest } from './x-list-fetch.js';
 import { renderXListHtml } from './x-list-html.js';
 import { listBrowserIds } from './browsers.js';
 import { configureHttpProxyFromEnv } from './http-proxy.js';
-import { dataDir, ensureDataDir, isFirstRun, migrateLegacyIdeasData, twitterBookmarksIndexPath, twitterBackfillStatePath, mdDir, bookmarkMediaDir, bookmarkMediaManifestPath } from './paths.js';
+import { dataDir, ensureDataDir, ensureXListsDir, isFirstRun, migrateLegacyIdeasData, twitterBookmarksIndexPath, twitterBackfillStatePath, mdDir, bookmarkMediaDir, bookmarkMediaManifestPath } from './paths.js';
 import { PromptCancelledError, promptText } from './prompt.js';
 import { skillWithFrontmatter, installSkill, uninstallSkill } from './skill.js';
 import { registerCompanionCommands } from './companion-cli.js';
@@ -1384,7 +1384,7 @@ export function buildCli() {
     .argument('<list>', 'X list id or x.com/i/lists/<id> URL')
     .option('--since-hours <n>', 'Only include tweets posted within the last N hours', (v: string) => Number(v))
     .option('--count <n>', 'Tweets to request per page (1-100)', (v: string) => Number(v), 40)
-    .option('--max-pages <n>', 'Max timeline pages to paginate', (v: string) => Number(v))
+    .option('--max-pages <n>', 'Max timeline pages to paginate', (v: string) => Number(v), 12)
     .option('--delay-ms <n>', 'Delay between pages in ms', (v: string) => Number(v), 750)
     .option('--browser <id>', 'Browser session to read X cookies from (e.g. chrome, firefox)')
     .option('--chrome-user-data-dir <path>', 'Override Chrome user data dir')
@@ -1421,29 +1421,38 @@ export function buildCli() {
         queryId: stringOption(options.queryId),
       });
 
-      const jsonOutput = stringOption(options.output);
-      if (jsonOutput) {
-        fs.writeFileSync(jsonOutput, `${JSON.stringify(digest, null, 2)}\n`, { mode: 0o600 });
-        console.log(`  ✓ Wrote digest JSON to ${jsonOutput}`);
-      }
-
-      if (options.json && !jsonOutput) {
-        console.log(JSON.stringify(digest, null, 2));
+      if (options.json) {
+        const { rawPages: _raw, ...rest } = digest;
+        void _raw;
+        console.log(JSON.stringify(rest, null, 2));
         return;
       }
 
-      const htmlPath = stringOption(options.htmlOutput)
-        ?? path.join(os.tmpdir(), `fieldtheory-x-list-${digest.listId}-${Date.now()}.html`);
-      fs.writeFileSync(
-        htmlPath,
-        renderXListHtml({ listId: digest.listId, fetchedAt: digest.fetchedAt, tweets: digest.tweets }),
-        { mode: 0o600 }
-      );
+      // Default to a persistent, date-stamped home under ~/.fieldtheory/x-lists/
+      // so scheduled daily runs accumulate; explicit --output/--html-output win.
+      const storeDir = ensureXListsDir();
+      const stamp = digest.fetchedAt.slice(0, 16).replace(/[:T]/g, '-');
+      const base = `${digest.listId}-${stamp}`;
+
+      const html = renderXListHtml({ listId: digest.listId, fetchedAt: digest.fetchedAt, tweets: digest.tweets });
+      const htmlPath = stringOption(options.htmlOutput) ?? path.join(storeDir, `${base}.html`);
+      fs.writeFileSync(htmlPath, html, { mode: 0o600 });
+      // Refresh a stable "latest" pointer for the configured list.
+      if (!stringOption(options.htmlOutput)) {
+        fs.writeFileSync(path.join(storeDir, `${digest.listId}-latest.html`), html, { mode: 0o600 });
+      }
+
+      // Persist the digest without the bulky raw GraphQL pages.
+      const { rawPages, ...digestForDisk } = digest;
+      void rawPages;
+      const jsonPath = stringOption(options.output) ?? path.join(storeDir, `${base}.json`);
+      fs.writeFileSync(jsonPath, `${JSON.stringify(digestForDisk, null, 2)}\n`, { mode: 0o600 });
 
       const { stats } = digest;
       const window = sinceHours ? `last ${sinceHours}h` : 'latest page';
       console.log(`  ✓ X list ${digest.listId} (${window}): ${digest.tweets.length} tweets across ${stats.pagesFetched} page(s)`);
       console.log(`  ✓ HTML: ${htmlPath}`);
+      console.log(`  ✓ JSON: ${jsonPath}`);
       console.log('    Open in a browser; sort by reposts/likes/replies/quotes/views with the toolbar.');
     }));
 

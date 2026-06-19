@@ -19,6 +19,31 @@ ft x-list https://x.com/i/lists/1979812953135497678 --since-hours 12
 - The HTML toolbar sorts cards client-side by reposts, likes, replies, quotes, views, or recency, with a high/low direction toggle.
 - Other flags: `--count`, `--max-pages`, `--delay-ms`, `--browser`, `--chrome-user-data-dir`, `--chrome-profile-directory`, `--firefox-profile-dir`, `--query-id`.
 
+## Storage
+
+With no `--html-output`/`--output`, digests are written to `~/.fieldtheory/x-lists/`:
+
+- `<listId>-<YYYY-MM-DD-HH-MM>.html` and `.json` (one per run; JSON omits raw GraphQL pages).
+- `<listId>-latest.html` is overwritten each run as a stable pointer.
+
+Each external link is badged by source type (GitHub, YouTube, Hugging Face, arXiv, Blog, HN, npm, …).
+
+## Daily job (macOS launchd)
+
+A LaunchAgent runs the digest once a day for the last 24h:
+
+- `~/Library/LaunchAgents/dev.fieldtheory.xlist-daily.plist` — schedule (default 09:00).
+- `~/.fieldtheory/x-lists/run-daily.sh` — wrapper; edit `FT_XLIST_ID` to change the list.
+- Logs: `~/.fieldtheory/x-lists/daily.log`.
+
+Manage:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/dev.fieldtheory.xlist-daily.plist
+launchctl load   ~/Library/LaunchAgents/dev.fieldtheory.xlist-daily.plist
+~/.fieldtheory/x-lists/run-daily.sh   # run once now
+```
+
 ## Prototype command (dev script)
 
 ```bash

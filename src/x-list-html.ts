@@ -80,11 +80,41 @@ function renderMedia(mediaObjects: BookmarkMediaObject[] | undefined): string {
   return `<div class="media-grid">${items.join('')}</div>`;
 }
 
+// Map a URL to a coarse source type for badging. Returns a label plus a slug
+// used as a CSS modifier class.
+function linkType(url: string): { label: string; slug: string } {
+  let host = '';
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return { label: 'link', slug: 'other' };
+  }
+  const is = (...domains: string[]) => domains.some((d) => host === d || host.endsWith(`.${d}`));
+
+  if (is('github.com', 'github.io', 'raw.githubusercontent.com', 'gist.github.com')) return { label: 'GitHub', slug: 'github' };
+  if (is('youtube.com', 'youtu.be')) return { label: 'YouTube', slug: 'youtube' };
+  if (is('huggingface.co')) return { label: 'Hugging Face', slug: 'huggingface' };
+  if (is('arxiv.org')) return { label: 'arXiv', slug: 'arxiv' };
+  if (is('x.com', 'twitter.com', 't.co')) return { label: 'X', slug: 'x' };
+  if (is('substack.com')) return { label: 'Substack', slug: 'blog' };
+  if (is('medium.com')) return { label: 'Medium', slug: 'blog' };
+  if (is('npmjs.com')) return { label: 'npm', slug: 'npm' };
+  if (is('arxiv-vanity.com', 'openreview.net', 'papers.ssrn.com')) return { label: 'Paper', slug: 'arxiv' };
+  if (is('colab.research.google.com', 'kaggle.com')) return { label: 'Notebook', slug: 'notebook' };
+  if (is('reddit.com')) return { label: 'Reddit', slug: 'reddit' };
+  if (is('news.ycombinator.com')) return { label: 'HN', slug: 'hn' };
+  if (/(^|\.)(blog|dev|hashnode|ghost\.io|wordpress\.com|bearblog\.dev)$/.test(host) || host.startsWith('blog.')) {
+    return { label: 'Blog', slug: 'blog' };
+  }
+  return { label: host, slug: 'other' };
+}
+
 function renderLinks(links: string[] | undefined): string {
   if (!links?.length) return '';
-  return `<div class="links">${links.map((link) =>
-    `<a href="${escapeHtml(link)}" target="_blank" rel="noreferrer">${escapeHtml(link)}</a>`
-  ).join('')}</div>`;
+  return `<div class="links">${links.map((link) => {
+    const { label, slug } = linkType(link);
+    return `<a class="link-row" href="${escapeHtml(link)}" target="_blank" rel="noreferrer"><span class="link-badge ${slug}">${escapeHtml(label)}</span><span class="link-url">${escapeHtml(link)}</span></a>`;
+  }).join('')}</div>`;
 }
 
 function renderEngagement(engagement: BookmarkEngagementSnapshot | undefined): string {
@@ -232,6 +262,20 @@ export function renderXListHtml(input: XListHtmlInput): string {
   .quote-card p { white-space: pre-wrap; line-height: 1.5; margin: 10px 0; }
   .links { display: grid; gap: 6px; margin: 12px 0; overflow-wrap: anywhere; }
   .links a, .open, .quote-card a { color: var(--accent); text-underline-offset: 3px; }
+  .link-row { display: flex; align-items: baseline; gap: 8px; text-decoration: none; }
+  .link-row:hover .link-url { text-decoration: underline; }
+  .link-url { color: var(--accent); min-width: 0; word-break: break-all; }
+  .link-badge { flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--text); background: oklch(30% 0.02 255); border: 1px solid var(--line-strong); }
+  .link-badge.github { color: oklch(92% 0.01 255); background: oklch(28% 0.01 255); border-color: oklch(50% 0.02 255); }
+  .link-badge.youtube { color: oklch(95% 0.02 25); background: oklch(45% 0.18 25 / .22); border-color: oklch(60% 0.2 25); }
+  .link-badge.huggingface { color: oklch(92% 0.05 75); background: oklch(55% 0.16 75 / .2); border-color: oklch(65% 0.16 75); }
+  .link-badge.arxiv { color: oklch(92% 0.05 145); background: oklch(50% 0.14 145 / .2); border-color: oklch(60% 0.14 145); }
+  .link-badge.blog { color: oklch(92% 0.05 295); background: oklch(55% 0.14 295 / .2); border-color: oklch(65% 0.14 295); }
+  .link-badge.x { color: var(--text); background: oklch(35% 0.01 255); border-color: var(--line-strong); }
+  .link-badge.npm { color: oklch(95% 0.02 25); background: oklch(45% 0.16 25 / .2); border-color: oklch(60% 0.16 25); }
+  .link-badge.hn { color: oklch(95% 0.06 55); background: oklch(55% 0.16 55 / .22); border-color: oklch(65% 0.16 55); }
+  .link-badge.reddit { color: oklch(95% 0.05 35); background: oklch(50% 0.16 35 / .2); border-color: oklch(62% 0.16 35); }
+  .link-badge.notebook { color: oklch(92% 0.05 75); background: oklch(52% 0.14 75 / .18); border-color: oklch(62% 0.14 75); }
   .metrics { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; }
   .metrics span { display: inline-flex; align-items: baseline; gap: 5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 999px; background: oklch(20% 0.012 255); }
   .metrics b { color: var(--text); font-size: 13px; }

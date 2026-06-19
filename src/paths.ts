@@ -197,6 +197,19 @@ export function isFirstRun(): boolean {
   return !fs.existsSync(twitterBookmarksCachePath());
 }
 
+// ── X list digest paths ──────────────────────────────────────────────────
+
+/** Persistent home for `ft x-list` digests: ~/.fieldtheory/x-lists/. */
+export function xListsDir(): string {
+  return path.join(fieldTheoryRoot(), 'x-lists');
+}
+
+export function ensureXListsDir(): string {
+  const dir = xListsDir();
+  ensureDirSync(dir);
+  return dir;
+}
+
 // ── Markdown wiki paths ──────────────────────────────────────────────────
 
 export function mdDir(): string {

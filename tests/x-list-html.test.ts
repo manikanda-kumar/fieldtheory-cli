@@ -57,6 +57,29 @@ test('renderXListHtml linkifies bare URLs inside tweet text', () => {
   assert.match(html, /<a href="https:\/\/t\.co\/abc123" target="_blank" rel="noreferrer">https:\/\/t\.co\/abc123<\/a> for more\./);
 });
 
+test('renderXListHtml badges links by source type', () => {
+  const html = renderXListHtml({
+    listId: '197',
+    fetchedAt: '2026-06-04T00:00:00Z',
+    tweets: [{
+      ...baseTweet,
+      links: [
+        'https://github.com/foo/bar',
+        'https://youtu.be/abc',
+        'https://huggingface.co/models/x',
+        'https://arxiv.org/abs/2401.00001',
+        'https://example.com/post',
+      ],
+    }],
+  });
+
+  assert.match(html, /<span class="link-badge github">GitHub<\/span>/);
+  assert.match(html, /<span class="link-badge youtube">YouTube<\/span>/);
+  assert.match(html, /<span class="link-badge huggingface">Hugging Face<\/span>/);
+  assert.match(html, /<span class="link-badge arxiv">arXiv<\/span>/);
+  assert.match(html, /<span class="link-badge other">example\.com<\/span>/);
+});
+
 test('renderXListHtml renders inline images from media objects', () => {
   const html = renderXListHtml({
     listId: '197',
