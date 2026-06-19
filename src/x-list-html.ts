@@ -30,6 +30,18 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#39;');
 }
 
+// Linkify bare URLs in already-escaped text. Runs after escapeHtml so the input
+// is HTML-safe; the URL match excludes the entity-introducing `&` and quotes.
+function linkifyText(value: unknown): string {
+  const escaped = escapeHtml(value);
+  return escaped.replace(/https?:\/\/[^\s<"']+/g, (url) => {
+    // Trailing punctuation shouldn't be swallowed into the link.
+    const trailing = url.match(/[.,;:!?)\]]+$/)?.[0] ?? '';
+    const href = url.slice(0, url.length - trailing.length);
+    return `<a href="${href}" target="_blank" rel="noreferrer">${href}</a>${trailing}`;
+  });
+}
+
 function formatNumber(value: number | undefined): string {
   if (value == null || !Number.isFinite(value)) return 'n/a';
   return new Intl.NumberFormat('en', { notation: value >= 10_000 ? 'compact' : 'standard' }).format(value);
@@ -97,16 +109,30 @@ function renderQuotedTweet(quotedTweet: QuotedTweetSnapshot | undefined): string
     <aside class="quote-card">
       <div class="quote-label">Quoted tweet</div>
       <div class="quote-byline">${escapeHtml(byline)}</div>
-      <p>${escapeHtml(quotedTweet.text)}</p>
+      <p>${linkifyText(quotedTweet.text)}</p>
       ${renderMedia(quotedTweet.mediaObjects)}
       <a href="${escapeHtml(quotedTweet.url)}" target="_blank" rel="noreferrer">Open quoted tweet</a>
     </aside>`;
 }
 
+function metricValue(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 function renderTweet(tweet: XListHtmlTweet): string {
   const byline = [tweet.authorName, tweet.author ? `@${tweet.author}` : undefined].filter(Boolean).join(' · ');
+  const e = tweet.engagement;
+  const postedMs = Date.parse(tweet.postedAt ?? '');
+  const dataAttrs = [
+    `data-likes="${metricValue(e?.likeCount)}"`,
+    `data-reposts="${metricValue(e?.repostCount)}"`,
+    `data-replies="${metricValue(e?.replyCount)}"`,
+    `data-quotes="${metricValue(e?.quoteCount)}"`,
+    `data-views="${metricValue(e?.viewCount)}"`,
+    `data-time="${Number.isFinite(postedMs) ? postedMs : 0}"`,
+  ].join(' ');
   return `
-    <article class="tweet-card ${escapeHtml(tweet.timelineKind)}">
+    <article class="tweet-card ${escapeHtml(tweet.timelineKind)}" ${dataAttrs}>
       <header>
         <div>
           <div class="byline">${escapeHtml(byline || 'Unknown author')}</div>
@@ -114,7 +140,7 @@ function renderTweet(tweet: XListHtmlTweet): string {
         </div>
         <span class="kind">${tweet.timelineKind === 'list-tweet' ? 'List tweet' : tweet.timelineKind === 'conversation-context' ? 'Context' : 'Unknown'}</span>
       </header>
-      <p class="tweet-text">${escapeHtml(tweet.text)}</p>
+      <p class="tweet-text">${linkifyText(tweet.text)}</p>
       ${renderMedia(tweet.mediaObjects)}
       ${renderQuotedTweet(tweet.quotedTweet)}
       ${renderLinks(tweet.links)}
@@ -210,6 +236,12 @@ export function renderXListHtml(input: XListHtmlInput): string {
   .metrics span { display: inline-flex; align-items: baseline; gap: 5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 999px; background: oklch(20% 0.012 255); }
   .metrics b { color: var(--text); font-size: 13px; }
   .open { flex: 0 0 auto; font-size: 13px; font-weight: 750; }
+  .sortbar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 18px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: oklch(20% 0.012 255 / .96); backdrop-filter: blur(8px); box-shadow: 0 12px 36px rgba(0,0,0,.22); }
+  .sortbar-label { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-right: 4px; }
+  .sortbar button { cursor: pointer; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 13px; font-weight: 650; font-family: inherit; transition: background .15s, color .15s, border-color .15s; }
+  .sortbar button:hover { color: var(--text); border-color: var(--line-strong); }
+  .sortbar button.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+  .sortbar #sort-dir { margin-left: auto; color: var(--accent); background: var(--accent-soft); border-color: oklch(50% 0.06 235); font-weight: 750; }
   @media (max-width: 860px) { .page-header, .layout { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: repeat(2, 1fr); } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 640px) { main { width: min(100% - 20px, 1180px); padding-top: 20px; } h1 { font-size: 30px; } .tweet-card header, .tweet-card footer { display: grid; } .rail { grid-template-columns: 1fr; } }
 </style>
@@ -240,12 +272,62 @@ export function renderXListHtml(input: XListHtmlInput): string {
       ${unknownTweets.length ? '<a href="#unknown-timeline-records">Unknown records</a>' : ''}
     </nav>
     <div>
+      <div class="sortbar" role="toolbar" aria-label="Sort tweets">
+        <span class="sortbar-label">Sort by</span>
+        <button type="button" data-sort="reposts" class="active">Reposts</button>
+        <button type="button" data-sort="likes">Likes</button>
+        <button type="button" data-sort="replies">Replies</button>
+        <button type="button" data-sort="quotes">Quotes</button>
+        <button type="button" data-sort="views">Views</button>
+        <button type="button" data-sort="time">Recent</button>
+        <button type="button" id="sort-dir" data-dir="desc" title="Toggle sort direction" aria-label="Toggle sort direction">↓ High to low</button>
+      </div>
       ${renderSection('List tweets', listTweets)}
       ${renderSection('Conversation context', conversationTweets)}
       ${unknownTweets.length ? renderSection('Unknown timeline records', unknownTweets) : ''}
     </div>
   </div>
 </main>
+<script>
+  (function () {
+    const bar = document.querySelector('.sortbar');
+    if (!bar) return;
+    let key = 'reposts';
+    let dir = 'desc';
+    const dirBtn = document.getElementById('sort-dir');
+
+    function sortAll() {
+      const sections = document.querySelectorAll('section');
+      sections.forEach((section) => {
+        const cards = Array.from(section.querySelectorAll('.tweet-card'));
+        cards
+          .sort((a, b) => {
+            const av = Number(a.dataset[key] || 0);
+            const bv = Number(b.dataset[key] || 0);
+            return dir === 'desc' ? bv - av : av - bv;
+          })
+          .forEach((card) => section.appendChild(card));
+      });
+    }
+
+    bar.querySelectorAll('button[data-sort]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        key = btn.dataset.sort;
+        bar.querySelectorAll('button[data-sort]').forEach((b) => b.classList.toggle('active', b === btn));
+        sortAll();
+      });
+    });
+
+    dirBtn.addEventListener('click', () => {
+      dir = dir === 'desc' ? 'asc' : 'desc';
+      dirBtn.dataset.dir = dir;
+      dirBtn.textContent = dir === 'desc' ? '↓ High to low' : '↑ Low to high';
+      sortAll();
+    });
+
+    sortAll();
+  })();
+</script>
 </body>
 </html>`;
 }

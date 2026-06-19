@@ -53,6 +53,8 @@ import { writeYoutubeIndexFromState } from './youtube/index-html.js';
 import { createEngineYoutubeLlmClient, createFallbackYoutubeLlmClient, type YoutubeLlmClient } from './youtube/llm.js';
 import { markPlaylistSynced, updateYoutubeState } from './youtube/state.js';
 import type { YtDlpAccessOptions } from './youtube/yt-dlp.js';
+import { fetchXListDigest } from './x-list-fetch.js';
+import { renderXListHtml } from './x-list-html.js';
 import { listBrowserIds } from './browsers.js';
 import { configureHttpProxyFromEnv } from './http-proxy.js';
 import { dataDir, ensureDataDir, isFirstRun, migrateLegacyIdeasData, twitterBookmarksIndexPath, twitterBackfillStatePath, mdDir, bookmarkMediaDir, bookmarkMediaManifestPath } from './paths.js';
@@ -1372,6 +1374,77 @@ export function buildCli() {
       console.log(`  ✓ YouTube sync complete: ${processed} processed, ${skipped} skipped, ${failed} failed`);
       console.log(`  ✓ Index: ${indexPath}`);
       if (failed > 0) process.exitCode = 1;
+    }));
+
+  // ── x-list ──────────────────────────────────────────────────────────────
+
+  program
+    .command('x-list')
+    .description('Fetch a public X/Twitter list for a time window and render a sortable HTML digest')
+    .argument('<list>', 'X list id or x.com/i/lists/<id> URL')
+    .option('--since-hours <n>', 'Only include tweets posted within the last N hours', (v: string) => Number(v))
+    .option('--count <n>', 'Tweets to request per page (1-100)', (v: string) => Number(v), 40)
+    .option('--max-pages <n>', 'Max timeline pages to paginate', (v: string) => Number(v))
+    .option('--delay-ms <n>', 'Delay between pages in ms', (v: string) => Number(v), 750)
+    .option('--browser <id>', 'Browser session to read X cookies from (e.g. chrome, firefox)')
+    .option('--chrome-user-data-dir <path>', 'Override Chrome user data dir')
+    .option('--chrome-profile-directory <name>', 'Override Chrome profile directory')
+    .option('--firefox-profile-dir <path>', 'Override Firefox profile dir')
+    .option('--query-id <id>', 'Override the ListLatestTweetsTimeline GraphQL query id')
+    .option('--output <path>', 'Write the digest JSON to this path')
+    .option('--html-output <path>', 'Write the sortable HTML to this path (defaults to a temp file)')
+    .option('--json', 'Print the digest JSON to stdout instead of writing HTML', false)
+    .action(safe(async (list: string, options) => {
+      const sinceHours = typeof options.sinceHours === 'number' && Number.isFinite(options.sinceHours)
+        ? options.sinceHours
+        : undefined;
+      const count = Number(options.count);
+      if (!Number.isFinite(count) || count < 1 || count > 100) {
+        console.error('  Error: --count must be a number from 1 to 100.');
+        process.exitCode = 1;
+        return;
+      }
+      const maxPages = typeof options.maxPages === 'number' && Number.isFinite(options.maxPages)
+        ? options.maxPages
+        : undefined;
+
+      const digest = await fetchXListDigest({
+        listId: list,
+        sinceHours,
+        count,
+        maxPages,
+        delayMs: Number(options.delayMs) || 0,
+        browser: stringOption(options.browser),
+        chromeUserDataDir: stringOption(options.chromeUserDataDir),
+        chromeProfileDirectory: stringOption(options.chromeProfileDirectory),
+        firefoxProfileDir: stringOption(options.firefoxProfileDir),
+        queryId: stringOption(options.queryId),
+      });
+
+      const jsonOutput = stringOption(options.output);
+      if (jsonOutput) {
+        fs.writeFileSync(jsonOutput, `${JSON.stringify(digest, null, 2)}\n`, { mode: 0o600 });
+        console.log(`  ✓ Wrote digest JSON to ${jsonOutput}`);
+      }
+
+      if (options.json && !jsonOutput) {
+        console.log(JSON.stringify(digest, null, 2));
+        return;
+      }
+
+      const htmlPath = stringOption(options.htmlOutput)
+        ?? path.join(os.tmpdir(), `fieldtheory-x-list-${digest.listId}-${Date.now()}.html`);
+      fs.writeFileSync(
+        htmlPath,
+        renderXListHtml({ listId: digest.listId, fetchedAt: digest.fetchedAt, tweets: digest.tweets }),
+        { mode: 0o600 }
+      );
+
+      const { stats } = digest;
+      const window = sinceHours ? `last ${sinceHours}h` : 'latest page';
+      console.log(`  ✓ X list ${digest.listId} (${window}): ${digest.tweets.length} tweets across ${stats.pagesFetched} page(s)`);
+      console.log(`  ✓ HTML: ${htmlPath}`);
+      console.log('    Open in a browser; sort by reposts/likes/replies/quotes/views with the toolbar.');
     }));
 
   // ── search ──────────────────────────────────────────────────────────────

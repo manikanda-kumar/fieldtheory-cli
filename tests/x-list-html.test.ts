@@ -23,6 +23,40 @@ test('renderXListHtml escapes tweet text and renders section counts', () => {
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
 });
 
+test('renderXListHtml emits sortable metric data attributes and a sort toolbar', () => {
+  const html = renderXListHtml({ listId: '197', fetchedAt: '2026-06-04T00:00:00Z', tweets: [baseTweet] });
+
+  assert.match(html, /data-likes="10"/);
+  assert.match(html, /data-reposts="2"/);
+  assert.match(html, /data-replies="3"/);
+  assert.match(html, /data-quotes="1"/);
+  assert.match(html, /data-views="1000"/);
+  assert.match(html, /data-time="\d+"/);
+  assert.match(html, /class="sortbar"/);
+  assert.match(html, /button type="button" data-sort="reposts"/);
+});
+
+test('renderXListHtml defaults missing engagement metrics to zero', () => {
+  const html = renderXListHtml({
+    listId: '197',
+    fetchedAt: '2026-06-04T00:00:00Z',
+    tweets: [{ ...baseTweet, engagement: undefined }],
+  });
+
+  assert.match(html, /data-likes="0"/);
+  assert.match(html, /data-views="0"/);
+});
+
+test('renderXListHtml linkifies bare URLs inside tweet text', () => {
+  const html = renderXListHtml({
+    listId: '197',
+    fetchedAt: '2026-06-04T00:00:00Z',
+    tweets: [{ ...baseTweet, text: 'see https://t.co/abc123 for more.' }],
+  });
+
+  assert.match(html, /<a href="https:\/\/t\.co\/abc123" target="_blank" rel="noreferrer">https:\/\/t\.co\/abc123<\/a> for more\./);
+});
+
 test('renderXListHtml renders inline images from media objects', () => {
   const html = renderXListHtml({
     listId: '197',
