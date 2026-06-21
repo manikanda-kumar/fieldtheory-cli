@@ -37,9 +37,24 @@ Field Theory has three main local surfaces:
 1. Check paths and status when setup matters: \`ft paths --json\`, \`ft status --json\`
 2. Search durable notes first when prior project knowledge matters: \`ft library search <query> --json\`
 3. Search bookmarks when reading history or saved X/Twitter posts matter: \`ft search <query> --json\`
-4. Inspect exact files or bookmarks with \`ft library show <path> --json\`, \`ft show <id> --json\`, or \`ft commands show <name> --json\`
-5. Create or update durable Library notes and portable commands only when the user asks for a saved artifact
-6. Open useful Library pages in the Mac app with \`ft library open <path>\`
+4. Search your trusted following roster for domain experts: \`ft experts search "<query>" --json\`
+5. Inspect exact files or bookmarks with \`ft library show <path> --json\`, \`ft show <id> --json\`, or \`ft commands show <name> --json\`
+6. Create or update durable Library notes and portable commands only when the user asks for a saved artifact
+7. Open useful Library pages in the Mac app with \`ft library open <path>\`
+
+## Local-First Research Ladder
+
+When researching a topic, follow this tiered workflow before broad web search:
+
+\`\`\`bash
+ft search --unified "<query>" --json          # tier 1: bookmarks
+ft experts search "<query>" --json            # tier 2: trusted accounts
+# tier 3: broader web/X research via external tools (e.g. grok-cli)
+\`\`\`
+
+Tier 1 checks what you have already saved. Tier 2 finds accounts you follow
+who are domain experts on the topic. Only fall through to tier 3 when tiers
+1 and 2 don't surface enough signal.
 
 ## Possible Roadmap Workflow
 
@@ -95,6 +110,14 @@ ft list --after/--before DATE  # Date range (YYYY-MM-DD)
 ft stats                       # Collection overview
 ft viz                         # Terminal dashboard
 ft show <id>                   # Full detail for one bookmark
+ft sync-following              # Sync your X following roster
+ft sync-following --classify   # Sync and classify with LLM
+ft experts search <query>      # Search following by expertise/domain/bio
+ft experts list --domain <d>   # List followed accounts by domain
+ft experts show @handle        # Full profile + bookmark overlap
+ft experts stats               # Following roster statistics
+ft classify-following          # Classify following by domain/expertise (LLM)
+ft classify-following --regex  # Classify following (regex, no LLM)
 ft seeds search <query> --create
 ft repos add <path>
 ft possible run --seed <id> --repos <paths...>

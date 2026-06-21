@@ -245,14 +245,15 @@ export function extractFirefoxXCookies(profileDir?: string): ChromeCookieResult 
   const dbPath = join(dir, 'cookies.sqlite');
   ensureFirefoxCookieBackendAvailable();
 
-  let cookies = queryFirefoxCookies(dbPath, '.x.com', ['ct0', 'auth_token']);
+  let cookies = queryFirefoxCookies(dbPath, '.x.com', ['ct0', 'auth_token', 'twid']);
   if (cookies.length === 0) {
-    cookies = queryFirefoxCookies(dbPath, '.twitter.com', ['ct0', 'auth_token']);
+    cookies = queryFirefoxCookies(dbPath, '.twitter.com', ['ct0', 'auth_token', 'twid']);
   }
 
   const cookieMap = new Map(cookies.map(c => [c.name, c.value]));
   const ct0 = cookieMap.get('ct0');
   const authToken = cookieMap.get('auth_token');
+  const twid = cookieMap.get('twid');
 
   if (!ct0) {
     throw new Error(
@@ -280,6 +281,7 @@ export function extractFirefoxXCookies(profileDir?: string): ChromeCookieResult 
   const cleanCt0 = validateCookie('ct0', ct0);
   const cookieParts = [`ct0=${cleanCt0}`];
   if (authToken) cookieParts.push(`auth_token=${validateCookie('auth_token', authToken)}`);
+  if (twid) cookieParts.push(`twid=${validateCookie('twid', twid)}`);
 
   return { csrfToken: cleanCt0, cookieHeader: cookieParts.join('; ') };
 }

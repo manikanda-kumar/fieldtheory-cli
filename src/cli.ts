@@ -55,6 +55,11 @@ import { markPlaylistSynced, updateYoutubeState } from './youtube/state.js';
 import type { YtDlpAccessOptions } from './youtube/yt-dlp.js';
 import { fetchXListDigest } from './x-list-fetch.js';
 import { renderXListHtml } from './x-list-html.js';
+import { syncFollowing } from './following/sync.js';
+import { searchFollowing, listFollowing, showFollowing, getFollowingStats, getFollowingStatus } from './following/db.js';
+import { classifyFollowingWithLlm, classifyFollowingRegexAll } from './following/classify.js';
+import { ensureFollowingDir, followingDir } from './following/paths.js';
+import type { FollowingSyncProgress } from './following/types.js';
 import { listBrowserIds } from './browsers.js';
 import { configureHttpProxyFromEnv } from './http-proxy.js';
 import { dataDir, ensureDataDir, ensureXListsDir, isFirstRun, migrateLegacyIdeasData, twitterBookmarksIndexPath, twitterBackfillStatePath, mdDir, bookmarkMediaDir, bookmarkMediaManifestPath } from './paths.js';
@@ -1456,6 +1461,233 @@ export function buildCli() {
       console.log('    Open in a browser; sort by reposts/likes/replies/quotes/views with the toolbar.');
     }));
 
+  // ── sync-following ──────────────────────────────────────────────────────
+
+  program
+    .command('sync-following')
+    .description('Sync the accounts you follow on X into a local searchable roster')
+    .option('--rebuild', 'Full re-crawl (ignore saved cursor)', false)
+    .option('--continue', 'Resume from the saved cursor', false)
+    .option('--classify', 'Run LLM classification after sync (requires claude or codex)', false)
+    .option('--regex', 'Run regex classification after sync (cheap, no LLM)', false)
+    .option('--max-pages <n>', 'Max pages to fetch (default: unlimited)', (v: string) => Number(v))
+    .option('--delay-ms <n>', 'Delay between page requests in ms', (v: string) => Number(v), 600)
+    .option('--max-minutes <n>', 'Max runtime in minutes', (v: string) => Number(v), 30)
+    .option('--browser <name>', 'Browser to read session from (chrome, chromium, brave, firefox, ...)')
+    .option('--cookies <values...>', 'Pass ct0 and auth_token directly (skips browser extraction)')
+    .option('--chrome-user-data-dir <path>', 'Chrome-family user-data directory')
+    .option('--chrome-profile-directory <name>', 'Chrome-family profile name')
+    .option('--firefox-profile-dir <path>', 'Firefox profile directory')
+    .option('--query-id <id>', 'Override the GraphQL Following query id')
+    .addOption(engineOption())
+    .action(safe(async (options) => {
+      ensureFollowingDir();
+
+      const { csrfToken, cookieHeader } = parseCookieOption(options.cookies);
+
+      const startTime = Date.now();
+      let lastProgress: FollowingSyncProgress = { page: 0, totalFetched: 0, newAdded: 0, running: true, done: false };
+      const spinner = createSpinner(() => {
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        return `Syncing following...  ${lastProgress.newAdded} new  \u2502  ${lastProgress.totalFetched} fetched  \u2502  ${elapsed}s`;
+      });
+
+      const result = await runWithSpinner(spinner, () => syncFollowing({
+        rebuild: Boolean(options.rebuild),
+        continue: Boolean(options.continue),
+        maxPages: options.maxPages != null ? Number(options.maxPages) : undefined,
+        delayMs: Number(options.delayMs) || 600,
+        maxMinutes: Number(options.maxMinutes) || 30,
+        browser: options.browser ? String(options.browser) : undefined,
+        csrfToken,
+        cookieHeader,
+        chromeUserDataDir: options.chromeUserDataDir ? String(options.chromeUserDataDir) : undefined,
+        chromeProfileDirectory: options.chromeProfileDirectory ? String(options.chromeProfileDirectory) : undefined,
+        firefoxProfileDir: options.firefoxProfileDir ? String(options.firefoxProfileDir) : undefined,
+        queryId: options.queryId ? String(options.queryId) : undefined,
+        onProgress: (progress: FollowingSyncProgress) => {
+          lastProgress = progress;
+          spinner.update();
+        },
+      }));
+
+      console.log(`\n  \u2713 ${result.added} new accounts synced (${result.totalFollowing} total following)`);
+      console.log(`  ${friendlyStopReason(result.stopReason)}`);
+      console.log(`  \u2713 Data: ${followingDir()}\n`);
+
+      if (options.classify) {
+        const engine = await resolveEngine({ override: options.engine ? String(options.engine) : undefined });
+        process.stderr.write('  Classifying following with LLM...\n');
+        const classifyResult = await classifyFollowingWithLlm({
+          engine,
+          onBatch: (done: number, total: number) => {
+            process.stderr.write(`  ${done}/${total} classified\n`);
+          },
+        });
+        console.log(`  \u2713 ${classifyResult.classified}/${classifyResult.totalUnclassified} accounts classified`);
+      } else if (options.regex) {
+        process.stderr.write('  Classifying following (regex)...\n');
+        const classifyResult = await classifyFollowingRegexAll();
+        console.log(`  \u2713 ${classifyResult.classified}/${classifyResult.total} accounts classified (regex)`);
+      }
+    }));
+
+  // ── classify-following ──────────────────────────────────────────────────
+
+  program
+    .command('classify-following')
+    .description('Classify your following roster by domain and expertise using LLM (requires claude or codex)')
+    .option('--regex', 'Use regex classification instead of LLM')
+    .addOption(engineOption())
+    .action(safe(async (options) => {
+      if (options.regex) {
+        process.stderr.write('Classifying following (regex)...\n');
+        const result = await classifyFollowingRegexAll();
+        console.log(`Classified ${result.classified}/${result.total} accounts (regex)`);
+        return;
+      }
+
+      const engine = await resolveEngine({ override: options.engine ? String(options.engine) : undefined });
+      const start = Date.now();
+      process.stderr.write('Classifying following with LLM (batches of 50)...\n');
+      const result = await classifyFollowingWithLlm({
+        engine,
+        onBatch: (done: number, total: number) => {
+          const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+          const elapsed = Math.round((Date.now() - start) / 1000);
+          process.stderr.write(`  ${done}/${total} (${pct}%) \u2502 ${elapsed}s elapsed\n`);
+        },
+      });
+      console.log(`\nEngine: ${result.engine}`);
+      console.log(`Classified: ${result.classified}/${result.totalUnclassified} accounts`);
+    }));
+
+  // ── experts ─────────────────────────────────────────────────────────────
+
+  const experts = program.command('experts')
+    .description('Search and explore your X following roster with expertise index');
+
+  experts
+    .command('search')
+    .description('Full-text search over your following roster (handles, bios, domains, expertise)')
+    .argument('<query>', 'Search query (supports FTS5 syntax)')
+    .option('--limit <n>', 'Max results', (v: string) => Number(v), 20)
+    .option('--json', 'JSON output')
+    .action(safe(async (query: string, options) => {
+      const results = await searchFollowing({ query, limit: Number(options.limit) || 20 });
+      if (options.json) {
+        printJson(results);
+        return;
+      }
+      if (results.length === 0) {
+        console.log('  No results. Run: ft sync-following');
+        return;
+      }
+      for (const r of results) {
+        const tags = [r.primaryDomain, ...(r.expertise ?? [])].filter(Boolean).join(' \u00b7 ');
+        const verified = r.verified ? ' \u2713' : '';
+        const overlap = r.bookmarkOverlap > 0 ? ` [${r.bookmarkOverlap} bookmarks]` : '';
+        console.log(`@${r.handle}${verified}  ${r.name}${overlap}`);
+        if (tags) console.log(`  ${tags}`);
+        if (r.expertiseSummary) console.log(`  ${r.expertiseSummary}`);
+        if (r.bio) {
+          const bio = r.bio.length > 120 ? r.bio.slice(0, 117) + '...' : r.bio;
+          console.log(`  ${bio}`);
+        }
+        console.log();
+      }
+    }));
+
+  experts
+    .command('list')
+    .description('List accounts in your following roster with optional domain filter')
+    .option('--domain <d>', 'Filter by domain (e.g. ai, startups, devops)')
+    .option('--limit <n>', 'Max results', (v: string) => Number(v), 30)
+    .option('--sort <mode>', 'Sort by: relevance, overlap, or followers', 'relevance')
+    .option('--json', 'JSON output')
+    .action(safe(async (options) => {
+      const items = await listFollowing({
+        domain: options.domain ? String(options.domain) : undefined,
+        limit: Number(options.limit) || 30,
+        sort: (options.sort as 'relevance' | 'overlap' | 'followers') ?? 'relevance',
+      });
+      if (options.json) {
+        printJson(items);
+        return;
+      }
+      if (items.length === 0) {
+        console.log('  No results. Run: ft sync-following');
+        return;
+      }
+      for (const item of items) {
+        const tags = [item.primaryDomain, ...(item.expertise ?? [])].filter(Boolean).join(' \u00b7 ');
+        const overlap = item.bookmarkOverlap > 0 ? ` [${item.bookmarkOverlap} bookmarks]` : '';
+        console.log(`@${item.handle}  ${item.name}${overlap}${tags ? `  ${tags}` : ''}`);
+      }
+    }));
+
+  experts
+    .command('show')
+    .description('Show full profile for one followed account')
+    .argument('<handle>', 'X handle (with or without @)')
+    .option('--json', 'JSON output')
+    .action(safe(async (handle: string, options) => {
+      const item = await showFollowing(String(handle));
+      if (!item) {
+        console.log(`  Account not found in following roster: ${String(handle)}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (options.json) {
+        printJson(item);
+        return;
+      }
+      const verified = item.verified ? ' \u2713' : '';
+      console.log(`@${item.handle}${verified}  ${item.name}`);
+      if (item.bio) console.log(`  ${item.bio}`);
+      if (item.primaryDomain) console.log(`  domain: ${item.primaryDomain}`);
+      if (item.domains.length > 1) console.log(`  domains: ${item.domains.join(', ')}`);
+      if (item.expertise.length > 0) console.log(`  expertise: ${item.expertise.join(', ')}`);
+      if (item.expertiseSummary) console.log(`  summary: ${item.expertiseSummary}`);
+      console.log(`  followers: ${item.followerCount ?? '?'}  following: ${item.followingCount ?? '?'}`);
+      console.log(`  bookmark overlap: ${item.bookmarkOverlap}`);
+      if (item.topBookmarks.length > 0) {
+        console.log(`\n  Top bookmarked posts:`);
+        for (const b of item.topBookmarks) {
+          const date = b.postedAt ? b.postedAt.slice(0, 10) : '?';
+          const text = b.text.length > 100 ? b.text.slice(0, 97) + '...' : b.text;
+          console.log(`    [${date}] ${text}`);
+          console.log(`    ${b.url}`);
+        }
+      }
+    }));
+
+  experts
+    .command('stats')
+    .description('Show following roster statistics')
+    .option('--json', 'JSON output')
+    .action(safe(async (options) => {
+      const stats = await getFollowingStats();
+      if (options.json) {
+        printJson(stats);
+        return;
+      }
+      console.log(`Following: ${stats.totalFollowing}`);
+      console.log(`Classified: ${stats.classifiedCount}/${stats.totalFollowing}`);
+      if (stats.topDomains.length > 0) {
+        console.log(`\nTop domains:`);
+        for (const d of stats.topDomains) {
+          console.log(`  ${d.domain.padEnd(20)} ${String(d.count).padStart(5)}`);
+        }
+      }
+      if (stats.mostBookmarked.length > 0) {
+        console.log(`\nMost bookmarked in following:`);
+        for (const a of stats.mostBookmarked) {
+          console.log(`  @${a.handle}  ${a.name}  [${a.bookmarkOverlap} bookmarks]`);
+        }
+      }
+    }));
+
   // ── search ──────────────────────────────────────────────────────────────
 
   program
@@ -1896,14 +2128,24 @@ export function buildCli() {
     .option('--json', 'JSON output')
     .action(safe(async (options) => {
       const view = await getBookmarkStatusView();
+      const followingStatus = await getFollowingStatus();
       if (options.json) {
         printJson({
           bookmarks: view,
+          following: followingStatus,
           paths: getPathReport(),
         });
         return;
       }
       console.log(formatBookmarkStatus(view));
+      if (followingStatus.count > 0) {
+        console.log('');
+        console.log('Following');
+        console.log(`  following: ${followingStatus.count}`);
+        console.log(`  classified: ${followingStatus.classifiedCount}/${followingStatus.count}`);
+        console.log(`  last updated: ${followingStatus.lastUpdated ?? 'never'}`);
+        console.log(`  cache: ${followingStatus.cachePath}`);
+      }
     }));
 
   // ── path ────────────────────────────────────────────────────────────────

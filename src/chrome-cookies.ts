@@ -463,9 +463,9 @@ export function extractChromeXCookies(
     );
   }
 
-  let result = queryCookies(dbPath, '.x.com', ['ct0', 'auth_token'], br);
+  let result = queryCookies(dbPath, '.x.com', ['ct0', 'auth_token', 'twid'], br);
   if (result.cookies.length === 0) {
-    result = queryCookies(dbPath, '.twitter.com', ['ct0', 'auth_token'], br);
+    result = queryCookies(dbPath, '.twitter.com', ['ct0', 'auth_token', 'twid'], br);
   }
 
   const decrypted = new Map<string, string>();
@@ -485,6 +485,7 @@ export function extractChromeXCookies(
 
   const ct0 = decrypted.get('ct0');
   const authToken = decrypted.get('auth_token');
+  const twid = decrypted.get('twid');
 
   if (!ct0) {
     throw new Error(
@@ -505,6 +506,7 @@ export function extractChromeXCookies(
   const cleanCt0 = sanitizeCookieValue('ct0', ct0, br);
   const cookieParts = [`ct0=${cleanCt0}`];
   if (authToken) cookieParts.push(`auth_token=${sanitizeCookieValue('auth_token', authToken, br)}`);
+  if (twid) cookieParts.push(`twid=${sanitizeCookieValue('twid', twid, br)}`);
   const cookieHeader = cookieParts.join('; ');
 
   return { csrfToken: cleanCt0, cookieHeader };

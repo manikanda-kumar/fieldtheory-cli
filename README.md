@@ -49,7 +49,52 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 | `ft sync-github-stars` | Sync GitHub starred repositories into the unified index |
 | `ft sync-github-stars --limit 200 --classify` | Partial GitHub stars sync, then regex-classify canonical rows |
 | `ft sync-youtube --playlist <url-or-id>` | Sync a public YouTube playlist into local markdown notes and the unified index |
+| `ft sync-following` | Sync the accounts you follow on X into a local searchable roster |
+| `ft sync-following --classify` | Sync following list then classify domains/expertise with LLM |
+| `ft sync-following --regex` | Sync following list then classify with regex (cheap, no LLM) |
+| `ft sync-following --rebuild` | Full re-crawl of your following list |
 | `ft auth` | Set up OAuth for API-based sync (optional) |
+
+### Following roster and expertise index
+
+`ft sync-following` downloads the accounts you follow on X and stores them locally for search:
+
+```bash
+ft sync-following                         # sync your following list
+ft sync-following --classify              # sync + LLM classify domains/expertise
+ft sync-following --browser chrome        # specify browser for session cookies
+ft sync-following --max-pages 20          # limit pages (each page ~100 accounts)
+ft sync-following --rebuild               # full re-crawl
+
+ft experts search "agent harness" --json  # search by expertise/bio/domain
+ft experts list --domain ai               # list followed accounts in a domain
+ft experts list --sort overlap            # sort by bookmark overlap count
+ft experts show @handle --json            # full profile + bookmark overlap + top posts
+ft experts stats                          # roster statistics
+
+ft classify-following                     # classify with LLM (requires claude or codex)
+ft classify-following --regex             # classify with regex (cheap)
+```
+
+Data is stored at `~/.fieldtheory/bookmarks/following/`:
+
+- `following.jsonl` — raw account records
+- `following.db` — SQLite FTS5 search index
+- `meta.json` — sync cursor, last updated, count
+
+**Auth:** Uses the same browser session cookie path as `ft sync`. The `twid` cookie
+is used to determine your X user ID for the following list query. No paid API tier required.
+
+**Local-first research workflow:**
+
+```bash
+ft search --unified "agent harness" --json   # tier 1: bookmarks
+ft experts search "agent harness" --json     # tier 2: trusted accounts you follow
+# tier 3: broader web/X research via external tools (e.g. grok-cli)
+```
+
+Check your bookmarks first, then your trusted following roster for domain experts,
+then fall through to broader web search only when local signal is insufficient.
 
 ### YouTube playlists
 
