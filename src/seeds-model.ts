@@ -1,4 +1,4 @@
-import { resolveEngine, invokeEngineAsync, type ResolvedEngine } from './engine.js';
+import { resolveEngine, invokeEngineAsync, withSystemOverride, type ResolvedEngine } from './engine.js';
 import type { SeedCandidate } from './seeds-query.js';
 import type { SeedFilterSpec } from './seeds-strategies.js';
 
@@ -26,9 +26,9 @@ export function buildSeedOrganizeExplainPrompt(input: {
     .map((item, idx) => `${idx + 1}. ${item.id} | ${item.authorHandle ?? 'unknown'} | ${item.text.slice(0, 140)}`)
     .join('\n');
 
-  return `You are helping organize bookmark seeds for idea generation.
-
-Task: explain how you will organize a candidate bookmark pool into ${input.suggestCount} interesting seed groups.
+  return withSystemOverride(
+    'bookmark seed organization engine that outputs JSON',
+    `Task: explain how you will organize a candidate bookmark pool into ${input.suggestCount} interesting seed groups.
 
 Candidate pool size: ${input.candidateCount}
 Filters: ${JSON.stringify(input.filters)}
@@ -39,7 +39,8 @@ ${preview}
 Output JSON only:
 {
   "explanation": "4-6 sentence plain-English explanation of how you will organize the pool, what signal you will look for, and why the resulting seeds should be interesting"
-}`;
+}`,
+  );
 }
 
 export function buildSeedOrganizeSuggestPrompt(input: {
@@ -59,9 +60,9 @@ export function buildSeedOrganizeSuggestPrompt(input: {
       postedAt: item.postedAt,
     }));
 
-  return `You are organizing bookmark seeds for future idea-generation runs.
-
-Create ${input.suggestCount} interesting seed groupings from the candidate bookmarks below.
+  return withSystemOverride(
+    'bookmark seed grouping engine that outputs JSON arrays',
+    `Create ${input.suggestCount} interesting seed groupings from the candidate bookmarks below.
 Favor groups that are coherent, interesting, and likely to produce different kinds of repo-grounded ideas.
 Use the bookmark IDs exactly as provided.
 ${input.theme ? `Interpret the grouping through this theme prompt: ${input.theme}\n` : ''}
@@ -77,7 +78,8 @@ Output JSON only:
     "rationale": "2-3 sentence explanation of why this grouping is interesting",
     "itemIds": ["bookmark-id-1", "bookmark-id-2"]
   }
-]`;
+]`,
+  );
 }
 
 function extractJson<T>(raw: string): T {

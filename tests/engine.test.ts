@@ -74,7 +74,7 @@ test('detectAvailableEngines: returns array of available engines', async () => {
 
   // Each entry should be a known engine name
   for (const name of available) {
-    assert.ok(['claude', 'codex'].includes(name), `unexpected engine: ${name}`);
+    assert.ok(['claude', 'codex', 'droid'].includes(name), `unexpected engine: ${name}`);
   }
 });
 
@@ -149,6 +149,10 @@ test('resolveEngine: carries explicit model and effort into engine args', async 
     if (available.length === 0) return;
 
     const engineName = available[0];
+    if (engineName === 'droid') {
+      // Droid has no CLI args to verify; skip this test.
+      return;
+    }
     const model = engineName === 'codex' ? 'gpt-5.5' : 'opus';
     const resolved = await resolveEngine({ engine: engineName, model, effort: 'medium' });
 
@@ -225,16 +229,19 @@ test('resolveEngine: override rejects prototype keys like __proto__', async () =
 test('resolveEngine: override fails fast when binary not on PATH', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-engine-override-'));
   const origPath = process.env.PATH;
+  const origOpenRouterKey = process.env.OPENROUTER_API_KEY;
   process.env.PATH = tmpDir;
+  delete process.env.OPENROUTER_API_KEY;
 
   try {
     const { resolveEngine } = await import('../src/engine.js');
     await assert.rejects(
       () => resolveEngine({ override: 'claude' }),
-      /Engine "claude" is not on PATH/,
+      /Engine "claude" is not/,
     );
   } finally {
     process.env.PATH = origPath;
+    if (origOpenRouterKey !== undefined) process.env.OPENROUTER_API_KEY = origOpenRouterKey;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
@@ -277,12 +284,65 @@ test('resolveEngine: codex args include skip-git-repo-check', async () => {
     const resolved = await resolveEngine({ override: 'codex' });
     assert.deepEqual(
       resolved.config.args('hello'),
-      ['exec', '--skip-git-repo-check', 'hello'],
+      ['exec', '--skip-git-repo-check', '--config', 'personality="none"', 'hello'],
     );
   } finally {
     process.env.PATH = origPath;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('resolveEngine: claude args include --system-prompt when system prompt provided', async () => {
+  if (process.platform === 'win32') return;
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-engine-claude-system-'));
+  const fakeBin = path.join(tmpDir, 'claude');
+  const origPath = process.env.PATH;
+  process.env.PATH = tmpDir;
+
+  try {
+    fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeBin, 0o755);
+
+    const { resolveEngine } = await import('../src/engine.js');
+    const resolved = await resolveEngine({ override: 'claude' });
+    const args = resolved.config.args('hello', resolved, 'You are a test engine.');
+    assert.ok(args.includes('--system-prompt'));
+    assert.ok(args.includes('You are a test engine.'));
+    // User prompt should still be last
+    assert.equal(args[args.length - 1], 'hello');
+  } finally {
+    process.env.PATH = origPath;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── extractSystemPrompt ────────────────────────────────────────────────
+
+test('extractSystemPrompt: splits withSystemOverride format', async () => {
+  const { extractSystemPrompt, withSystemOverride } = await import('../src/engine.js');
+  const prompt = withSystemOverride('test engine', 'Do the thing.');
+  const result = extractSystemPrompt(prompt);
+  assert.ok(result.system);
+  assert.ok(result.system.includes('test engine'));
+  assert.equal(result.user, 'Do the thing.');
+});
+
+test('extractSystemPrompt: splits renderEnginePrompt format', async () => {
+  const { extractSystemPrompt } = await import('../src/engine.js');
+  const prompt = 'System:\nYou are a notes engine.\n\n---\n\nuser:\nCreate notes.';
+  const result = extractSystemPrompt(prompt);
+  assert.ok(result.system);
+  assert.ok(result.system.includes('notes engine'));
+  assert.equal(result.user, 'user:\nCreate notes.');
+});
+
+test('extractSystemPrompt: returns whole prompt as user when no system block', async () => {
+  const { extractSystemPrompt } = await import('../src/engine.js');
+  const prompt = 'Just a plain user prompt.';
+  const result = extractSystemPrompt(prompt);
+  assert.equal(result.system, undefined);
+  assert.equal(result.user, 'Just a plain user prompt.');
 });
 
 // ── ft model CLI parsing ───────────────────────────────────────────────

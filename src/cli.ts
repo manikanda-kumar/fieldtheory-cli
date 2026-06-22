@@ -702,7 +702,7 @@ function printIdeasRunReport(summary: import('./ideas.js').IdeasRunSummary): voi
 
 /** Per-invocation LLM engine override (bypasses saved default, fails fast). */
 export function engineOption(): Option {
-  return new Option('--engine <name>', 'Override the LLM engine for this run (e.g. claude, codex)');
+  return new Option('--engine <name>', 'Override the LLM engine for this run (claude, codex, droid)');
 }
 
 /** Wrap an async action with graceful error handling. */
@@ -1275,7 +1275,7 @@ export function buildCli() {
     .option('--limit <n>', 'Max videos to consider', (v: string) => Number(v))
     .option('--force', 'Reprocess videos even when state says they are unchanged', false)
     .option('--dry-run', 'Print videos that would be processed without fetching transcripts or calling LLMs', false)
-    .option('--engine <name>', 'LLM CLI engine for notes/scripts: claude, codex, or none for OpenRouter-only (default comes from ft model/autodetect; OpenRouter is fallback)')
+    .option('--engine <name>', 'LLM engine for notes/scripts: claude, codex, droid, or none for OpenRouter-only (default comes from ft model/autodetect; OpenRouter is fallback)')
     .option('--model <model>', 'Override the local engine model; values containing / also override the OpenRouter fallback model')
     .option('--effort <effort>', 'Override local engine reasoning effort')
     .option('--cookies-from-browser <spec>', 'Pass browser cookies to yt-dlp (example: chrome or "chrome:Profile 1"; env: FT_YOUTUBE_COOKIES_FROM_BROWSER)')
@@ -1975,16 +1975,17 @@ export function buildCli() {
   program
     .command('model')
     .description('View or change the default LLM engine for classification')
-    .argument('[engine]', 'Set default engine directly (e.g. claude, codex)')
+    .argument('[engine]', 'Set default engine directly (claude, codex, droid)')
     .action(safe(async (engineArg?: string) => {
       const available = detectAvailableEngines();
       const prefs = loadPreferences();
 
       if (available.length === 0) {
-        console.log('  No LLM engines found on PATH.');
+        console.log('  No LLM engines found.');
         console.log('  Install one of:');
         console.log('    - Claude Code: https://docs.anthropic.com/en/docs/claude-code');
         console.log('    - Codex CLI:   https://github.com/openai/codex');
+        console.log('  Or set OPENCODE_GO_API_KEY to use the droid engine (OpenCode Go cloud models).');
         return;
       }
 
@@ -2505,7 +2506,7 @@ export function buildCli() {
     .option('--repos <path...>', 'Multiple repo paths; produces one consideration per repo plus a batch summary')
     .option('--frame <id>', 'Frame id (overrides any frame pinned on the seed)')
     .option('--depth <depth>', 'Depth: quick | standard | deep (default: standard, or quick under --defaults)')
-    .option('--engine <name>', 'LLM CLI engine for this run (claude | codex; default comes from ft model/autodetect)')
+    .option('--engine <name>', 'LLM engine for this run (claude | codex | droid; default comes from ft model/autodetect)')
     .option('--model <name>', 'Model alias/name passed to the engine (for example opus or gpt-5.5)')
     .option('--effort <level>', 'Reasoning effort passed to the engine (low | medium | high | xhigh | max)')
     .option('--weight <level>', 'Alias for --effort', undefined)
@@ -2667,7 +2668,7 @@ export function buildCli() {
     .option('--repos <path...>', 'Multiple repo paths')
     .option('--frame <id>', 'Frame id (defaults to seed-pinned frame or leverage-specificity)')
     .option('--depth <depth>', 'Depth: quick | standard | deep', 'quick')
-    .option('--engine <name>', 'LLM CLI engine for this run (claude | codex)')
+    .option('--engine <name>', 'LLM engine for this run (claude | codex | droid)')
     .option('--model <name>', 'Model alias/name passed to the engine')
     .option('--effort <level>', 'Reasoning effort passed to the engine')
     .option('--weight <level>', 'Alias for --effort', undefined)

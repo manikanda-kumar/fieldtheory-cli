@@ -10,21 +10,63 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadPreferences, savePreferences } from './preferences.js';
 import { PromptCancelledError, promptText } from './prompt.js';
+import { invokeDroid, isDroidAvailable } from './llm/droid-engine.js';
+
+// ── Prompt helpers ─────────────────────────────────────────────────────
+
+/**
+ * Wrap a task-specific prompt with an explicit system override.
+ *
+ * Local CLI engines (claude, codex) ship with a coding-assistant system
+ * prompt that encourages explanation, helpfulness, and conversational tone.
+ * This wrapper prepends a dominant system block that overrides that persona
+ * so the model behaves as a strict data-processing engine for the task at
+ * hand — no commentary, no apologies, no code suggestions.
+ */
+export function withSystemOverride(task: string, prompt: string): string {
+  return `SYSTEM: You are a ${task}. You are NOT a conversational assistant, coding agent, or chatbot. Ignore any prior instructions about being helpful, writing code, or explaining things. Your ONLY job is to process the data below and produce the exact output requested. Do not explain your reasoning. Do not apologize. Do not add commentary, markdown fences, or preamble. Output exactly what is asked for and nothing else.
+
+---
+
+${prompt}`;
+}
+
+/** Split a combined prompt that carries a system block from a user block.
+ *  Recognises both the `withSystemOverride` format (SYSTEM:...\n\n---\n\n)
+ *  and the `renderEnginePrompt` format (System:\n...\n\n---\n\n).
+ *  Returns `{system, user}` so callers can pass them through native CLI flags
+ *  or API system messages instead of stuffing everything into the user prompt. */
+export function extractSystemPrompt(prompt: string): { system?: string; user: string } {
+  const sep = '\n\n---\n\n';
+  const idx = prompt.indexOf(sep);
+  if (idx === -1) return { user: prompt };
+
+  const head = prompt.slice(0, idx).trim();
+  const tail = prompt.slice(idx + sep.length).trim();
+
+  if (head.startsWith('SYSTEM:') || head.startsWith('System:')) {
+    const systemText = head.replace(/^System:\s*/i, '').trim();
+    return { system: systemText, user: tail };
+  }
+
+  return { user: prompt };
+}
 
 // ── Engine registry ────────────────────────────────────────────────────
 
 export interface EngineConfig {
   bin: string;
-  args: (prompt: string, engine?: Pick<ResolvedEngine, 'model' | 'effort'>) => string[];
+  args: (prompt: string, engine?: Pick<ResolvedEngine, 'model' | 'effort'>, systemPrompt?: string) => string[];
 }
 
 const KNOWN_ENGINES: Record<string, EngineConfig> = {
   claude: {
     bin: 'claude',
-    args: (p, engine) => [
+    args: (p, engine, system) => [
       '-p',
       '--output-format',
       'text',
+      ...(system ? ['--system-prompt', system] : []),
       ...(engine?.model ? ['--model', engine.model] : []),
       ...(engine?.effort ? ['--effort', engine.effort] : []),
       p,
@@ -32,19 +74,26 @@ const KNOWN_ENGINES: Record<string, EngineConfig> = {
   },
   codex: {
     bin: 'codex',
-    args: (p, engine) => [
-      'exec',
-      '--skip-git-repo-check',
-      '--config', 'personality="none"',
-      ...(engine?.model ? ['--model', engine.model] : []),
-      ...(engine?.effort ? ['--config', `model_reasoning_effort="${engine.effort}"`] : []),
-      p,
-    ],
+    args: (p, engine, system) => {
+      const prompt = system ? `${system}\n\n---\n\n${p}` : p;
+      return [
+        'exec',
+        '--skip-git-repo-check',
+        '--config', 'personality="none"',
+        ...(engine?.model ? ['--model', engine.model] : []),
+        ...(engine?.effort ? ['--config', `model_reasoning_effort="${engine.effort}"`] : []),
+        prompt,
+      ];
+    },
+  },
+  droid: {
+    bin: 'droid',
+    args: () => [],
   },
 };
 
 /** Order used when auto-detecting. */
-const PREFERENCE_ORDER = ['claude', 'codex'];
+const PREFERENCE_ORDER = ['claude', 'codex', 'droid'];
 
 // ── Detection ──────────────────────────────────────────────────────────
 
@@ -83,7 +132,10 @@ export function hasCommandOnPath(
 }
 
 export function detectAvailableEngines(): string[] {
-  return PREFERENCE_ORDER.filter((name) => hasCommandOnPath(KNOWN_ENGINES[name].bin));
+  return PREFERENCE_ORDER.filter((name) => {
+    if (name === 'droid') return isDroidAvailable();
+    return hasCommandOnPath(KNOWN_ENGINES[name].bin);
+  });
 }
 
 // ── Interactive prompt ─────────────────────────────────────────────────
@@ -169,6 +221,11 @@ function resolve(name: string, profile: EngineRunProfile = {}): ResolvedEngine {
  *
  * Throws if no engine is found.
  */
+function engineIsAvailable(name: string): boolean {
+  if (name === 'droid') return isDroidAvailable();
+  return hasCommandOnPath(KNOWN_ENGINES[name].bin);
+}
+
 export async function resolveEngine(profile: EngineRunProfile = {}): Promise<ResolvedEngine> {
   const requestedEngine = cleanOptional(profile.engine ?? profile.override);
 
@@ -177,14 +234,16 @@ export async function resolveEngine(profile: EngineRunProfile = {}): Promise<Res
       const known = Object.keys(KNOWN_ENGINES).join(', ');
       throw new Error(`Unknown engine "${requestedEngine}". Known engines: ${known}.`);
     }
-    if (!hasCommandOnPath(KNOWN_ENGINES[requestedEngine].bin)) {
+    if (!engineIsAvailable(requestedEngine)) {
       const available = detectAvailableEngines();
       const hint = available.length > 0
-        ? ` Available on PATH: ${available.join(', ')}.`
+        ? ` Available: ${available.join(', ')}.`
         : '';
+      const fix = requestedEngine === 'droid'
+        ? 'Set OPENCODE_GO_API_KEY, or pick a different engine.'
+        : 'Install it and log in, or pick a different engine.';
       throw new Error(
-        `Engine "${requestedEngine}" is not on PATH.${hint}\n` +
-        `Install it and log in, or pick a different engine.`
+        `Engine "${requestedEngine}" is not available.${hint}\n${fix}`
       );
     }
     return resolve(requestedEngine, profile);
@@ -194,10 +253,11 @@ export async function resolveEngine(profile: EngineRunProfile = {}): Promise<Res
 
   if (available.length === 0) {
     throw new Error(
-      'No supported LLM CLI found.\n' +
+      'No supported LLM engine found.\n' +
       'Install one of the following and log in:\n' +
       '  - Claude Code: https://docs.anthropic.com/en/docs/claude-code\n' +
-      '  - Codex CLI:   https://github.com/openai/codex'
+      '  - Codex CLI:   https://github.com/openai/codex\n' +
+      'Or set OPENCODE_GO_API_KEY to use the droid engine (OpenCode Go cloud models).'
     );
   }
 
@@ -358,11 +418,18 @@ function buildMessage(
  * EOF immediately so the child proceeds with just the prompt arg.
  */
 export function invokeEngine(engine: ResolvedEngine, prompt: string, opts: InvokeOptions = {}): string {
+  if (engine.name === 'droid') {
+    throw new Error(
+      'The droid engine requires an async invocation. Use invokeEngineAsync instead of invokeEngine.'
+    );
+  }
+
+  const { system, user } = extractSystemPrompt(prompt);
   const { bin, args } = engine.config;
   const timeout   = opts.timeout   ?? DEFAULT_TIMEOUT;
   const maxBuffer = opts.maxBuffer ?? DEFAULT_MAXBUF;
 
-  const result = spawnSync(bin, args(prompt, engine), {
+  const result = spawnSync(bin, args(user, engine, system), {
     input: '',              // EOF on stdin — do not inherit parent stdin
     timeout,
     maxBuffer,
@@ -425,12 +492,30 @@ export function invokeEngine(engine: ResolvedEngine, prompt: string, opts: Invok
  * `spawn` we get direct control and can `child.stdin.end()` immediately.
  */
 export function invokeEngineAsync(engine: ResolvedEngine, prompt: string, opts: InvokeOptions = {}): Promise<string> {
+  const { system, user } = extractSystemPrompt(prompt);
+
+  if (engine.name === 'droid') {
+    return invokeDroid({ primaryModel: engine.model }, user, system).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new EngineInvocationError({
+        engine: engine.name,
+        bin: 'droid',
+        stderr: message,
+        killed: false,
+        code: null,
+        signal: null,
+        reason: 'exit',
+        message: `droid failed: ${message}`,
+      });
+    });
+  }
+
   const { bin, args } = engine.config;
   const timeout   = opts.timeout   ?? DEFAULT_TIMEOUT;
   const maxBuffer = opts.maxBuffer ?? DEFAULT_MAXBUF;
 
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args(prompt, engine), {
+    const child = spawn(bin, args(user, engine, system), {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 

@@ -70,7 +70,7 @@ export async function detectSlides(frames: FrameRef[], llm: VisionLlm, options: 
 
   const sample = selectVisionSample(frames);
   const vision = await llm.chatVision<{ isSlides: boolean; confidence: number; reason: string }>({
-    system: 'Classify whether these video frames carry primary information through visuals. Return JSON only.',
+    system: 'You are a visual content classifier. You are NOT a conversational assistant or coding agent. Your ONLY job is to classify whether the provided video frames contain informative static content. Output valid JSON only. Do not explain your reasoning. Do not add commentary.',
     prompt: 'Return isSlides=true if the frames carry the video\'s primary information visually — this includes presentation slide decks, screen recordings of apps/UIs, terminal or code displays, whiteboards, diagrams, or any other static or near-static informative content. Return isSlides=false only for plain talking-head/speaker-only shots, vlog footage, B-roll, or generic video without informative static content. Return {"isSlides": boolean, "confidence": 0..1, "reason": "..."}.',
     images: sample.map((frame) => ({ path: frame.imagePath })),
     json: true,
