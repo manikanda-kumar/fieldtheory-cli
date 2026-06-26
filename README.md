@@ -45,6 +45,8 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 | `ft sync --folder <name>` | Sync a single folder by name (exact or unambiguous prefix) |
 | `ft sync --classify` | Sync then classify new bookmarks with LLM |
 | `ft sync --api` | Sync via OAuth API (cross-platform) |
+| `ft sync-all --dry-run` | Preview the daily unified refresh plan without calling external services |
+| `ft sync-all --skip youtube --no-synthesis` | Refresh local sources, rebuild the unified index, and skip optional YouTube/Markdown export |
 | `ft sync-raindrop` | Sync browser bookmarks from Raindrop.io into the unified index |
 | `ft sync-github-stars` | Sync GitHub starred repositories into the unified index |
 | `ft sync-github-stars --limit 200 --classify` | Partial GitHub stars sync, then regex-classify canonical rows |
@@ -54,6 +56,18 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 | `ft sync-following --regex` | Sync following list then classify with regex (cheap, no LLM) |
 | `ft sync-following --rebuild` | Full re-crawl of your following list |
 | `ft auth` | Set up OAuth for API-based sync (optional) |
+
+`ft sync-all` is the one-command daily bridge for the unified Library. It runs
+existing source commands sequentially, isolates failures per source, and still
+runs `ft index` at the end so the canonical Library stays fresh. Optional inputs
+enable expensive/contextual sources:
+
+```bash
+ft sync-all --dry-run
+ft sync-all --x-list <id> --playlist <url-or-id> --youtube-limit 8
+ft sync-all --skip youtube --no-synthesis
+ft sync-all --only github-stars,raindrop
+```
 
 ### Following roster and expertise index
 

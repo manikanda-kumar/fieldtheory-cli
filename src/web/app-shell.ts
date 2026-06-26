@@ -5,9 +5,6 @@ export function renderAppShell(): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Field Theory</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script>(function(){var s;try{s=localStorage.getItem('ft-theme')}catch(e){}var d=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.dataset.theme=s||(d?'dark':'light')})();</script>
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -18,7 +15,7 @@ export function renderAppShell(): string {
         <span class="sidebar-mark" aria-hidden="true">FT</span>
         <div class="sidebar-copy">
           <span class="sidebar-title">Field Theory</span>
-          <span class="sidebar-tagline">Bookmarks and list digests</span>
+          <span class="sidebar-tagline">Unified local library</span>
         </div>
       </div>
       <nav class="sidebar-nav" aria-label="Field Theory sections">
@@ -28,7 +25,7 @@ export function renderAppShell(): string {
         <button class="nav-link" type="button" data-lane="map">Map</button>
         <button class="nav-link" type="button" data-lane="sources">Sources</button>
         <button class="nav-link" type="button" data-lane="discuss">Discuss</button>
-        <button class="nav-link" type="button" data-lane="bookmarks">Bookmarks</button>
+        <button class="nav-link" type="button" data-lane="bookmarks">Library</button>
       </nav>
       <div id="stats" class="sidebar-stats">Loading stats…</div>
       <div id="filters" class="sidebar-filters"></div>
@@ -115,7 +112,7 @@ body {
   min-height: 100%;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.45 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-feature-settings: "ss01" on, "cv11" on;
   -webkit-font-smoothing: antialiased;
 }
@@ -556,7 +553,7 @@ const laneMeta = {
   map: { title:'Map', subtitle:'Authors mapped to outbound domains' },
   sources: { title:'Sources', subtitle:'Shared links ranked by frequency' },
   discuss: { title:'Discuss', subtitle:'Context pack for an external LLM chat' },
-  bookmarks: { title:'Bookmarks', subtitle:'Search your synced bookmark archive' },
+  bookmarks: { title:'Library', subtitle:'Search X bookmarks, Raindrop, GitHub stars, and YouTube notes' },
 };
 const results = document.querySelector('#results');
 const statusEl = document.querySelector('#status');
@@ -622,7 +619,7 @@ async function fetchListJson(path) {
 function renderStats(payload) {
   const stats = document.querySelector('#stats');
   stats.replaceChildren(
-    Object.assign(el('div', 'stat'), { innerHTML: '<strong>' + payload.stats.total + '</strong>Total bookmarks' }),
+    Object.assign(el('div', 'stat'), { innerHTML: '<strong>' + payload.stats.total + '</strong>X bookmarks' }),
     el('div', 'stat', (payload.status?.lastUpdated ? 'Last sync ' + payload.status.lastUpdated : 'Not synced yet')),
   );
   const filters = document.querySelector('#filters');
@@ -809,15 +806,17 @@ function renderCard(item) {
   const header = el('header');
   const author = el('div', 'card-author');
   const handle = item.authorHandle || item.author;
-  author.append(el('strong', '', item.authorName || handle || 'Unknown author'));
+  author.append(el('strong', '', item.title || item.authorName || handle || 'Library item'));
   if (handle) author.append(el('span', '', '@' + handle));
-  header.append(author, el('time', 'card-time', formatTime(item.bookmarkedAt || item.postedAt)));
-  const text = el('p', isTweet ? 'tweet-text' : 'bookmark-text', item.text || '');
+  header.append(author, el('time', 'card-time', formatTime(item.savedAt || item.bookmarkedAt || item.postedAt)));
+  const text = el('p', isTweet ? 'tweet-text' : 'bookmark-text', item.text || item.snippet || '');
   const meta = el('div', 'meta-row');
   if (item.timelineKind) {
     const kindClass = 'pill pill-kind' + (item.timelineKind === 'conversation-context' ? ' pill-context' : '');
     meta.append(el('span', kindClass, item.timelineKind));
   }
+  if (item.kind) meta.append(el('span', 'pill pill-kind', item.kind));
+  for (const source of item.sources || []) meta.append(el('span', 'pill', source));
   for (const value of [...(item.categories || []), ...(item.domains || []), ...(item.folderNames || [])]) meta.append(el('span', 'pill', value));
   const links = el('div', 'links');
   for (const href of item.links || []) {
@@ -953,13 +952,13 @@ async function fetchBookmarks(reset = false) {
   try {
     setStatus('Loading…');
     setResultsLayout('feed');
-    const data = await fetchJson('/api/bookmarks?' + params(reset));
+    const data = await fetchJson('/api/unified?' + params(reset));
     if (reset) results.replaceChildren();
     for (const item of data.items) results.append(renderCard(item));
     state.total = data.total;
     state.offset = results.children.length;
     loadMore.hidden = state.offset >= state.total;
-    setStatus('Showing ' + state.offset + ' of ' + state.total + ' bookmarks');
+    setStatus('Showing ' + state.offset + ' of ' + state.total + ' library items');
   } catch (error) {
     setStatus(error.message || 'Failed to load bookmarks');
   } finally {
@@ -982,13 +981,23 @@ function showTweetDetail(item) {
 }
 
 async function showDetail(id) {
-  const item = await fetchJson('/api/bookmarks/' + encodeURIComponent(id));
+  const detailPayload = await fetchJson('/api/unified/' + encodeURIComponent(id));
+  const item = detailPayload.item || detailPayload;
   setDetailOpen(true);
   detail.replaceChildren();
   const close = el('button', 'detail-close', 'Close'); close.addEventListener('click', () => setDetailOpen(false));
-  detail.append(close, el('h2', '', authorLabel(item)), el('p', 'bookmark-text', item.text || ''));
+  detail.append(close, el('h2', '', item.title || authorLabel(item)), el('p', 'bookmark-text', item.snippet || item.text || ''));
   if (item.quotedTweet) detail.append(el('h3', '', 'Quoted tweet'), el('p', 'bookmark-text', item.quotedTweet.text || ''));
   if (item.articleTitle || item.articleText) detail.append(el('h3', '', item.articleTitle || 'Article text'), el('p', 'article-text', item.articleText || ''));
+  if (detailPayload.sources?.length) {
+    const sources = el('div', 'links');
+    for (const source of detailPayload.sources) {
+      const a = el('a', 'pill', source.source + ': ' + linkLabel(source.sourceUrl));
+      a.href = source.sourceUrl; a.target = '_blank'; a.rel = 'noreferrer'; a.title = source.sourceUrl;
+      sources.append(a);
+    }
+    detail.append(el('h3', '', 'Sources'), sources);
+  }
 }
 
 function updateLaneChrome(lane) {

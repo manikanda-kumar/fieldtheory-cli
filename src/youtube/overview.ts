@@ -183,7 +183,13 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
     title: fetched.meta.title,
     tldr: notes.tldr,
     keyPoints: notes.keyPoints,
+    chapters: notes.chapters,
+    actionItems: notes.actionItems,
     topics: notes.topics,
+    notePath: notesPath,
+    channel: fetched.meta.channel ?? null,
+    durationSec: fetched.meta.durationSec ?? null,
+    videoType: notes.videoType,
     published: fetched.meta.publishDate ?? null,
   };
   if (options.indexCanonical !== false) await upsertYoutubeVideosAsSources([canonicalSource]);

@@ -53,6 +53,28 @@ test('upsertYoutubeVideosAsSources includes key points in canonical search text'
   });
 });
 
+test('upsertYoutubeVideosAsSources includes chapter summaries in canonical search text', async () => {
+  await withIsolatedDataDir(async () => {
+    await upsertYoutubeVideosAsSources([{
+      videoId: 'v1',
+      title: 'Agent Memory Walkthrough',
+      tldr: 'A practical overview.',
+      topics: ['AI'],
+      chapters: [{
+        tSec: 125,
+        label: 'Retrieval plan',
+        summary: 'Durable recall uses episodic checkpoints and latent scratchpads for long-running agents.',
+      }],
+      notePath: '/tmp/youtube-notes/v1.md',
+    }]);
+
+    const matches = await searchCanonicalBookmarks({ query: 'episodic checkpoints', limit: 10 });
+
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].displayTitle, 'Agent Memory Walkthrough');
+  });
+});
+
 test('upsertYoutubeVideosAsSources is idempotent for the same video', async () => {
   await withIsolatedDataDir(async () => {
     await upsertYoutubeVideosAsSources([{ videoId: 'v1', title: 'Original', tldr: 'alpha', topics: [] }]);

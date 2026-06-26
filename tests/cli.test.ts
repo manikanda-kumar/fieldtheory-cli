@@ -173,6 +173,20 @@ test('ft sync-github-stars: exposes expected options', () => {
   assert.ok(opts.includes('--classify'));
 });
 
+test('ft sync-all: exposes unified refresh options', () => {
+  const program = buildCli();
+  const syncAllCmd = program.commands.find((c: any) => c.name() === 'sync-all');
+  assert.ok(syncAllCmd, 'sync-all command should be registered');
+  const opts = syncAllCmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--dry-run'));
+  assert.ok(opts.includes('--x-list'));
+  assert.ok(opts.includes('--playlist'));
+  assert.ok(opts.includes('--youtube-limit'));
+  assert.ok(opts.includes('--skip'));
+  assert.ok(opts.includes('--only'));
+  assert.ok(opts.includes('--no-synthesis'));
+});
+
 test('ft list --unified exposes --source filter', () => {
   const program = buildCli();
   const listCmd = program.commands.find((c: any) => c.name() === 'list');

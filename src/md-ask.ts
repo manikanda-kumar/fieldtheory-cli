@@ -17,6 +17,7 @@ import {
   mdDomainsDir, mdEntitiesDir, mdDir,
 } from './paths.js';
 import { searchBookmarks } from './bookmarks-db.js';
+import { searchCanonicalBookmarks } from './canonical-bookmarks-db.js';
 import { resolveEngine, invokeEngineAsync } from './engine.js';
 import { buildAskPrompt, type MdBookmark } from './md-prompts.js';
 import { slug, logEntry } from './md.js';
@@ -100,6 +101,33 @@ function stripWikiUpdatesSection(answer: string): string {
   return answer.replace(/\n## Wiki Updates[\s\S]*$/, '').trim();
 }
 
+async function searchRawGrounding(question: string): Promise<MdBookmark[]> {
+  try {
+    const canonical = await searchCanonicalBookmarks({ query: question, limit: MAX_RAW_BOOKMARKS });
+    if (canonical.length > 0) {
+      return canonical.map((result) => ({
+        id: result.id,
+        url: result.canonicalUrl ?? result.id,
+        text: [
+          result.displayTitle,
+          result.searchText,
+          result.sources.length ? `Sources: ${result.sources.join(', ')}` : undefined,
+        ].filter((part): part is string => Boolean(part)).join('\n'),
+      }));
+    }
+  } catch {
+    // Fall through to the legacy X-only index when canonical is absent/stale.
+  }
+
+  const rawResults = await searchBookmarks({ query: question, limit: MAX_RAW_BOOKMARKS });
+  return rawResults.map((r) => ({
+    id: r.id,
+    url: r.url,
+    text: r.text,
+    authorHandle: r.authorHandle,
+  }));
+}
+
 export async function askMd(question: string, options: AskOptions = {}): Promise<AskResult> {
   const progress = options.onProgress ?? ((s: string) => fs.writeSync(2, s + '\n'));
 
@@ -135,13 +163,7 @@ export async function askMd(question: string, options: AskOptions = {}): Promise
 
   // ── L3: raw FTS5 bookmark results ───────────────────────────────────────
   progress('Searching bookmarks...');
-  const rawResults = await searchBookmarks({ query: question, limit: MAX_RAW_BOOKMARKS });
-  const rawBookmarks: MdBookmark[] = rawResults.map((r) => ({
-    id: r.id,
-    url: r.url,
-    text: r.text,
-    authorHandle: r.authorHandle,
-  }));
+  const rawBookmarks = await searchRawGrounding(question);
 
   // ── LLM call ────────────────────────────────────────────────────────────
   progress('Invoking LLM...');

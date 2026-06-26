@@ -1,5 +1,12 @@
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import { createReadStream } from 'node:fs';
+import {
+  countCanonicalBookmarks,
+  getCanonicalBookmarkById,
+  getCanonicalBookmarkSources,
+  listCanonicalBookmarks,
+  type CanonicalBookmarkListResult,
+} from '../canonical-bookmarks-db.js';
 import { getBookmarkStatusView } from '../bookmarks-service.js';
 import {
   countBookmarks,
@@ -37,6 +44,22 @@ async function getCachedLinkPreview(url: string): Promise<LinkPreview | null> {
 
 export type BookmarkWebItem = BookmarkTimelineItem & { mediaAssets: WebMediaAsset[] };
 
+export interface UnifiedWebItem {
+  id: string;
+  kind: 'article' | 'tweet' | 'repo' | 'video' | 'bookmark';
+  title: string;
+  url: string | null;
+  snippet: string;
+  sources: string[];
+  sourceCount: number;
+  savedAt: string | null;
+  firstSavedAt: string | null;
+  categories: string[];
+  domains: string[];
+  primaryCategory: string | null;
+  primaryDomain: string | null;
+}
+
 function optionalParam(url: URL, name: string): string | undefined {
   const value = url.searchParams.get(name)?.trim();
   return value ? value : undefined;
@@ -56,6 +79,53 @@ function parseBookmarkFilters(url: URL): BookmarkTimelineFilters {
     sort: sortValue === 'asc' ? 'asc' : 'desc',
     limit: parseBoundedInteger(url.searchParams.get('limit'), { defaultValue: 30, min: 1, max: 100 }),
     offset: parseBoundedInteger(url.searchParams.get('offset'), { defaultValue: 0, min: 0, max: 1_000_000 }),
+  };
+}
+
+function parseUnifiedFilters(url: URL) {
+  return {
+    query: optionalParam(url, 'query'),
+    source: optionalParam(url, 'source'),
+    category: optionalParam(url, 'category'),
+    domain: optionalParam(url, 'domain'),
+    limit: parseBoundedInteger(url.searchParams.get('limit'), { defaultValue: 30, min: 1, max: 100 }),
+    offset: parseBoundedInteger(url.searchParams.get('offset'), { defaultValue: 0, min: 0, max: 1_000_000 }),
+  };
+}
+
+function splitTags(value: string | null): string[] {
+  if (!value) return [];
+  return value.split(',').map((entry) => entry.trim()).filter(Boolean);
+}
+
+function unifiedKind(row: CanonicalBookmarkListResult): UnifiedWebItem['kind'] {
+  if (row.sources.includes('github-stars')) return 'repo';
+  if (row.sources.includes('youtube')) return 'video';
+  if (row.sources.length === 1 && row.sources.includes('x')) return 'tweet';
+  if (row.canonicalUrl) return 'article';
+  return 'bookmark';
+}
+
+function snippet(value: string): string {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  return compact.length > 320 ? `${compact.slice(0, 317)}...` : compact;
+}
+
+function toUnifiedWebItem(row: CanonicalBookmarkListResult): UnifiedWebItem {
+  return {
+    id: row.id,
+    kind: unifiedKind(row),
+    title: row.displayTitle?.trim() || row.canonicalUrl || row.id,
+    url: row.canonicalUrl,
+    snippet: snippet(row.searchText),
+    sources: row.sources,
+    sourceCount: row.sourceCount,
+    savedAt: row.lastSavedAt ?? row.firstSavedAt,
+    firstSavedAt: row.firstSavedAt,
+    categories: splitTags(row.categories),
+    domains: splitTags(row.domains),
+    primaryCategory: row.primaryCategory,
+    primaryDomain: row.primaryDomain,
   };
 }
 
@@ -109,6 +179,30 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     const item = await getBookmarkById(bookmarkMatch[1]);
     if (!item) throw new HttpError(404, 'Bookmark not found');
     sendJson(res, 200, await enrichBookmark(item));
+    return;
+  }
+
+  if (pathname === '/api/unified') {
+    const filters = parseUnifiedFilters(url);
+    const [items, total] = await Promise.all([
+      listCanonicalBookmarks(filters),
+      countCanonicalBookmarks(filters),
+    ]);
+    sendJson(res, 200, {
+      items: items.map(toUnifiedWebItem),
+      total,
+      limit: filters.limit,
+      offset: filters.offset,
+    });
+    return;
+  }
+
+  const unifiedMatch = pathname.match(/^\/api\/unified\/([^/]+)$/);
+  if (unifiedMatch) {
+    const item = await getCanonicalBookmarkById(unifiedMatch[1]);
+    if (!item) throw new HttpError(404, 'Unified item not found');
+    const sources = await getCanonicalBookmarkSources(item.id);
+    sendJson(res, 200, { item: toUnifiedWebItem(item), sources });
     return;
   }
 

@@ -45,7 +45,10 @@ export interface CanonicalBookmarkListResult {
 }
 
 export interface ListCanonicalBookmarksOptions {
+  query?: string;
   source?: string;
+  category?: string;
+  domain?: string;
   limit?: number;
   offset?: number;
 }
@@ -68,6 +71,8 @@ interface CanonicalSourceInput {
   modifiedAt: string | null;
   folderPath: string[];
   links: string[];
+  contentPath: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 interface CanonicalGroup {
@@ -104,7 +109,13 @@ export interface YoutubeSourceVideoInput {
   title: string;
   tldr: string;
   keyPoints?: string[];
+  chapters?: Array<{ tSec: number; label: string; summary: string }>;
+  actionItems?: string[];
   topics: string[];
+  notePath?: string | null;
+  channel?: string | null;
+  durationSec?: number | null;
+  videoType?: string | null;
   published?: string | null;
 }
 
@@ -125,6 +136,8 @@ function initCanonicalSchema(db: Database): void {
     modified_at TEXT,
     folder_path_json TEXT,
     links_json TEXT,
+    content_path TEXT,
+    metadata_json TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     canonical_id TEXT
   )`);
@@ -132,6 +145,8 @@ function initCanonicalSchema(db: Database): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_dedupe_key ON bookmark_sources(dedupe_key)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_canonical_id ON bookmark_sources(canonical_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_source ON bookmark_sources(source, profile)`);
+  ensureSourceColumn(db, 'content_path', 'TEXT');
+  ensureSourceColumn(db, 'metadata_json', 'TEXT');
 
   db.run(`CREATE TABLE IF NOT EXISTS canonical_bookmarks (
     id TEXT PRIMARY KEY,
@@ -163,10 +178,23 @@ function initCanonicalSchema(db: Database): void {
   ensureCanonicalColumn(db, 'primary_domain', 'TEXT');
 }
 
-function canonicalColumnExists(db: Database, column: string): boolean {
-  const rows = db.exec(`PRAGMA table_info(canonical_bookmarks)`);
+function tableColumnExists(db: Database, table: string, column: string): boolean {
+  const rows = db.exec(`PRAGMA table_info(${table})`);
   const columns = rows[0]?.values ?? [];
   return columns.some((row) => row[1] === column);
+}
+
+function canonicalColumnExists(db: Database, column: string): boolean {
+  return tableColumnExists(db, 'canonical_bookmarks', column);
+}
+
+function sourceColumnExists(db: Database, column: string): boolean {
+  return tableColumnExists(db, 'bookmark_sources', column);
+}
+
+function ensureSourceColumn(db: Database, column: string, definition: string): void {
+  if (sourceColumnExists(db, column)) return;
+  db.run(`ALTER TABLE bookmark_sources ADD COLUMN ${column} ${definition}`);
 }
 
 function ensureCanonicalColumn(db: Database, column: string, definition: string): void {
@@ -206,6 +234,16 @@ function parseJsonStringArray(value: unknown): string[] {
   }
 }
 
+function parseJsonObject(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed) ? Object.fromEntries(Object.entries(parsed)) : null;
+  } catch {
+    return null;
+  }
+}
+
 function hostnameForUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
@@ -232,6 +270,8 @@ function xSourceFromRecord(record: BookmarkRecord): CanonicalSourceInput {
     modifiedAt: null,
     folderPath: record.folderNames ?? [],
     links: record.links ?? [],
+    contentPath: null,
+    metadata: null,
   };
 }
 
@@ -276,6 +316,8 @@ export function raindropSourceFromRecord(record: RaindropRecord): CanonicalSourc
     modifiedAt: record.updatedAt ?? null,
     folderPath: folderPaths,
     links: record.links ?? [],
+    contentPath: null,
+    metadata: null,
   };
 }
 
@@ -314,11 +356,25 @@ export function githubStarsSourceFromRecord(record: GitHubStarRecord): Canonical
       `${record.htmlUrl}/issues`,
       record.defaultBranch ? `${record.htmlUrl}/tree/${record.defaultBranch}` : null,
     ].filter((link): link is string => Boolean(link)),
+    contentPath: null,
+    metadata: null,
   };
 }
 
 function youtubeSourceFromVideo(video: YoutubeSourceVideoInput, savedAt: string): CanonicalSourceInput {
   const sourceUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
+  const chapterText = video.chapters?.map((chapter) => compactText([
+    chapter.label,
+    chapter.summary,
+  ])) ?? [];
+  const metadata: Record<string, unknown> = {
+    videoId: video.videoId,
+    ...(video.channel ? { channel: video.channel } : {}),
+    ...(video.durationSec != null ? { durationSec: video.durationSec } : {}),
+    ...(video.videoType ? { videoType: video.videoType } : {}),
+    ...(video.chapters?.length ? { chapters: video.chapters } : {}),
+    ...(video.actionItems?.length ? { actionItems: video.actionItems } : {}),
+  };
   return {
     id: `youtube:${video.videoId}`,
     source: 'youtube',
@@ -328,13 +384,15 @@ function youtubeSourceFromVideo(video: YoutubeSourceVideoInput, savedAt: string)
     targetUrl: null,
     dedupeKey: dedupeKeyForUrl(sourceUrl),
     title: video.title,
-    text: compactText([video.tldr, video.keyPoints, video.topics]),
-    authorHandle: null,
+    text: compactText([video.tldr, video.keyPoints, chapterText, video.actionItems, video.topics, video.channel]),
+    authorHandle: video.channel ?? null,
     savedAt,
     createdAt: video.published ?? null,
     modifiedAt: null,
-    folderPath: [],
+    folderPath: video.topics.length ? ['YouTube', ...video.topics] : ['YouTube'],
     links: [],
+    contentPath: video.notePath ?? null,
+    metadata,
   };
 }
 
@@ -342,7 +400,7 @@ function readYoutubeSourcesFromDb(db: Database): CanonicalSourceInput[] {
   const rows = db.exec(
     `SELECT id, source, profile, source_item_id, source_url, target_url, dedupe_key,
             title, text, author_handle, saved_at, created_at, modified_at,
-            folder_path_json, links_json
+            folder_path_json, links_json, content_path, metadata_json
      FROM bookmark_sources
      WHERE source = 'youtube' AND active = 1`,
   );
@@ -363,6 +421,8 @@ function readYoutubeSourcesFromDb(db: Database): CanonicalSourceInput[] {
     modifiedAt: (row[12] as string) ?? null,
     folderPath: parseJsonStringArray(row[13]),
     links: parseJsonStringArray(row[14]),
+    contentPath: (row[15] as string) ?? null,
+    metadata: parseJsonObject(row[16]),
   }));
 }
 
@@ -406,8 +466,8 @@ function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[])
 const INSERT_SOURCE_SQL = `INSERT INTO bookmark_sources (
   id, source, profile, source_item_id, source_url, target_url, dedupe_key,
   title, text, author_handle, saved_at, created_at, modified_at,
-  folder_path_json, links_json, active, canonical_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`;
+  folder_path_json, links_json, content_path, metadata_json, active, canonical_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`;
 
 function sourceInsertParams(source: CanonicalSourceInput, canonicalId: string): Array<string | null> {
   return [
@@ -426,6 +486,8 @@ function sourceInsertParams(source: CanonicalSourceInput, canonicalId: string): 
     source.modifiedAt,
     JSON.stringify(source.folderPath),
     JSON.stringify(source.links),
+    source.contentPath,
+    source.metadata ? JSON.stringify(source.metadata) : null,
     canonicalId,
   ];
 }
@@ -665,6 +727,30 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
   const db = await openDb(twitterBookmarksIndexPath());
   const limit = options.limit ?? 20;
   const offset = options.offset ?? 0;
+  const query = options.query?.trim() ?? '';
+  const conditions: string[] = [];
+  const params: Array<string | number> = [];
+  const joinFts = Boolean(query);
+
+  if (query) {
+    conditions.push('canonical_bookmarks_fts MATCH ?');
+    params.push(sanitizeFtsQuery(query));
+  }
+  if (options.source) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM bookmark_sources s
+      WHERE s.canonical_id = c.id AND s.source = ?
+    )`);
+    params.push(options.source);
+  }
+  if (options.category) {
+    conditions.push(`(c.primary_category = ? COLLATE NOCASE OR c.categories LIKE ?)`);
+    params.push(options.category, `%${options.category}%`);
+  }
+  if (options.domain) {
+    conditions.push(`(c.primary_domain = ? COLLATE NOCASE OR c.domains LIKE ?)`);
+    params.push(options.domain, `%${options.domain}%`);
+  }
 
   try {
     initCanonicalSchema(db);
@@ -672,23 +758,57 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
     const select = `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count,
                            c.first_saved_at, c.last_saved_at, c.sources_json,
                            c.categories, c.primary_category, c.domains, c.primary_domain
-                    FROM canonical_bookmarks c`;
-    const order = `ORDER BY COALESCE(c.last_saved_at, c.first_saved_at, '') DESC, c.id ASC
+                    FROM canonical_bookmarks c
+                    ${joinFts ? 'JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid' : ''}`;
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const order = `ORDER BY ${joinFts ? 'bm25(canonical_bookmarks_fts) ASC,' : ''} COALESCE(c.last_saved_at, c.first_saved_at, '') DESC, c.id ASC
                    LIMIT ?
                    OFFSET ?`;
-    const rows = options.source
-      ? db.exec(
-        `${select}
-         WHERE EXISTS (
-           SELECT 1 FROM bookmark_sources s
-           WHERE s.canonical_id = c.id AND s.source = ?
-         )
-         ${order}`,
-        [options.source, limit, offset],
-      )
-      : db.exec(`${select} ${order}`, [limit, offset]);
+    const rows = db.exec(`${select} ${where} ${order}`, [...params, limit, offset]);
 
     return (rows[0]?.values ?? []).map(mapListRow);
+  } finally {
+    db.close();
+  }
+}
+
+export async function countCanonicalBookmarks(options: Omit<ListCanonicalBookmarksOptions, 'limit' | 'offset'> = {}): Promise<number> {
+  const db = await openDb(twitterBookmarksIndexPath());
+  const query = options.query?.trim() ?? '';
+  const conditions: string[] = [];
+  const params: Array<string | number> = [];
+  const joinFts = Boolean(query);
+
+  if (query) {
+    conditions.push('canonical_bookmarks_fts MATCH ?');
+    params.push(sanitizeFtsQuery(query));
+  }
+  if (options.source) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM bookmark_sources s
+      WHERE s.canonical_id = c.id AND s.source = ?
+    )`);
+    params.push(options.source);
+  }
+  if (options.category) {
+    conditions.push(`(c.primary_category = ? COLLATE NOCASE OR c.categories LIKE ?)`);
+    params.push(options.category, `%${options.category}%`);
+  }
+  if (options.domain) {
+    conditions.push(`(c.primary_domain = ? COLLATE NOCASE OR c.domains LIKE ?)`);
+    params.push(options.domain, `%${options.domain}%`);
+  }
+
+  try {
+    initCanonicalSchema(db);
+    const rows = db.exec(
+      `SELECT COUNT(*)
+       FROM canonical_bookmarks c
+       ${joinFts ? 'JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid' : ''}
+       ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}`,
+      params,
+    );
+    return Number(rows[0]?.values?.[0]?.[0] ?? 0);
   } finally {
     db.close();
   }
@@ -709,6 +829,8 @@ export interface CanonicalSourceRow {
   modifiedAt: string | null;
   folderPath: string[];
   links: string[];
+  contentPath: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 export async function getCanonicalBookmarkSources(canonicalId: string): Promise<CanonicalSourceRow[]> {
@@ -718,7 +840,7 @@ export async function getCanonicalBookmarkSources(canonicalId: string): Promise<
     const rows = db.exec(
       `SELECT id, source, profile, source_item_id, source_url, target_url,
               title, text, author_handle, saved_at, created_at, modified_at,
-              folder_path_json, links_json
+              folder_path_json, links_json, content_path, metadata_json
        FROM bookmark_sources
        WHERE canonical_id = ? AND active = 1`,
       [canonicalId],
@@ -738,6 +860,8 @@ export async function getCanonicalBookmarkSources(canonicalId: string): Promise<
       modifiedAt: (row[11] as string) ?? null,
       folderPath: parseJsonStringArray(row[12]),
       links: parseJsonStringArray(row[13]),
+      contentPath: (row[14] as string) ?? null,
+      metadata: parseJsonObject(row[15]),
     }));
   } finally {
     db.close();

@@ -68,6 +68,8 @@ import { skillWithFrontmatter, installSkill, uninstallSkill } from './skill.js';
 import { registerCompanionCommands } from './companion-cli.js';
 import { getPathReport } from './field-status.js';
 import { runBookmarkWebServer } from './web/server.js';
+import { formatResearchResult, researchLocalContext } from './research.js';
+import { formatSyncAllResult, runSyncAll } from './sync-all.js';
 import {
   formatIdeasIntro,
   formatRunList,
@@ -290,6 +292,10 @@ export function parseVideoIdsText(text: string): string[] {
 
 function stringOption(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function collectCsvOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
 }
 
 function warnIfEmpty(totalBookmarks: number): void {
@@ -747,6 +753,9 @@ export function buildCli() {
     process.stderr.write('  Building search index...\n');
     const idx = await buildIndex();
     process.stderr.write(`  \u2713 ${idx.recordCount} bookmarks indexed (${idx.newRecords} new)\n`);
+    process.stderr.write('  Building unified canonical index...\n');
+    const canonical = await rebuildCanonicalIndex();
+    process.stderr.write(`  \u2713 ${canonical.canonicalCount} unified items indexed (${canonical.sourceCount} sources)\n`);
     return idx.newRecords;
   }
 
@@ -1151,6 +1160,35 @@ export function buildCli() {
         process.exitCode = 1;
       }
     });
+
+  // ── sync-all ────────────────────────────────────────────────────────────
+
+  program
+    .command('sync-all')
+    .description('Run the daily unified refresh: X, Raindrop, GitHub Stars, optional X list/YouTube, then canonical rebuild')
+    .option('--dry-run', 'Show the planned refresh steps without running them', false)
+    .option('--x-list <id>', 'Include a 24h X list digest refresh')
+    .option('--playlist <url-or-id>', 'Include a capped YouTube playlist sync')
+    .option('--youtube-limit <n>', 'Max YouTube videos to process when --playlist is set', (v: string) => Number(v), 8)
+    .option('--skip <sources>', 'Comma-separated sources to skip: following,x,x-list,raindrop,github-stars,youtube', collectCsvOption, [])
+    .option('--only <sources>', 'Comma-separated sources to run before the required canonical rebuild')
+    .option('--no-synthesis', 'Skip canonical Markdown export after rebuilding the unified index', false)
+    .option('--classify', 'Pass --classify to source commands that support it', false)
+    .action(safe(async (options) => {
+      ensureDataDir();
+      const result = await runSyncAll({
+        dryRun: Boolean(options.dryRun),
+        only: stringOption(options.only),
+        skip: options.skip as string[],
+        xList: stringOption(options.xList),
+        playlist: stringOption(options.playlist),
+        youtubeLimit: typeof options.youtubeLimit === 'number' && Number.isFinite(options.youtubeLimit) ? options.youtubeLimit : 8,
+        noSynthesis: options.synthesis === false,
+        classify: Boolean(options.classify),
+      });
+      console.log(formatSyncAllResult(result));
+      if (!result.ok) process.exitCode = 1;
+    }));
 
   // ── sync-raindrop ──────────────────────────────────────────────────────
 
@@ -1733,6 +1771,27 @@ export function buildCli() {
       console.log(formatSearchResults(results));
     }));
 
+  // ── research ───────────────────────────────────────────────────────────
+
+  program
+    .command('research')
+    .description('Find local context across the unified library, markdown notes, list digest, and experts')
+    .argument('<topic>', 'Research topic or question')
+    .option('--limit <n>', 'Max results per group', (v: string) => Number(v), 10)
+    .option('--x-list <id>', 'Include matching sources from the latest stored X list digest')
+    .option('--json', 'Output JSON instead of text')
+    .action(safe(async (topic: string, options) => {
+      const result = await researchLocalContext(topic, {
+        limit: Number(options.limit) || 10,
+        xListId: options.xList ? String(options.xList) : undefined,
+      });
+      if (options.json) {
+        printJson(result);
+        return;
+      }
+      console.log(formatResearchResult(result));
+    }));
+
   // ── list ────────────────────────────────────────────────────────────────
 
   program
@@ -1753,7 +1812,7 @@ export function buildCli() {
     .action(safe(async (options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
-        const unsupportedFilters = ['query', 'author', 'after', 'before', 'category', 'domain', 'folder']
+        const unsupportedFilters = ['author', 'after', 'before', 'folder']
           .filter((name) => options[name] !== undefined);
         if (unsupportedFilters.length > 0) {
           console.error(`  --unified list does not support filters yet: ${unsupportedFilters.map((name) => `--${name}`).join(', ')}`);
@@ -1761,7 +1820,10 @@ export function buildCli() {
           return;
         }
         const items = await listCanonicalBookmarks({
+          query: options.query ? String(options.query) : undefined,
           source: options.source ? String(options.source) : undefined,
+          category: options.category ? String(options.category) : undefined,
+          domain: options.domain ? String(options.domain) : undefined,
           limit: Number(options.limit) || 30,
           offset: Number(options.offset) || 0,
         });
@@ -1896,7 +1958,7 @@ export function buildCli() {
 
   program
     .command('serve')
-    .description('Serve a local web interface for X bookmarks')
+    .description('Serve a local web interface for the unified Field Theory library')
     .option('--host <host>', 'Host interface to bind', process.env.FT_SERVE_HOST ?? '127.0.0.1')
     .option('--port <port>', 'TCP port (0 selects an available port)', process.env.FT_SERVE_PORT ?? '3000')
     .action(safe(async (options: { host: string; port: string }) => {
@@ -2140,6 +2202,8 @@ export function buildCli() {
       process.stderr.write('Building search index...\n');
       const result = await buildIndex({ force: Boolean(options.force) });
       console.log(`Indexed ${result.recordCount} bookmarks (${result.newRecords} new) \u2192 ${result.dbPath}`);
+      const canonical = await rebuildCanonicalIndex();
+      console.log(`Indexed ${canonical.canonicalCount} unified items (${canonical.sourceCount} sources) \u2192 ${canonical.dbPath}`);
     }));
 
   // ── auth ────────────────────────────────────────────────────────────────

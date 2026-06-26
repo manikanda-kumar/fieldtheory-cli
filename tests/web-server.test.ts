@@ -8,7 +8,10 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { parseBoundedInteger, safeRoutePath } from '../src/web/http.js';
 import { loadWebMediaIndex, resolveMediaFile } from '../src/web/media.js';
 import { buildIndex } from '../src/bookmarks-db.js';
+import { rebuildCanonicalIndex, upsertYoutubeVideosAsSources } from '../src/canonical-bookmarks-db.js';
 import { openDb, saveDb } from '../src/db.js';
+import { writeJsonLines } from '../src/fs.js';
+import type { GitHubStarRecord } from '../src/github-stars/types.js';
 import { twitterBookmarksIndexPath, xListsDir } from '../src/paths.js';
 import { createBookmarkWebServer } from '../src/web/server.js';
 import { renderAppShell, appCss, appJs } from '../src/web/app-shell.js';
@@ -126,6 +129,37 @@ async function seedBookmarks(root: string): Promise<void> {
   }
 }
 
+function githubStarRecord(overrides: Partial<GitHubStarRecord> = {}): GitHubStarRecord {
+  return {
+    id: 123,
+    fullName: 'example/tool',
+    owner: 'example',
+    name: 'tool',
+    htmlUrl: 'https://github.com/example/tool',
+    description: 'Agent memory command line tool',
+    homepageUrl: 'https://example.com',
+    language: 'TypeScript',
+    topics: ['agents', 'memory'],
+    stargazersCount: 12345,
+    forksCount: 678,
+    openIssuesCount: 12,
+    isArchived: false,
+    isFork: false,
+    defaultBranch: 'main',
+    pushedAt: '2026-05-20T10:00:00Z',
+    updatedAt: '2026-05-25T09:00:00Z',
+    starredAt: '2026-05-31T12:34:56Z',
+    syncedAt: '2026-05-31T13:00:00Z',
+    ...overrides,
+  };
+}
+
+async function seedUnifiedSources(root: string): Promise<void> {
+  await mkdir(path.join(root, 'github-stars'), { recursive: true });
+  await writeJsonLines(path.join(root, 'github-stars', 'stars.jsonl'), [githubStarRecord()]);
+  await rebuildCanonicalIndex();
+}
+
 async function startTestServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
   const server = createBookmarkWebServer();
   server.listen(0, '127.0.0.1');
@@ -166,6 +200,63 @@ test('bookmark web API lists, filters, shows, and reports stats', async () => {
   });
 });
 
+test('web API lists and shows unified library items with provenance', async () => {
+  await withTempFieldTheoryData(async (root) => {
+    await seedUnifiedSources(root);
+    const server = await startTestServer();
+    try {
+      const listResponse = await fetch(`${server.baseUrl}/api/unified?query=agent&source=github-stars&limit=10`);
+      assert.equal(listResponse.status, 200);
+      const list = await listResponse.json() as { items: Array<{ id: string; title: string; sources: string[] }>; total: number };
+      assert.equal(list.total, 1);
+      assert.equal(list.items[0]?.title, 'example/tool');
+      assert.deepEqual(list.items[0]?.sources, ['github-stars']);
+
+      const showResponse = await fetch(`${server.baseUrl}/api/unified/${encodeURIComponent(list.items[0]!.id)}`);
+      assert.equal(showResponse.status, 200);
+      const show = await showResponse.json() as { item: { id: string; kind: string }; sources: Array<{ source: string; sourceUrl: string }> };
+      assert.equal(show.item.id, list.items[0]!.id);
+      assert.equal(show.item.kind, 'repo');
+      assert.deepEqual(show.sources.map((source) => source.source), ['github-stars']);
+      assert.equal(show.sources[0]?.sourceUrl, 'https://github.com/example/tool');
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test('web API exposes YouTube note path and metadata in unified provenance', async () => {
+  await withTempFieldTheoryData(async () => {
+    await upsertYoutubeVideosAsSources([{
+      videoId: 'video-1',
+      title: 'Context Engineering Talk',
+      tldr: 'Talk summary.',
+      topics: ['agents'],
+      notePath: '/tmp/youtube/video-1.md',
+      channel: 'AI Engineer',
+      durationSec: 1800,
+      chapters: [{ tSec: 0, label: 'Opening', summary: 'Context bridge overview.' }],
+    }]);
+    const server = await startTestServer();
+    try {
+      const listResponse = await fetch(`${server.baseUrl}/api/unified?query=context%20bridge&source=youtube&limit=10`);
+      assert.equal(listResponse.status, 200);
+      const list = await listResponse.json() as { items: Array<{ id: string; kind: string }> };
+      assert.equal(list.items[0]?.kind, 'video');
+
+      const showResponse = await fetch(`${server.baseUrl}/api/unified/${encodeURIComponent(list.items[0]!.id)}`);
+      assert.equal(showResponse.status, 200);
+      const show = await showResponse.json() as { sources: Array<{ source: string; contentPath: string | null; metadata: { channel?: string; durationSec?: number } | null }> };
+      assert.equal(show.sources[0]?.source, 'youtube');
+      assert.equal(show.sources[0]?.contentPath, '/tmp/youtube/video-1.md');
+      assert.equal(show.sources[0]?.metadata?.channel, 'AI Engineer');
+      assert.equal(show.sources[0]?.metadata?.durationSec, 1800);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 test('bookmark web API returns status errors for invalid requests', async () => {
   await withTempFieldTheoryData(async () => {
     await seedBookmarks(process.env.FT_DATA_DIR!);
@@ -190,6 +281,7 @@ test('app shell includes root element and static asset links', () => {
   assert.match(appJs, /sidebar-hidden/);
   assert.match(html, /\/styles\.css/);
   assert.match(html, /\/app\.js/);
+  assert.doesNotMatch(html, /fonts\.googleapis\.com/);
   assert.match(appCss, /\.bookmark-card/);
   assert.match(appCss, /\.results-feed/);
   assert.match(appCss, /\.tweet-card/);

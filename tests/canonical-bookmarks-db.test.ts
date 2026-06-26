@@ -156,6 +156,40 @@ test('rebuildCanonicalIndex indexes GitHub stars and searches repo metadata', as
   });
 });
 
+test('listCanonicalBookmarks filters by query, source, category, and domain', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeGitHubStars(dir, [githubStarRecord()]);
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
+      url: 'https://example.com/article',
+      title: 'Readable systems essay',
+      excerpt: 'Long-form architecture notes for personal knowledge systems',
+      collectionPath: ['Writing'],
+      createdAt: '2026-05-10T00:00:00.000Z',
+      syncedAt: '2026-05-10T00:00:00.000Z',
+    }]);
+
+    await rebuildCanonicalIndex();
+    await classifyCanonicalBookmarks();
+
+    const queryRows = await listCanonicalBookmarks({ query: 'agent memory', limit: 10 });
+    assert.equal(queryRows.length, 1);
+    assert.deepEqual(queryRows[0].sources, ['github-stars']);
+
+    const sourceRows = await listCanonicalBookmarks({ source: 'raindrop', query: 'architecture', limit: 10 });
+    assert.equal(sourceRows.length, 1);
+    assert.equal(sourceRows[0].displayTitle, 'Readable systems essay');
+
+    const categoryRows = await listCanonicalBookmarks({ category: 'tool', limit: 10 });
+    assert.equal(categoryRows.length, 1);
+    assert.deepEqual(categoryRows[0].sources, ['github-stars']);
+
+    const domainRows = await listCanonicalBookmarks({ domain: 'github.com', limit: 10 });
+    assert.equal(domainRows.length, 1);
+    assert.deepEqual(domainRows[0].sources, ['github-stars']);
+  });
+});
+
 test('rebuildCanonicalIndex dedupes GitHub star with raindrop bookmark URL', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeGitHubStars(dir, [githubStarRecord()]);

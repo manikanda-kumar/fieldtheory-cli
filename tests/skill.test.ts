@@ -22,10 +22,13 @@ describe('skill content', () => {
     for (const content of [skillWithFrontmatter(), skillBody()]) {
       assert.ok(content.includes('ft paths --json'));
       assert.ok(content.includes('ft status --json'));
+      assert.ok(content.includes('ft research'));
       assert.ok(content.includes('ft search'));
+      assert.ok(content.includes('ft search --unified'));
       assert.ok(content.includes('ft list'));
       assert.ok(content.includes('ft stats'));
       assert.ok(content.includes('ft show'));
+      assert.ok(content.includes('ft show --unified'));
       assert.ok(content.includes('ft seeds search'));
       assert.ok(content.includes('ft possible run'));
       assert.ok(content.includes('ft possible grid'));

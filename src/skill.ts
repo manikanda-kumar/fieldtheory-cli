@@ -17,7 +17,8 @@ Use the Field Theory CLI to inspect and work with the user's local context.
 
 Field Theory has three main local surfaces:
 
-- bookmarks: raw synced X/Twitter bookmark data
+- research: grouped local context across the unified Library, markdown notes, latest X list digest, and experts
+- unified Library: X/Twitter bookmarks, Raindrop/browser bookmarks, GitHub stars, and YouTube notes
 - library: readable markdown knowledge and authored notes
 - commands: portable markdown actions in \`~/.fieldtheory/commands\`
 
@@ -35,26 +36,29 @@ Field Theory has three main local surfaces:
 ## Search Workflow
 
 1. Check paths and status when setup matters: \`ft paths --json\`, \`ft status --json\`
-2. Search durable notes first when prior project knowledge matters: \`ft library search <query> --json\`
-3. Search bookmarks when reading history or saved X/Twitter posts matter: \`ft search <query> --json\`
-4. Search your trusted following roster for domain experts: \`ft experts search "<query>" --json\`
-5. Inspect exact files or bookmarks with \`ft library show <path> --json\`, \`ft show <id> --json\`, or \`ft commands show <name> --json\`
-6. Create or update durable Library notes and portable commands only when the user asks for a saved artifact
-7. Open useful Library pages in the Mac app with \`ft library open <path>\`
+2. Start broad local research with \`ft research "<query>" --json\`
+3. Inspect exact unified items with \`ft show --unified <id> --json\`
+4. Read returned markdown paths with \`ft library show <path> --json\`
+5. Search your trusted following roster for domain experts: \`ft experts search "<query>" --json\`
+6. Use source-specific commands only when the grouped research result is insufficient
+7. Create or update durable Library notes and portable commands only when the user asks for a saved artifact
+8. Open useful Library pages in the Mac app with \`ft library open <path>\`
 
 ## Local-First Research Ladder
 
 When researching a topic, follow this tiered workflow before broad web search:
 
 \`\`\`bash
-ft search --unified "<query>" --json          # tier 1: bookmarks
-ft experts search "<query>" --json            # tier 2: trusted accounts
+ft research "<query>" --json                  # tier 1: unified local context
+ft show --unified <id> --json                 # inspect durable item provenance
+ft library show <path> --json                 # read deep markdown context
+ft experts search "<query>" --json            # trusted accounts only
 # tier 3: broader web/X research via external tools (e.g. grok-cli)
 \`\`\`
 
-Tier 1 checks what you have already saved. Tier 2 finds accounts you follow
-who are domain experts on the topic. Only fall through to tier 3 when tiers
-1 and 2 don't surface enough signal.
+Tier 1 checks what you have already saved/imported and returns grouped
+canonical, markdown, latest-list, and expert hits. Only fall through to tier 3
+when local context does not surface enough signal.
 
 ## Possible Roadmap Workflow
 
@@ -101,15 +105,19 @@ If the user says "debate", use the existing \`ft possible\` pipeline as generate
 \`\`\`bash
 ft paths --json                # Canonical bookmarks, library, commands paths
 ft status --json               # Bookmark/classification status plus paths
+ft research <query> --json     # Agent-first grouped local research
 
 ft search <query>              # Full-text BM25 search ("exact phrase", AND, OR, NOT)
+ft search --unified <query>    # Search X, Raindrop, GitHub Stars, and YouTube canonical rows
 ft list --category <cat>       # tool, technique, research, opinion, launch, security, commerce
+ft list --unified --source github-stars
 ft list --domain <dom>         # ai, web-dev, startups, finance, design, devops, marketing, etc.
 ft list --author @handle       # By author
 ft list --after/--before DATE  # Date range (YYYY-MM-DD)
 ft stats                       # Collection overview
 ft viz                         # Terminal dashboard
-ft show <id>                   # Full detail for one bookmark
+ft show <id>                   # Full detail for one X bookmark
+ft show --unified <id>         # Full detail for one canonical Library item
 ft sync-following              # Sync your X following roster
 ft sync-following --classify   # Sync and classify with LLM
 ft experts search <query>      # Search following by expertise/domain/bio
