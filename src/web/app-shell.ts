@@ -1,10 +1,14 @@
 export function renderAppShell(): string {
   return `<!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Field Theory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>(function(){var s;try{s=localStorage.getItem('ft-theme')}catch(e){}var d=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.dataset.theme=s||(d?'dark':'light')})();</script>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -79,23 +83,27 @@ export const appCss = `
   --accent: #1d9bf0;
   --accent-hover: #1a8cd8;
   --accent-press: #177cc1;
+  --accent-strong: #1a8cd8;
   --accent-soft: rgb(29 155 240 / 10%);
   --accent-text: #ffffff;
+  --context: #7856ff;
+  --context-soft: rgb(120 86 255 / 13%);
   --alert: #f4212e;
   --ring: rgb(29 155 240 / 35%);
   color-scheme: light;
 }
 [data-theme="dark"] {
-  --bg: #0b0f14;
-  --bg-elevated: #10151b;
-  --bg-hover: #141a21;
-  --bg-active: #18212a;
-  --bg-card: #10151b;
-  --line: #26323d;
-  --line-strong: #44515d;
-  --ink: #d8dee5;
+  --bg: #000000;
+  --bg-elevated: #16181c;
+  --bg-hover: #1d2125;
+  --bg-active: #1d2125;
+  --bg-card: #16181c;
+  --line: #2f3336;
+  --line-strong: #3e4144;
+  --ink: #e7e9ea;
   --ink-soft: #8b98a5;
-  --ink-mute: #687480;
+  --ink-mute: #71767b;
+  --accent-strong: #4fb1f3;
   --accent-soft: rgb(29 155 240 / 18%);
   --ring: rgb(29 155 240 / 45%);
   color-scheme: dark;
@@ -107,7 +115,7 @@ body {
   min-height: 100%;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 15px/1.45 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-feature-settings: "ss01" on, "cv11" on;
   -webkit-font-smoothing: antialiased;
 }
@@ -175,7 +183,15 @@ button, input, textarea { font: inherit; }
   transition: background-color 150ms ease-out;
 }
 .nav-link:hover { background: var(--bg-hover); }
-.nav-link.active { font-weight: 700; }
+.nav-link.active { font-weight: 600; }
+[data-theme="light"] .nav-link.active {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+[data-theme="dark"] .nav-link.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
 .sidebar-stats {
   display: grid;
   gap: 10px;
@@ -192,6 +208,7 @@ button, input, textarea { font: inherit; }
   font-variant-numeric: tabular-nums;
 }
 .sidebar-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 12px; }
+.sidebar-hidden { display: none !important; }
 .filter-chip {
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -376,6 +393,8 @@ button, input, textarea { font: inherit; }
   white-space: nowrap;
 }
 .pill-kind { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--accent-soft); color: var(--accent); }
+.pill-context { border-color: color-mix(in srgb, var(--context) 35%, var(--line)); background: var(--context-soft); color: var(--context); }
+[data-theme="dark"] .pill-context { color: #a78bfa; }
 .engagement-row {
   display: flex;
   flex-wrap: wrap;
@@ -795,7 +814,10 @@ function renderCard(item) {
   header.append(author, el('time', 'card-time', formatTime(item.bookmarkedAt || item.postedAt)));
   const text = el('p', isTweet ? 'tweet-text' : 'bookmark-text', item.text || '');
   const meta = el('div', 'meta-row');
-  if (item.timelineKind) meta.append(el('span', 'pill pill-kind', item.timelineKind));
+  if (item.timelineKind) {
+    const kindClass = 'pill pill-kind' + (item.timelineKind === 'conversation-context' ? ' pill-context' : '');
+    meta.append(el('span', kindClass, item.timelineKind));
+  }
   for (const value of [...(item.categories || []), ...(item.domains || []), ...(item.folderNames || [])]) meta.append(el('span', 'pill', value));
   const links = el('div', 'links');
   for (const href of item.links || []) {
@@ -974,6 +996,8 @@ function updateLaneChrome(lane) {
   searchForm.hidden = !bookmarks;
   listConfig.hidden = bookmarks;
   loadMore.hidden = !bookmarks || state.offset >= state.total;
+  document.querySelector('#stats')?.classList.toggle('sidebar-hidden', !bookmarks);
+  document.querySelector('#filters')?.classList.toggle('sidebar-hidden', !bookmarks);
 }
 
 async function renderLane(lane) {
@@ -1033,7 +1057,13 @@ themeToggle.addEventListener('click', () => {
 
 try {
   const saved = localStorage.getItem('ft-theme');
-  if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+  if (saved === 'light' || saved === 'dark') {
+    document.documentElement.dataset.theme = saved;
+  } else if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.dataset.theme = 'dark';
+  } else {
+    document.documentElement.dataset.theme = 'light';
+  }
 } catch {}
 syncThemeToggle();
 

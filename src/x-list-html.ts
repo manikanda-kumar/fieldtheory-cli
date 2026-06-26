@@ -206,60 +206,58 @@ export function renderXListHtml(input: XListHtmlInput): string {
 <title>X List ${escapeHtml(input.listId)} tweets</title>
 <style>
   :root {
-    color-scheme: light dark;
-    --bg: oklch(18% 0.012 255);
-    --panel: oklch(22% 0.014 255);
-    --card: oklch(25% 0.012 255);
-    --card-strong: oklch(29% 0.014 255);
-    --muted: oklch(72% 0.018 255);
-    --text: oklch(94% 0.012 255);
-    --line: oklch(35% 0.018 255);
-    --line-strong: oklch(46% 0.026 255);
-    --accent: oklch(74% 0.12 235);
-    --accent-soft: oklch(74% 0.12 235 / .12);
-    --context: oklch(75% 0.12 295);
-    --context-soft: oklch(75% 0.12 295 / .13);
+    color-scheme: dark;
+    --bg: #000000;
+    --panel: #16181c;
+    --card: #16181c;
+    --muted: #8b98a5;
+    --text: #e7e9ea;
+    --line: #2f3336;
+    --line-strong: #3e4144;
+    --accent: #1d9bf0;
+    --accent-soft: rgb(29 155 240 / 18%);
+    --context: #7856ff;
+    --context-soft: rgb(120 86 255 / 13%);
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     margin: 0;
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background:
-      radial-gradient(circle at top left, oklch(45% 0.08 235 / .25), transparent 32rem),
-      linear-gradient(180deg, oklch(21% 0.016 255), var(--bg) 18rem);
+    font: 15px/1.45 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
     color: var(--text);
+    -webkit-font-smoothing: antialiased;
   }
   main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 72px; }
   .page-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: end; margin-bottom: 22px; }
   .eyebrow { margin: 0 0 10px; color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
   h1 { margin: 0 0 10px; font-size: 38px; line-height: 1.05; letter-spacing: -.045em; }
   .meta { color: var(--muted); display: flex; flex-wrap: wrap; gap: 10px 14px; font-size: 13px; }
-  .summary { display: grid; grid-template-columns: repeat(4, minmax(86px, 1fr)); gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 22px; background: oklch(19% 0.012 255 / .82); box-shadow: 0 20px 60px rgba(0,0,0,.2); }
-  .summary a { min-width: 0; padding: 10px 12px; border-radius: 15px; color: var(--muted); text-decoration: none; background: var(--panel); }
+  .summary { display: grid; grid-template-columns: repeat(4, minmax(86px, 1fr)); gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+  .summary a { min-width: 0; padding: 10px 12px; border-radius: 12px; color: var(--muted); text-decoration: none; background: var(--card); }
   .summary b { display: block; color: var(--text); font-size: 20px; line-height: 1; margin-bottom: 5px; }
   .summary span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
   .layout { display: grid; grid-template-columns: 188px minmax(0, 1fr); gap: 24px; align-items: start; }
-  .rail { position: sticky; top: 16px; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 18px; background: oklch(19% 0.012 255 / .92); }
-  .rail a { padding: 10px 11px; border-radius: 12px; color: var(--muted); text-decoration: none; font-size: 13px; }
+  .rail { position: sticky; top: 16px; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+  .rail a { padding: 10px 11px; border-radius: 999px; color: var(--muted); text-decoration: none; font-size: 13px; }
   .rail a:hover { color: var(--text); background: var(--card); }
   h2 { margin: 0 0 14px; padding-top: 10px; font-size: 18px; letter-spacing: -.01em; }
   h2 span { margin-left: 8px; color: var(--accent); font-size: 13px; font-weight: 800; }
   section + section { margin-top: 26px; }
-  .tweet-card { border: 1px solid var(--line); border-radius: 20px; padding: 18px 18px 16px; margin: 12px 0; background: linear-gradient(180deg, var(--card), oklch(23% 0.012 255)); box-shadow: 0 18px 48px rgba(0,0,0,.16); }
-  .tweet-card.list-tweet { border-color: oklch(50% 0.06 235); background: linear-gradient(180deg, oklch(26% 0.018 245), oklch(23% 0.012 255)); }
-  .tweet-card.conversation-context { border-color: oklch(48% 0.055 295); background: linear-gradient(180deg, oklch(26% 0.018 285), oklch(23% 0.012 255)); }
+  .tweet-card { border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 16px; margin: 0; background: var(--bg); }
+  .tweet-card:hover { background: #1d2125; }
+  .tweet-card.list-tweet .kind { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--accent-soft); color: var(--accent); }
+  .tweet-card.conversation-context .kind { border-color: color-mix(in srgb, var(--context) 35%, var(--line)); background: var(--context-soft); color: #a78bfa; }
   .tweet-card header, .tweet-card footer { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
   .byline { font-weight: 760; letter-spacing: -.01em; }
   time, .quote-byline, .empty { color: var(--muted); font-size: 13px; }
-  .kind { flex: 0 0 auto; padding: 5px 9px; border-radius: 999px; color: var(--accent); background: var(--accent-soft); font-size: 12px; font-weight: 800; }
-  .conversation-context .kind { color: var(--context); background: var(--context-soft); }
+  .kind { flex: 0 0 auto; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent); background: var(--accent-soft); font-size: 12px; font-weight: 600; }
   .tweet-text { white-space: pre-wrap; line-height: 1.55; font-size: 15px; max-width: 72ch; margin: 14px 0; }
   .media-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 14px 0; }
-  .media-item { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: oklch(16% 0.01 255); }
+  .media-item { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
   .media-item img { display: block; width: 100%; max-height: 540px; object-fit: contain; }
   .media-link { display: block; padding: 10px 12px; color: var(--accent); text-decoration: none; border-top: 1px solid var(--line); }
-  .quote-card { margin: 14px 0; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: oklch(20% 0.012 255); }
+  .quote-card { margin: 14px 0; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
   .quote-label { color: var(--accent); font-size: 11px; font-weight: 850; text-transform: uppercase; letter-spacing: .09em; margin-bottom: 4px; }
   .quote-card p { white-space: pre-wrap; line-height: 1.5; margin: 10px 0; }
   .links { display: grid; gap: 6px; margin: 12px 0; overflow-wrap: anywhere; }
@@ -267,31 +265,21 @@ export function renderXListHtml(input: XListHtmlInput): string {
   .link-row { display: flex; align-items: baseline; gap: 8px; text-decoration: none; }
   .link-row:hover .link-url { text-decoration: underline; }
   .link-url { color: var(--accent); min-width: 0; word-break: break-all; }
-  .link-badge { flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--text); background: oklch(30% 0.02 255); border: 1px solid var(--line-strong); }
-  .link-badge.github { color: oklch(92% 0.01 255); background: oklch(28% 0.01 255); border-color: oklch(50% 0.02 255); }
-  .link-badge.youtube { color: oklch(95% 0.02 25); background: oklch(45% 0.18 25 / .22); border-color: oklch(60% 0.2 25); }
-  .link-badge.huggingface { color: oklch(92% 0.05 75); background: oklch(55% 0.16 75 / .2); border-color: oklch(65% 0.16 75); }
-  .link-badge.arxiv { color: oklch(92% 0.05 145); background: oklch(50% 0.14 145 / .2); border-color: oklch(60% 0.14 145); }
-  .link-badge.blog { color: oklch(92% 0.05 295); background: oklch(55% 0.14 295 / .2); border-color: oklch(65% 0.14 295); }
-  .link-badge.x { color: var(--text); background: oklch(35% 0.01 255); border-color: var(--line-strong); }
-  .link-badge.npm { color: oklch(95% 0.02 25); background: oklch(45% 0.16 25 / .2); border-color: oklch(60% 0.16 25); }
-  .link-badge.hn { color: oklch(95% 0.06 55); background: oklch(55% 0.16 55 / .22); border-color: oklch(65% 0.16 55); }
-  .link-badge.reddit { color: oklch(95% 0.05 35); background: oklch(50% 0.16 35 / .2); border-color: oklch(62% 0.16 35); }
-  .link-badge.notebook { color: oklch(92% 0.05 75); background: oklch(52% 0.14 75 / .18); border-color: oklch(62% 0.14 75); }
-  .metrics { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; }
-  .metrics span { display: inline-flex; align-items: baseline; gap: 5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 999px; background: oklch(20% 0.012 255); }
+  .link-badge { flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--text); background: var(--panel); border: 1px solid var(--line-strong); }
+  .metrics { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 13px; }
+  .metrics span { display: inline-flex; align-items: baseline; gap: 5px; }
   .metrics b { color: var(--text); font-size: 13px; }
   .open { flex: 0 0 auto; font-size: 13px; font-weight: 750; }
-  .sortbar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 18px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: oklch(20% 0.012 255 / .96); backdrop-filter: blur(8px); box-shadow: 0 12px 36px rgba(0,0,0,.22); }
+  .sortbar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 18px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
   .sortbar-label { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-right: 4px; }
   .sortbar button { cursor: pointer; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 13px; font-weight: 650; font-family: inherit; transition: background .15s, color .15s, border-color .15s; }
   .sortbar button:hover { color: var(--text); border-color: var(--line-strong); }
   .sortbar button.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
-  .sortbar #sort-dir { margin-left: auto; color: var(--accent); background: var(--accent-soft); border-color: oklch(50% 0.06 235); font-weight: 750; }
-  .filterbar { position: sticky; top: 62px; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 18px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: oklch(20% 0.012 255 / .96); backdrop-filter: blur(8px); }
+  .sortbar #sort-dir { margin-left: auto; color: var(--accent); background: var(--accent-soft); border-color: var(--line-strong); font-weight: 700; }
+  .filterbar { position: sticky; top: 62px; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 18px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
   .filterbar button { cursor: pointer; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 12px; font-weight: 650; font-family: inherit; }
   .filterbar button:hover { color: var(--text); border-color: var(--line-strong); }
-  .filterbar button.active { color: var(--bg); background: var(--context); border-color: var(--context); }
+  .filterbar button.active { color: #fff; background: var(--context); border-color: var(--context); }
   @media (max-width: 860px) { .page-header, .layout { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: repeat(2, 1fr); } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 640px) { main { width: min(100% - 20px, 1180px); padding-top: 20px; } h1 { font-size: 30px; } .tweet-card header, .tweet-card footer { display: grid; } .rail { grid-template-columns: 1fr; } }
 </style>

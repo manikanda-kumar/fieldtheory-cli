@@ -185,6 +185,9 @@ test('app shell includes root element and static asset links', () => {
   assert.match(html, /<div id="app" class="site-shell">/);
   assert.match(html, /class="nav-link active"/);
   assert.match(appCss, /\.nav-link/);
+  assert.match(appCss, /\.pill-context/);
+  assert.match(appCss, /\.sidebar-hidden/);
+  assert.match(appJs, /sidebar-hidden/);
   assert.match(html, /\/styles\.css/);
   assert.match(html, /\/app\.js/);
   assert.match(appCss, /\.bookmark-card/);
@@ -193,7 +196,9 @@ test('app shell includes root element and static asset links', () => {
   assert.match(appCss, /\.link-preview/);
   assert.match(appJs, /renderMediaObjects/);
   assert.match(appJs, /fetchBookmarks/);
-  assert.doesNotMatch(html, /<script>.*bookmark/s);
+  const inlineScripts = html.match(/<script>[\s\S]*?<\/script>/g) ?? [];
+  assert.equal(inlineScripts.length, 1);
+  assert.match(inlineScripts[0]!, /ft-theme/);
   for (const lane of ['home', 'today', 'analyze', 'map', 'sources', 'discuss']) {
     assert.match(html, new RegExp(`data-lane="${lane}"`));
   }
