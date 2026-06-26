@@ -67,6 +67,7 @@ import { PromptCancelledError, promptText } from './prompt.js';
 import { skillWithFrontmatter, installSkill, uninstallSkill } from './skill.js';
 import { registerCompanionCommands } from './companion-cli.js';
 import { getPathReport } from './field-status.js';
+import { runBookmarkWebServer } from './web/server.js';
 import {
   formatIdeasIntro,
   formatRunList,
@@ -1452,6 +1453,9 @@ export function buildCli() {
       void rawPages;
       const jsonPath = stringOption(options.output) ?? path.join(storeDir, `${base}.json`);
       fs.writeFileSync(jsonPath, `${JSON.stringify(digestForDisk, null, 2)}\n`, { mode: 0o600 });
+      if (!stringOption(options.output)) {
+        fs.writeFileSync(path.join(storeDir, `${digest.listId}-latest.json`), `${JSON.stringify(digestForDisk, null, 2)}\n`, { mode: 0o600 });
+      }
 
       const { stats } = digest;
       const window = sinceHours ? `last ${sinceHours}h` : 'latest page';
@@ -1886,6 +1890,34 @@ export function buildCli() {
     .action(safe(async () => {
       if (!requireIndex()) return;
       console.log(await renderViz());
+    }));
+
+  // ── serve ───────────────────────────────────────────────────────────────
+
+  program
+    .command('serve')
+    .description('Serve a local web interface for X bookmarks')
+    .option('--host <host>', 'Host interface to bind', process.env.FT_SERVE_HOST ?? '127.0.0.1')
+    .option('--port <port>', 'TCP port (0 selects an available port)', process.env.FT_SERVE_PORT ?? '3000')
+    .action(safe(async (options: { host: string; port: string }) => {
+      const host = String(options.host).trim();
+      const port = Number(options.port);
+      if (!host) {
+        console.error('  --host must not be empty');
+        process.exitCode = 1;
+        return;
+      }
+      if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        console.error('  --port must be an integer from 0 to 65535');
+        process.exitCode = 1;
+        return;
+      }
+      if (!fs.existsSync(twitterBookmarksIndexPath())) {
+        console.error('  No bookmark index found. Run `ft sync` or `ft index` first.');
+        process.exitCode = 1;
+        return;
+      }
+      await runBookmarkWebServer({ host, port });
     }));
 
   // ── classify ────────────────────────────────────────────────────────────
