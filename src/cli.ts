@@ -267,12 +267,25 @@ async function runMediaFetchWithProgress(options: { limit?: number; maxBytes?: n
 /**
  * Parse the `--cookies <ct0> [auth_token]` variadic option into the shape
  * syncBookmarksGraphQL and syncGaps expect. Returns undefined fields when
- * the flag wasn't passed, so callers can fall through to browser extraction.
+ * neither the flag nor the FT_X_CT0/FT_X_AUTH_TOKEN env fallback is present,
+ * so callers can fall through to browser extraction. The env fallback lets
+ * unattended runs (e.g. `ft sync-all` under a systemd timer) authenticate on
+ * headless hosts that have no browser cookie store.
  */
-export function parseCookieOption(cookies: unknown): { csrfToken?: string; cookieHeader?: string } {
-  if (!cookies || !Array.isArray(cookies) || cookies.length === 0) return {};
-  const csrfToken = String(cookies[0]);
-  const authToken = cookies.length > 1 ? String(cookies[1]) : undefined;
+export function parseCookieOption(
+  cookies: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+): { csrfToken?: string; cookieHeader?: string } {
+  let csrfToken: string | undefined;
+  let authToken: string | undefined;
+  if (Array.isArray(cookies) && cookies.length > 0) {
+    csrfToken = String(cookies[0]);
+    authToken = cookies.length > 1 ? String(cookies[1]) : undefined;
+  } else {
+    csrfToken = env.FT_X_CT0?.trim() || undefined;
+    authToken = env.FT_X_AUTH_TOKEN?.trim() || undefined;
+  }
+  if (!csrfToken) return {};
   const parts = [`ct0=${csrfToken}`];
   if (authToken) parts.push(`auth_token=${authToken}`);
   return { csrfToken, cookieHeader: parts.join('; ') };
@@ -1172,7 +1185,7 @@ export function buildCli() {
     .option('--youtube-limit <n>', 'Max YouTube videos to process when --playlist is set', (v: string) => Number(v), 8)
     .option('--skip <sources>', 'Comma-separated sources to skip: following,x,x-list,raindrop,github-stars,youtube', collectCsvOption, [])
     .option('--only <sources>', 'Comma-separated sources to run before the required canonical rebuild')
-    .option('--no-synthesis', 'Skip canonical Markdown export after rebuilding the unified index', false)
+    .option('--no-synthesis', 'Skip canonical Markdown export after rebuilding the unified index')
     .option('--classify', 'Pass --classify to source commands that support it', false)
     .action(safe(async (options) => {
       ensureDataDir();

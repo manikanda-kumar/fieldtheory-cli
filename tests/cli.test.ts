@@ -341,9 +341,21 @@ test('compareVersions: handles double-digit segments', () => {
 });
 
 test('parseCookieOption: returns empty when no --cookies passed', () => {
-  assert.deepEqual(parseCookieOption(undefined), {});
-  assert.deepEqual(parseCookieOption([]), {});
-  assert.deepEqual(parseCookieOption('not-an-array'), {});
+  assert.deepEqual(parseCookieOption(undefined, {}), {});
+  assert.deepEqual(parseCookieOption([], {}), {});
+  assert.deepEqual(parseCookieOption('not-an-array', {}), {});
+});
+
+test('parseCookieOption: falls back to FT_X_CT0/FT_X_AUTH_TOKEN env', () => {
+  const parsed = parseCookieOption(undefined, { FT_X_CT0: 'envct0', FT_X_AUTH_TOKEN: 'envauth' });
+  assert.equal(parsed.csrfToken, 'envct0');
+  assert.equal(parsed.cookieHeader, 'ct0=envct0; auth_token=envauth');
+});
+
+test('parseCookieOption: --cookies flag overrides env fallback', () => {
+  const parsed = parseCookieOption(['flagct0'], { FT_X_CT0: 'envct0', FT_X_AUTH_TOKEN: 'envauth' });
+  assert.equal(parsed.csrfToken, 'flagct0');
+  assert.equal(parsed.cookieHeader, 'ct0=flagct0');
 });
 
 test('parseCookieOption: with only ct0, builds ct0-only header', () => {
