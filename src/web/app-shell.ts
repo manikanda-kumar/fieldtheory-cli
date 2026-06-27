@@ -9,50 +9,68 @@ export function renderAppShell(): string {
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div id="app" class="site-shell">
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <span class="sidebar-mark" aria-hidden="true">FT</span>
+  <div id="app" class="site-shell ft-archive-shell">
+    <aside class="sidebar ft-archive-sidebar">
+      <div class="sidebar-brand ft-archive-brand">
+        <span class="sidebar-mark ft-archive-mark" aria-hidden="true">FT</span>
         <div class="sidebar-copy">
           <span class="sidebar-title">Field Theory</span>
-          <span class="sidebar-tagline">Unified local library</span>
+          <span class="sidebar-tagline">Saved knowledge</span>
         </div>
       </div>
-      <nav class="sidebar-nav" aria-label="Field Theory sections">
-        <button class="nav-link active" type="button" data-lane="home">Home</button>
-        <button class="nav-link" type="button" data-lane="today">Today</button>
-        <button class="nav-link" type="button" data-lane="analyze">Analyze</button>
-        <button class="nav-link" type="button" data-lane="map">Map</button>
-        <button class="nav-link" type="button" data-lane="sources">Sources</button>
-        <button class="nav-link" type="button" data-lane="discuss">Discuss</button>
-        <button class="nav-link" type="button" data-lane="bookmarks">Library</button>
+      <nav class="sidebar-nav ft-archive-nav" aria-label="Field Theory sections">
+        <button class="nav-link active" type="button" data-lane="home"><span>Home</span><small>Ask, resume, and orient</small></button>
+        <button class="nav-link" type="button" data-lane="today"><span>Today</span><small>Fresh saves and resurfacing</small></button>
+        <button class="nav-link" type="button" data-lane="bookmarks"><span>Library</span><small>Search saved items</small></button>
+        <button class="nav-link" type="button" data-lane="sources"><span>Sources</span><small>Sync health and coverage</small></button>
+        <button class="nav-link" type="button" data-lane="people"><span>People</span><small>Experts from follows</small></button>
+        <button class="nav-link" type="button" data-lane="synthesis"><span>Synthesis</span><small>Briefs, wiki, open loops</small></button>
       </nav>
+      <div class="sidebar-note">
+        <span>Design principle</span>
+        <p>Home answers “where do I continue?” Source mechanics live one click away.</p>
+      </div>
       <div id="stats" class="sidebar-stats">Loading stats…</div>
       <div id="filters" class="sidebar-filters"></div>
       <div class="sidebar-footer">
-        <button id="themeToggle" class="btn-secondary" type="button">Light theme</button>
-      </div>
-    </aside>
-    <main class="main-column">
-      <header class="page-header">
-        <div class="page-header-row">
-          <div class="page-heading">
-            <h1 id="pageTitle" class="page-title">Home</h1>
-            <p id="pageSubtitle" class="page-subtitle">Overview from your X list digest</p>
-          </div>
-        </div>
-      </header>
-      <div class="main-body">
         <label class="list-config">
           <span class="field-label">X List ID</span>
           <input id="listId" class="text-field" name="listId" value="1979812953135497678" inputmode="numeric">
         </label>
-        <form id="searchForm" class="search-shell">
-          <span class="search-icon" aria-hidden="true">⌕</span>
-          <input id="query" class="search-input" name="query" type="search" autocomplete="off" placeholder="Search bookmarks, articles, links…">
-          <button class="btn-primary" type="submit">Search</button>
-        </form>
-        <div id="activeFilters" class="active-filters"></div>
+        <button id="themeToggle" class="btn-secondary" type="button">Light theme</button>
+      </div>
+    </aside>
+    <main class="main-column ft-archive-main">
+      <header class="page-header ft-archive-header">
+        <div class="page-heading">
+          <p class="page-kicker">Personal archive over years</p>
+          <h1 id="pageTitle" class="page-title">A calmer command center for resurfacing what you already saved.</h1>
+          <p id="pageSubtitle" class="page-subtitle">Ask across the archive, continue useful trails, and tune search by source.</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn-primary" type="button" data-action="ask">Ask library</button>
+          <button class="btn-secondary" type="button" data-action="brief">New brief</button>
+        </div>
+      </header>
+      <div class="main-body">
+        <section class="search-card">
+          <form id="searchForm" class="search-shell">
+            <label class="search-label" for="query">Ask across the archive</label>
+            <div class="query-row">
+              <input id="query" class="search-input" name="query" type="search" autocomplete="off" placeholder="Ask what you saved, learned, or should revisit…">
+              <button class="btn-primary" type="submit">Search</button>
+            </div>
+          </form>
+          <div id="sourceFilters" class="source-picker" aria-label="Search source">
+            <button class="source-chip selected" type="button" data-source="">All</button>
+            <button class="source-chip" type="button" data-source="x">X</button>
+            <button class="source-chip" type="button" data-source="raindrop">Raindrop</button>
+            <button class="source-chip" type="button" data-source="github-stars">GitHub</button>
+            <button class="source-chip" type="button" data-source="youtube">YouTube</button>
+          </div>
+          <p id="sourceHint" class="source-hint"><strong>All:</strong> Search the complete saved corpus. Sources stay available at search time so recall can be tuned before opening deeper pages.</p>
+          <div id="activeFilters" class="active-filters"></div>
+        </section>
         <p id="status" class="status-line" role="status">Loading…</p>
         <section id="results" class="results" aria-live="polite"></section>
         <button id="loadMore" class="btn-primary load-more" type="button" hidden>Load more</button>
@@ -533,7 +551,7 @@ button, input, textarea { font: inherit; }
   font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   resize: vertical;
 }
-@media (max-width: 1100px) {
+@media (max-width: 860px) {
   .site-shell { flex-direction: column; max-width: none; }
   .sidebar { position: static; width: 100%; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
   .sidebar-nav { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px; }
@@ -542,19 +560,542 @@ button, input, textarea { font: inherit; }
   .results-feed, .results-analyze { grid-template-columns: 1fr; }
   .results-feed .tweet-card:nth-child(odd) { border-right: 0; }
 }
+
+/* Field Theory archive UI translated from the MagicPath direction. */
+:root {
+  --bg: #f7f8fb;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f8fafc;
+  --bg-active: #f1f5f9;
+  --bg-card: #ffffff;
+  --line: rgb(148 163 184 / 24%);
+  --line-strong: rgb(148 163 184 / 42%);
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --ink-mute: #64748b;
+  --accent: #101827;
+  --accent-hover: #1e293b;
+  --accent-press: #0f172a;
+  --accent-strong: #0f766e;
+  --accent-soft: #ccfbf1;
+  --accent-text: #ffffff;
+  --context: #0f766e;
+  --context-soft: #e0f2fe;
+  --ring: rgb(45 212 191 / 28%);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #0b1120;
+  --bg-elevated: #111827;
+  --bg-hover: #172033;
+  --bg-active: #172033;
+  --bg-card: #111827;
+  --line: rgb(148 163 184 / 18%);
+  --line-strong: rgb(148 163 184 / 34%);
+  --ink: #e5edf7;
+  --ink-soft: #cbd5e1;
+  --ink-mute: #93a4b8;
+  --accent: #2dd4bf;
+  --accent-hover: #5eead4;
+  --accent-press: #14b8a6;
+  --accent-strong: #5eead4;
+  --accent-soft: rgb(45 212 191 / 14%);
+  --accent-text: #08111f;
+  --context: #93c5fd;
+  --context-soft: rgb(96 165 250 / 14%);
+  --ring: rgb(45 212 191 / 42%);
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(circle at 82% 8%, rgb(45 212 191 / 18%), transparent 28%),
+    radial-gradient(circle at 8% 92%, rgb(99 102 241 / 12%), transparent 28%),
+    var(--bg);
+  font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.site-shell.ft-archive-shell {
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.sidebar.ft-archive-sidebar {
+  width: auto;
+  padding: 24px 18px;
+  border-right: 1px solid rgb(148 163 184 / 22%);
+  background: linear-gradient(180deg, #101827 0%, #172033 100%);
+  color: #e5edf7;
+}
+
+.ft-archive-brand .sidebar-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2dd4bf, #60a5fa);
+  color: #08111f;
+  font-weight: 900;
+  letter-spacing: 0;
+  box-shadow: 0 18px 34px rgb(45 212 191 / 22%);
+}
+
+.ft-archive-brand .sidebar-title { color: #f8fafc; font-size: 18px; }
+.ft-archive-brand .sidebar-tagline { color: #93a4b8; font-size: 12px; }
+
+.ft-archive-nav {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 20px;
+}
+
+.ft-archive-nav .nav-link {
+  display: block;
+  min-height: 62px;
+  padding: 11px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #d9e3ef;
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.ft-archive-nav .nav-link:hover {
+  background: rgb(255 255 255 / 6%);
+  transform: translateX(2px);
+}
+
+.ft-archive-nav .nav-link.active {
+  border-color: rgb(45 212 191 / 32%);
+  background: rgb(45 212 191 / 12%);
+  box-shadow: inset 3px 0 0 #2dd4bf;
+  color: #f8fafc;
+}
+
+.ft-archive-nav .nav-link span,
+.ft-archive-nav .nav-link small {
+  display: block;
+}
+
+.ft-archive-nav .nav-link span { font-size: 14px; font-weight: 850; }
+.ft-archive-nav .nav-link small { margin-top: 4px; color: #93a4b8; font-size: 12px; line-height: 1.25; }
+
+.sidebar-note {
+  margin-top: auto;
+  padding: 14px;
+  border: 1px solid rgb(148 163 184 / 18%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 6%);
+}
+
+.sidebar-note span {
+  color: #5eead4;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.sidebar-note p {
+  margin: 8px 0 0;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.sidebar-stats,
+.sidebar-filters {
+  display: none;
+}
+
+.sidebar-footer {
+  margin-top: 0;
+  padding: 0;
+}
+
+.sidebar-footer .field-label { color: #93a4b8; }
+.sidebar-footer .text-field {
+  border-color: rgb(148 163 184 / 28%);
+  background: rgb(255 255 255 / 8%);
+  color: #f8fafc;
+}
+.sidebar-footer .btn-secondary {
+  border-color: rgb(148 163 184 / 28%);
+  color: #e5edf7;
+}
+
+.main-column.ft-archive-main {
+  min-width: 0;
+  padding: 32px;
+  border-right: 0;
+  background: transparent;
+}
+
+.page-header.ft-archive-header {
+  position: static;
+  display: flex;
+  justify-content: space-between;
+  gap: 28px;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.page-kicker {
+  margin: 0 0 6px;
+  color: var(--ink-mute);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.page-title {
+  max-width: 860px;
+  margin: 0;
+  color: var(--ink);
+  font-size: 42px;
+  line-height: 1.02;
+  letter-spacing: 0;
+}
+
+.page-subtitle {
+  max-width: 720px;
+  margin: 12px 0 0;
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.header-actions .btn-primary,
+.header-actions .btn-secondary,
+.search-card .btn-primary {
+  min-height: 42px;
+  border-radius: 12px;
+  font-weight: 850;
+}
+
+.header-actions .btn-secondary {
+  width: auto;
+  padding: 0 15px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 20px rgb(15 23 42 / 6%);
+}
+
+.main-body {
+  padding: 0;
+}
+
+.search-card,
+.memory-strip,
+.archive-panel,
+.focus-panel,
+.results-panel,
+.bookmark-card,
+.tweet-card,
+.source-table {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  box-shadow: 0 24px 70px rgb(15 23 42 / 8%);
+  backdrop-filter: blur(18px);
+}
+
+.search-card {
+  padding: 18px;
+  margin-bottom: 14px;
+}
+
+.search-shell {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.search-label {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.query-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 102px;
+  gap: 10px;
+}
+
+.search-input {
+  min-height: 52px;
+  width: 100%;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--bg-hover);
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.search-shell:focus-within {
+  box-shadow: none;
+}
+
+.search-input:focus {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.source-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.source-chip {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.source-chip:hover,
+.source-chip.selected {
+  border-color: #0f766e;
+  background: #ccfbf1;
+  color: #134e4a;
+}
+
+.source-hint {
+  margin: 12px 0 0;
+  color: var(--ink-mute);
+  font-size: 13px;
+}
+
+.source-hint strong { color: var(--ink); }
+
+.status-line {
+  margin: 0 0 12px;
+  color: var(--ink-mute);
+}
+
+.results {
+  display: grid;
+  gap: 14px;
+}
+
+.results-home {
+  grid-template-columns: minmax(0, 1.32fr) minmax(330px, 0.68fr);
+}
+
+.results-home > .memory-strip,
+.results-home > .search-trails {
+  grid-column: 1 / -1;
+}
+
+.memory-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.memory-strip article {
+  min-height: 112px;
+  padding: 18px;
+  border-right: 1px solid var(--line);
+}
+
+.memory-strip article:last-child { border-right: 0; }
+.memory-strip span { display: block; color: var(--ink-mute); font-size: 12px; font-weight: 850; }
+.memory-strip strong { display: block; margin: 8px 0 5px; color: var(--ink); font-size: 34px; line-height: 1; }
+.memory-strip p { margin: 0; color: var(--ink-soft); font-size: 13px; }
+
+.archive-panel,
+.focus-panel,
+.results-panel {
+  padding: 18px;
+}
+
+.section-title {
+  margin-bottom: 14px;
+}
+
+.section-title p {
+  margin: 0 0 6px;
+  color: var(--ink-mute);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.section-title h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 23px;
+  line-height: 1.12;
+}
+
+.trail-list {
+  display: grid;
+  gap: 10px;
+}
+
+.trail-card {
+  min-height: 116px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.trail-card:hover,
+.trail-card.selected {
+  border-color: rgb(20 184 166 / 62%);
+  background: linear-gradient(180deg, #f0fdfa, var(--bg-elevated));
+}
+
+.trail-card strong,
+.trail-card span,
+.trail-card em { display: block; }
+.trail-card strong { color: var(--ink); font-size: 16px; line-height: 1.2; }
+.trail-card span { margin-top: 7px; color: var(--ink-soft); font-size: 13px; line-height: 1.4; }
+.trail-card em { margin-top: 10px; color: #0f766e; font-size: 12px; font-style: normal; font-weight: 850; }
+
+.focus-panel {
+  background: linear-gradient(180deg, rgb(15 23 42 / 96%), rgb(30 41 59 / 96%));
+  color: #e5edf7;
+}
+
+.focus-panel .section-title p { color: #5eead4; }
+.focus-panel h2 { color: #ffffff; }
+.focus-panel p { color: #cbd5e1; }
+.focus-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.focus-actions .details-btn { color: #e5edf7; border-color: rgb(255 255 255 / 18%); }
+
+.results-feed {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  border-top: 0;
+}
+
+.results-feed > .digest-hero,
+.results-feed > .source-table,
+.results-feed > .results-panel,
+.results-feed > .bookmark-card:only-child {
+  grid-column: 1 / -1;
+}
+
+.digest-hero,
+.bookmark-card,
+.tweet-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+}
+
+.bookmark-card,
+.tweet-card {
+  padding: 16px;
+}
+
+.results-feed .tweet-card:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+
+.bookmark-card:hover,
+.tweet-card:hover {
+  background: var(--bg-elevated);
+}
+
+.source-table {
+  overflow: hidden;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.detail-panel {
+  background: var(--bg-elevated);
+}
+
+@media (max-width: 860px) {
+  .site-shell.ft-archive-shell { display: flex; }
+  .sidebar.ft-archive-sidebar { width: 100%; }
+  .ft-archive-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .page-header.ft-archive-header,
+  .header-actions { flex-direction: column; }
+  .results-home,
+  .results-feed,
+  .memory-strip { grid-template-columns: 1fr; }
+  .memory-strip article { border-right: 0; border-bottom: 1px solid var(--line); }
+  .memory-strip article:last-child { border-bottom: 0; }
+}
+
+@media (max-width: 720px) {
+  .main-column.ft-archive-main { padding: 18px 14px; }
+  .page-title { font-size: 30px; }
+  .query-row { grid-template-columns: 1fr; }
+  .ft-archive-nav { grid-template-columns: 1fr; }
+}
 `;
 
 export const appJs = `
-const state = { query:'', category:'', domain:'', folder:'', offset:0, limit:30, total:0, loading:false, lane:'home' };
+const state = { query:'', source:'', category:'', domain:'', folder:'', offset:0, limit:30, total:0, loading:false, lane:'home', statsPayload:null, selectedTrail:0 };
 const laneMeta = {
-  home: { title:'Home', subtitle:'Overview from your X list digest' },
-  today: { title:'Today', subtitle:'Tweets from the latest list sync' },
-  analyze: { title:'Analyze', subtitle:'Link types, domains, and author breakdown' },
-  map: { title:'Map', subtitle:'Authors mapped to outbound domains' },
-  sources: { title:'Sources', subtitle:'Shared links ranked by frequency' },
-  discuss: { title:'Discuss', subtitle:'Context pack for an external LLM chat' },
-  bookmarks: { title:'Library', subtitle:'Search X bookmarks, Raindrop, GitHub stars, and YouTube notes' },
+  home: { title:'A calmer command center for resurfacing what you already saved.', subtitle:'Ask across the archive, continue useful trails, and tune search by source.' },
+  today: { title:'Today', subtitle:'A lightweight daily surface for new saves, old memories, and what changed.' },
+  bookmarks: { title:'Library', subtitle:'Search X bookmarks, Raindrop, GitHub stars, and YouTube notes.' },
+  sources: { title:'Sources', subtitle:'Operational sync details and shared links live here, not on Home.' },
+  people: { title:'People', subtitle:'Trusted authors and experts from your saved knowledge graph.' },
+  synthesis: { title:'Synthesis', subtitle:'Turn saved fragments into durable notes, briefs, and open questions.' },
 };
+const sourceHints = {
+  '': ['All', 'Search the complete saved corpus'],
+  x: ['X', 'Threads, posts, folders, and article captures'],
+  raindrop: ['Raindrop', 'Long-form web reading and highlights'],
+  'github-stars': ['GitHub', 'Starred repos and tool discovery'],
+  youtube: ['YouTube', 'Transcript-backed notes and talks'],
+};
+const trails = [
+  {
+    title: 'Agent harnesses and evaluation loops',
+    context: 'Started from X threads, GitHub repos, and notes from agent-tooling videos.',
+    action: 'Build a research brief',
+  },
+  {
+    title: 'Local-first knowledge systems',
+    context: 'SQLite FTS, markdown wiki exports, Raindrop articles, and CLI workflows point to one theme.',
+    action: 'Open collection',
+  },
+  {
+    title: 'Frontend for the library itself',
+    context: 'Saved product patterns suggest a calmer interface for reviewing years of saved material.',
+    action: 'Review designs',
+  },
+];
 const results = document.querySelector('#results');
 const statusEl = document.querySelector('#status');
 const loadMore = document.querySelector('#loadMore');
@@ -586,6 +1127,17 @@ function updatePageChrome(lane) {
   pageSubtitle.textContent = meta.subtitle;
 }
 
+function setActiveNav(lane) {
+  for (const other of document.querySelectorAll('[data-lane]')) other.classList.toggle('active', other.dataset.lane === lane);
+}
+
+function setSource(source) {
+  state.source = source || '';
+  for (const chip of document.querySelectorAll('[data-source]')) chip.classList.toggle('selected', chip.dataset.source === state.source);
+  const [label, detail] = sourceHints[state.source] || sourceHints[''];
+  document.querySelector('#sourceHint').innerHTML = '<strong>' + label + ':</strong> ' + detail + '. Sources stay available at search time so recall can be tuned before opening deeper pages.';
+}
+
 function syncThemeToggle() {
   const dark = document.documentElement.dataset.theme !== 'light';
   themeToggle.textContent = dark ? 'Light theme' : 'Dark theme';
@@ -599,6 +1151,7 @@ function params(resetOffset = false) {
   if (resetOffset) state.offset = 0;
   const p = new URLSearchParams({ limit:String(state.limit), offset:String(state.offset) });
   for (const key of ['query','category','domain','folder']) if (state[key]) p.set(key, state[key]);
+  if (state.source) p.set('source', state.source);
   return p;
 }
 
@@ -617,6 +1170,7 @@ async function fetchListJson(path) {
 }
 
 function renderStats(payload) {
+  state.statsPayload = payload;
   const stats = document.querySelector('#stats');
   stats.replaceChildren(
     Object.assign(el('div', 'stat'), { innerHTML: '<strong>' + payload.stats.total + '</strong>X bookmarks' }),
@@ -860,22 +1414,63 @@ function renderBars(title, rows, key) {
 }
 
 async function renderHomeLane() {
-  const [digest, analysis] = await Promise.all([fetchListJson('/today'), fetchListJson('/analysis')]);
-  setResultsLayout('feed');
+  const [unified, stats] = await Promise.all([
+    fetchJson('/api/unified?limit=3'),
+    state.statsPayload ? Promise.resolve(state.statsPayload) : fetchJson('/api/stats'),
+  ]);
+  state.statsPayload = stats;
+  results.className = 'results results-home';
   results.replaceChildren();
-  const hero = el('article', 'digest-hero');
-  hero.append(el('h2', '', 'Today from list ' + digest.listId));
-  const meta = el('div', 'digest-meta');
-  meta.append(
-    el('span', 'digest-stat', formatTime(digest.fetchedAt) || digest.fetchedAt),
-    el('span', 'digest-stat', digest.tweets.length + ' tweets'),
-    el('span', 'digest-stat', digest.stats.pagesFetched + ' page(s)'),
-    el('span', 'digest-stat', (digest.stats.sinceHours ? digest.stats.sinceHours + 'h window' : digest.stats.stopReason)),
+  const memory = el('section', 'memory-strip');
+  memory.append(
+    archiveMetric('Saved since', stats.stats?.dateRange?.earliest ? new Date(stats.stats.dateRange.earliest).getFullYear() : 'Local', 'Long-running personal archive'),
+    archiveMetric('Knowledge items', formatCount(unified.total) || String(unified.total), 'Deduped across sources'),
+    archiveMetric('X authors', formatCount(stats.stats?.uniqueAuthors) || '—', 'Trusted people and repeated signals'),
   );
-  hero.append(meta);
-  results.append(hero);
-  for (const tweet of analysis.topTweets.slice(0, 6)) results.append(renderCard(tweet));
-  setStatus('Home loaded from X List ' + digest.listId);
+  const trailsPanel = el('section', 'archive-panel search-trails');
+  const heading = el('div', 'section-title');
+  heading.append(el('p', '', 'Continue from memory'), el('h2', '', 'Not a feed. A set of useful trails.'));
+  const trailList = el('div', 'trail-list');
+  trails.forEach((trail, index) => {
+    const button = el('button', 'trail-card' + (index === state.selectedTrail ? ' selected' : ''));
+    button.type = 'button';
+    button.append(el('strong', '', trail.title), el('span', '', trail.context), el('em', '', trail.action));
+    button.addEventListener('click', () => {
+      state.selectedTrail = index;
+      renderLane('home');
+    });
+    trailList.append(button);
+  });
+  trailsPanel.append(heading, trailList);
+  const selected = trails[state.selectedTrail] || trails[0];
+  const focus = el('aside', 'focus-panel');
+  const focusHeading = el('div', 'section-title');
+  focusHeading.append(el('p', '', 'Focused view'), el('h2', '', selected.title));
+  const actions = el('div', 'focus-actions');
+  const view = el('button', 'details-btn', 'View sources');
+  view.type = 'button';
+  view.addEventListener('click', () => { setActiveNav('bookmarks'); renderLane('bookmarks'); });
+  const synthesize = el('button', 'details-btn', 'Draft synthesis');
+  synthesize.type = 'button';
+  synthesize.addEventListener('click', () => { setActiveNav('synthesis'); renderLane('synthesis'); });
+  actions.append(view, synthesize);
+  focus.append(focusHeading, el('p', '', selected.context), actions);
+  results.append(memory, trailsPanel, focus);
+  if (unified.items?.length) {
+    const recent = el('section', 'results-panel');
+    const recentHeading = el('div', 'section-title');
+    recentHeading.append(el('p', '', 'Recent library signal'), el('h2', '', 'Saved items to reopen'));
+    recent.append(recentHeading);
+    for (const item of unified.items) recent.append(renderCard(item));
+    results.append(recent);
+  }
+  setStatus('Home loaded from the unified local library');
+}
+
+function archiveMetric(label, value, note) {
+  const article = el('article');
+  article.append(el('span', '', label), el('strong', '', String(value ?? '—')), el('p', '', note));
+  return article;
 }
 
 async function renderTodayLane() {
@@ -895,6 +1490,46 @@ async function renderAnalyzeLane() {
     renderBars('Authors', analysis.authors, 'handle'),
   );
   setStatus('Analysis loaded');
+}
+
+async function renderPeopleLane() {
+  const stats = state.statsPayload || await fetchJson('/api/stats');
+  state.statsPayload = stats;
+  setResultsLayout('feed');
+  results.replaceChildren();
+  const panel = el('section', 'results-panel');
+  const heading = el('div', 'section-title');
+  heading.append(el('p', '', 'People'), el('h2', '', 'Authors with repeated saved signal'));
+  panel.append(heading);
+  const rows = stats.stats?.topAuthors || [];
+  if (!rows.length) {
+    panel.append(el('p', 'bookmark-text', 'No author data yet. Run ft sync to populate the people view.'));
+  } else {
+    for (const author of rows.slice(0, 12)) {
+      const row = el('article', 'bookmark-card');
+      row.append(el('h2', '', '@' + author.handle), el('p', 'bookmark-text', author.count + ' saved item(s). Use this as a trust signal when expanding research.'));
+      panel.append(row);
+    }
+  }
+  results.append(panel);
+  setStatus('People view loaded from saved author frequency');
+}
+
+async function renderSynthesisLane() {
+  setResultsLayout('');
+  const response = await fetch('/api/lists/' + encodeURIComponent(currentListId()) + '/context');
+  const text = response.ok ? await response.text() : '';
+  const panel = el('section', 'results-panel');
+  const heading = el('div', 'section-title');
+  heading.append(el('p', '', 'Synthesis'), el('h2', '', 'Turn saved fragments into a brief'));
+  const textarea = el('textarea', 'context-box');
+  textarea.value = text || 'Run ft x-list first to build today context, or search the Library to gather sources for a brief.';
+  const copy = el('button', 'details-btn', 'Copy context');
+  copy.type = 'button';
+  copy.addEventListener('click', () => navigator.clipboard.writeText(textarea.value));
+  panel.append(heading, el('p', 'bookmark-text', 'Use this as the starting context for a research note, wiki page, or external LLM discussion.'), copy, textarea);
+  results.replaceChildren(panel);
+  setStatus('Synthesis context ready');
 }
 
 async function renderMapLane() {
@@ -1001,12 +1636,9 @@ async function showDetail(id) {
 }
 
 function updateLaneChrome(lane) {
-  const bookmarks = lane === 'bookmarks';
-  searchForm.hidden = !bookmarks;
-  listConfig.hidden = bookmarks;
-  loadMore.hidden = !bookmarks || state.offset >= state.total;
-  document.querySelector('#stats')?.classList.toggle('sidebar-hidden', !bookmarks);
-  document.querySelector('#filters')?.classList.toggle('sidebar-hidden', !bookmarks);
+  const searchable = lane === 'home' || lane === 'bookmarks';
+  document.querySelector('.search-card').hidden = !searchable;
+  loadMore.hidden = lane !== 'bookmarks' || state.offset >= state.total;
 }
 
 async function renderLane(lane) {
@@ -1017,10 +1649,9 @@ async function renderLane(lane) {
     setStatus('Loading ' + lane + '…');
     if (lane === 'home') return renderHomeLane();
     if (lane === 'today') return renderTodayLane();
-    if (lane === 'analyze') return renderAnalyzeLane();
-    if (lane === 'map') return renderMapLane();
     if (lane === 'sources') return renderSourcesLane();
-    if (lane === 'discuss') return renderDiscussLane();
+    if (lane === 'people') return renderPeopleLane();
+    if (lane === 'synthesis') return renderSynthesisLane();
     return fetchBookmarks(true);
   } catch (error) {
     setResultsLayout('');
@@ -1033,22 +1664,29 @@ let debounce;
 document.querySelector('#searchForm').addEventListener('submit', (event) => {
   event.preventDefault();
   state.query = document.querySelector('#query').value.trim();
-  for (const other of document.querySelectorAll('[data-lane]')) other.classList.toggle('active', other.dataset.lane === 'bookmarks');
+  setActiveNav('bookmarks');
   renderLane('bookmarks');
 });
 document.querySelector('#query').addEventListener('input', (event) => {
   clearTimeout(debounce);
   debounce = setTimeout(() => {
     state.query = event.target.value.trim();
-    for (const other of document.querySelectorAll('[data-lane]')) other.classList.toggle('active', other.dataset.lane === 'bookmarks');
+    setActiveNav('bookmarks');
     renderLane('bookmarks');
   }, 300);
 });
 loadMore.addEventListener('click', () => fetchBookmarks(false));
 
+for (const chip of document.querySelectorAll('[data-source]')) {
+  chip.addEventListener('click', () => {
+    setSource(chip.dataset.source || '');
+    if (state.lane === 'bookmarks') renderLane('bookmarks');
+  });
+}
+
 for (const button of document.querySelectorAll('[data-lane]')) {
   button.addEventListener('click', () => {
-    for (const other of document.querySelectorAll('[data-lane]')) other.classList.toggle('active', other === button);
+    setActiveNav(button.dataset.lane);
     renderLane(button.dataset.lane);
   });
 }

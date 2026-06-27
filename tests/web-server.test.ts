@@ -273,30 +273,36 @@ test('bookmark web API returns status errors for invalid requests', async () => 
 
 test('app shell includes root element and static asset links', () => {
   const html = renderAppShell();
-  assert.match(html, /<div id="app" class="site-shell">/);
+  assert.match(html, /<div id="app" class="site-shell ft-archive-shell">/);
   assert.match(html, /class="nav-link active"/);
   assert.match(appCss, /\.nav-link/);
   assert.match(appCss, /\.pill-context/);
   assert.match(appCss, /\.sidebar-hidden/);
-  assert.match(appJs, /sidebar-hidden/);
   assert.match(html, /\/styles\.css/);
   assert.match(html, /\/app\.js/);
   assert.doesNotMatch(html, /fonts\.googleapis\.com/);
+  assert.match(html, /data-source="github-stars"/);
+  assert.match(html, /data-lane="people"/);
+  assert.match(html, /data-lane="synthesis"/);
+  assert.match(appCss, /\.ft-archive-shell/);
+  assert.match(appCss, /\.source-chip/);
   assert.match(appCss, /\.bookmark-card/);
   assert.match(appCss, /\.results-feed/);
   assert.match(appCss, /\.tweet-card/);
   assert.match(appCss, /\.link-preview/);
   assert.match(appJs, /renderMediaObjects/);
   assert.match(appJs, /fetchBookmarks/);
+  assert.match(appJs, /renderPeopleLane/);
+  assert.match(appJs, /renderSynthesisLane/);
+  assert.match(appJs, /sourceHints/);
   const inlineScripts = html.match(/<script>[\s\S]*?<\/script>/g) ?? [];
   assert.equal(inlineScripts.length, 1);
   assert.match(inlineScripts[0]!, /ft-theme/);
-  for (const lane of ['home', 'today', 'analyze', 'map', 'sources', 'discuss']) {
+  for (const lane of ['home', 'today', 'bookmarks', 'sources', 'people', 'synthesis']) {
     assert.match(html, new RegExp(`data-lane="${lane}"`));
   }
   assert.match(appJs, /renderTodayLane/);
   assert.match(appJs, /renderSourcesLane/);
-  assert.match(appJs, /renderDiscussLane/);
 });
 
 test('web API validates link preview requests', async () => {
