@@ -12,9 +12,24 @@ test('parseVttTranscript parses cue timings and text', () => {
   ]);
 });
 
+test('parseVttTranscript removes rolling auto-caption overlap and cue tags', () => {
+  assert.deepEqual(parseVttTranscript(`WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n<c>Agents need memory</c>\n\n00:00:03.000 --> 00:00:05.000\nAgents need memory and tools\n\n00:00:05.000 --> 00:00:07.000\nand tools for long tasks`), [
+    { tSec: 1, durationSec: 2, text: 'Agents need memory' },
+    { tSec: 3, durationSec: 2, text: 'and tools' },
+    { tSec: 5, durationSec: 2, text: 'for long tasks' },
+  ]);
+});
+
 test('parseTimedTextTranscript parses YouTube timedtext XML', () => {
   assert.deepEqual(parseTimedTextTranscript('<transcript><text start="1.5" dur="2">Hello &amp; bye</text></transcript>'), [
     { tSec: 1.5, durationSec: 2, text: 'Hello & bye' },
+  ]);
+});
+
+test('parseTimedTextTranscript removes rolling overlap', () => {
+  assert.deepEqual(parseTimedTextTranscript('<transcript><text start="1" dur="2">hello brave world</text><text start="3" dur="2">brave world today</text></transcript>'), [
+    { tSec: 1, durationSec: 2, text: 'hello brave world' },
+    { tSec: 3, durationSec: 2, text: 'today' },
   ]);
 });
 

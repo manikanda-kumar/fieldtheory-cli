@@ -179,10 +179,10 @@ export function parseTimedTextTranscript(xml: string): TranscriptSegment[] {
   while ((match = textRe.exec(xml)) !== null) {
     const start = attrNumber(match[1], 'start');
     const duration = attrNumber(match[1], 'dur') ?? 0;
-    const text = decodeXml(match[2].replace(/<[^>]+>/g, '')).trim();
+    const text = cleanCaptionText(match[2]);
     if (start != null && text) segments.push({ tSec: start, durationSec: duration, text });
   }
-  return segments;
+  return dedupeRollingCaptionSegments(segments);
 }
 
 export function parseVttTranscript(vtt: string): TranscriptSegment[] {
@@ -195,10 +195,10 @@ export function parseVttTranscript(vtt: string): TranscriptSegment[] {
     const [startRaw, endRaw] = lines[timingIndex].split('-->').map((part) => part.trim().split(/\s+/)[0]);
     const start = parseTimestamp(startRaw);
     const end = parseTimestamp(endRaw);
-    const text = lines.slice(timingIndex + 1).join(' ').trim();
+    const text = cleanCaptionText(lines.slice(timingIndex + 1).join(' '));
     if (start != null && end != null && text) segments.push({ tSec: start, durationSec: Math.max(0, end - start), text });
   }
-  return segments;
+  return dedupeRollingCaptionSegments(segments);
 }
 
 async function fetchMeta(videoId: string, videoUrl: string, deps: Required<Pick<FetchVideoOptions, 'hasCommand' | 'runCommand' | 'fetchText'>>, ytDlp?: YtDlpAccessOptions): Promise<VideoMeta> {
@@ -234,6 +234,33 @@ function parseTimestamp(value: string | undefined): number | undefined {
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
   if (parts.length === 2) return parts[0] * 60 + parts[1];
   return undefined;
+}
+
+function cleanCaptionText(value: string): string {
+  return decodeXml(value.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+
+function dedupeRollingCaptionSegments(segments: TranscriptSegment[]): TranscriptSegment[] {
+  const deduped: TranscriptSegment[] = [];
+  for (const segment of segments) {
+    const text = removeRollingCaptionOverlap(segment.text, deduped.at(-1)?.text ?? '');
+    if (text) deduped.push({ ...segment, text });
+  }
+  return deduped;
+}
+
+function removeRollingCaptionOverlap(text: string, previousText: string): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  const previousWords = previousText.split(/\s+/).filter(Boolean);
+  if (!words.length || !previousWords.length) return text;
+
+  const maxOverlap = Math.min(words.length - 1, previousWords.length, 40);
+  for (let overlap = maxOverlap; overlap >= 2; overlap -= 1) {
+    const previousTail = previousWords.slice(-overlap).join(' ').toLowerCase();
+    const currentHead = words.slice(0, overlap).join(' ').toLowerCase();
+    if (previousTail === currentHead) return words.slice(overlap).join(' ');
+  }
+  return text;
 }
 
 function decodeXml(value: string): string {
