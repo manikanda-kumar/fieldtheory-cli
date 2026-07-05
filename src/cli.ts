@@ -49,7 +49,7 @@ import { createOpenRouterClient } from './llm/openrouter-client.js';
 import { createTtsClient, type TtsEngine } from './llm/tts-client.js';
 import { processVideo, type OverviewMode } from './youtube/overview.js';
 import { resolvePlaylist } from './youtube/playlist.js';
-import { writeYoutubeIndexFromState } from './youtube/index-html.js';
+import { writeYoutubeIndexFromState, writeYoutubePlaylistIndex } from './youtube/index-html.js';
 import { createEngineYoutubeLlmClient, createFallbackYoutubeLlmClient, type YoutubeLlmClient } from './youtube/llm.js';
 import { markPlaylistSynced, updateYoutubeState } from './youtube/state.js';
 import type { YtDlpAccessOptions } from './youtube/yt-dlp.js';
@@ -1430,6 +1430,10 @@ export function buildCli() {
       const indexPath = await writeYoutubeIndexFromState();
       console.log(`  ✓ YouTube sync complete: ${processed} processed, ${skipped} skipped, ${failed} failed`);
       console.log(`  ✓ Index: ${indexPath}`);
+      if (!videoIdsFile) {
+        const playlistIndexPath = await writeYoutubePlaylistIndex(playlist.playlistId);
+        if (playlistIndexPath) console.log(`  ✓ Playlist index: ${playlistIndexPath}`);
+      }
       if (failed > 0) process.exitCode = 1;
     }));
 

@@ -4,7 +4,7 @@ import { createTtsClient, type TtsClient } from '../llm/tts-client.js';
 import { youtubeArtifactsDir, youtubeNotePath } from '../paths.js';
 import { upsertYoutubeVideosAsSources, type YoutubeSourceVideoInput } from '../canonical-bookmarks-db.js';
 import { fetchSlidesForVideo as fetchSlidesForVideoDefault, fetchVideo as fetchVideoDefault, NoTranscriptError, type VideoFetchResult } from './fetch.js';
-import { generateNotes, renderNotesMarkdown, type YoutubeNotes } from './notes.js';
+import { classifyYoutubeVideoType, generateNotes, renderNotesMarkdown, type YoutubeNotes } from './notes.js';
 import { buildScript, defaultOverviewMinutes } from './script.js';
 import { detectSlides, filterUsableSlideFrames, hasUsableSlideFrames, planSlideCapture, type FrameRef } from './slides.js';
 import { assembleVideo as assembleVideoDefault, type AssembleVideoInput } from './video-assemble.js';
@@ -60,16 +60,18 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
     return { videoId, status: 'skipped-unchanged', processed: false, notesPath: state.videos[videoId]?.artifacts.notesPath };
   }
 
-  const notes = await generateNotes(fetched, options.llm);
   const existingNotesPath = state.videos[videoId]?.artifacts.notesPath;
   const notesPath = youtubeNotePath(videoId, fetched.meta.publishDate, existingNotesPath);
-  let notesForMarkdown = notes;
   let slideImages: FrameRef[] = [];
   const artifacts: Record<string, string | undefined> = { notesPath };
   let status: 'done' | 'partial' = 'done';
 
+  // Capture slides BEFORE generating notes so their OCR text can enrich the
+  // notes prompt. Slide gating pre-notes uses the title-derived video type
+  // (notes.videoType is not available yet).
   if (options.overview === 'slides' || options.overview === 'video') {
-    const slidePlan = planSlideCapture({ meta: fetched.meta, segments: fetched.segments, notes });
+    const initialVideoType = classifyYoutubeVideoType(fetched.meta);
+    const slidePlan = planSlideCapture({ meta: fetched.meta, segments: fetched.segments, videoType: initialVideoType });
     if (slidePlan.shouldAttempt) {
       const artifactDir = youtubeArtifactsDir(videoId);
       const frames = await (options.fetchSlides ?? fetchSlidesForVideoDefault)(videoId, {
@@ -79,7 +81,7 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
         ytDlp: options.ytDlp,
       }).catch(() => [] as FrameRef[]);
       const usableFrames = filterUsableSlideFrames(frames);
-      if (hasUsableSlideFrames(usableFrames, { videoType: notes.videoType, transcriptCueScore: slidePlan.transcriptCueScore })) {
+      if (hasUsableSlideFrames(usableFrames, { videoType: initialVideoType, transcriptCueScore: slidePlan.transcriptCueScore })) {
         artifacts.slideCount = String(usableFrames.length);
         artifacts.slidesDir = artifactDir;
         slideImages = usableFrames;
@@ -87,7 +89,8 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
     }
   }
 
-  notesForMarkdown = withApproximateChapters(notesForMarkdown, fetched.meta.durationSec);
+  const notes = await generateNotes({ ...fetched, slides: slideImages }, options.llm);
+  let notesForMarkdown = withApproximateChapters(notes, fetched.meta.durationSec);
   // Slides are embedded inline within the chapter timeline for visual continuity,
   // not appended as a detached link list.
   let notesMarkdown = renderNotesMarkdown(videoId, fetched.meta, notesForMarkdown, slideImages);

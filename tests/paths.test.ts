@@ -69,6 +69,8 @@ test('paths: raindrop bookmark cache paths are scoped under FT_DATA_DIR raindrop
 test('paths: youtube notes are grouped by publish month and keep existing paths stable', () => {
   withEnv({ FT_LIBRARY_DIR: '/tmp/ft-library', FT_DATA_DIR: '/tmp/ft-data' }, () => {
     assert.equal(youtubeLibraryIndexHtmlPath(), path.join('/tmp/ft-library', 'youtube', 'index.html'));
+    assert.equal(youtubeLibraryIndexHtmlPath('PLabc123'), path.join('/tmp/ft-library', 'youtube', 'index-PLabc123.html'));
+    assert.throws(() => youtubeLibraryIndexHtmlPath('../evil'), /Invalid youtube playlist id/);
     assert.equal(youtubeNotePath('abc123', '20260512'), path.join('/tmp/ft-library', 'youtube', '2026-05', 'abc123.md'));
     assert.equal(youtubeNotePath('abc123', '2026-05-12T00:00:00.000Z'), path.join('/tmp/ft-library', 'youtube', '2026-05', 'abc123.md'));
     assert.equal(youtubeNotePath('abc123', undefined), path.join('/tmp/ft-library', 'youtube', 'undated', 'abc123.md'));

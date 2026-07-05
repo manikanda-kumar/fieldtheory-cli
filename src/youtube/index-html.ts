@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { youtubeLibraryDir, youtubeLibraryIndexHtmlPath } from '../paths.js';
+import type { YoutubeVideoState } from './state.js';
 import { loadYoutubeState, reconcileYoutubeStateFromLibrary } from './state.js';
 
 export interface YoutubeIndexEntry {
@@ -26,11 +27,34 @@ export interface RenderYoutubeIndexInput {
   entries: YoutubeIndexEntry[];
 }
 
-export async function writeYoutubeIndexHtml(entries: YoutubeIndexEntry[], generatedAt = new Date().toISOString()): Promise<string> {
-  const outPath = youtubeLibraryIndexHtmlPath();
+export async function writeYoutubeIndexHtml(
+  entries: YoutubeIndexEntry[],
+  generatedAt = new Date().toISOString(),
+  playlistId?: string,
+): Promise<string> {
+  const outPath = youtubeLibraryIndexHtmlPath(playlistId);
   await mkdir(path.dirname(outPath), { recursive: true });
   await writeFile(outPath, renderYoutubeIndexHtml({ generatedAt, youtubeRoot: youtubeLibraryDir(), entries }), 'utf8');
   return outPath;
+}
+
+function toIndexEntry(videoId: string, video: YoutubeVideoState): YoutubeIndexEntry {
+  return {
+    videoId,
+    title: video.title ?? videoId,
+    channel: video.channel,
+    videoType: video.videoType,
+    durationSec: video.durationSec,
+    published: video.published,
+    synced: video.updatedAt,
+    tldr: video.tldr,
+    topics: video.topics,
+    notesPath: video.artifacts.notesPath,
+    thumbnailPath: video.artifacts.thumbnailPath ?? `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`,
+    slideCount: video.artifacts.slideCount ? Number(video.artifacts.slideCount) : undefined,
+    audioPath: video.artifacts.audioPath,
+    videoPath: video.artifacts.videoPath,
+  };
 }
 
 export async function writeYoutubeIndexFromState(generatedAt = new Date().toISOString()): Promise<string> {
@@ -38,23 +62,29 @@ export async function writeYoutubeIndexFromState(generatedAt = new Date().toISOS
   const state = await loadYoutubeState();
   const entries: YoutubeIndexEntry[] = Object.entries(state.videos)
     .filter(([, video]) => Boolean(video.artifacts.notesPath))
-    .map(([videoId, video]) => ({
-      videoId,
-      title: video.title ?? videoId,
-      channel: video.channel,
-      videoType: video.videoType,
-      durationSec: video.durationSec,
-      published: video.published,
-      synced: video.updatedAt,
-      tldr: video.tldr,
-      topics: video.topics,
-      notesPath: video.artifacts.notesPath,
-      thumbnailPath: video.artifacts.thumbnailPath ?? `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`,
-      slideCount: video.artifacts.slideCount ? Number(video.artifacts.slideCount) : undefined,
-      audioPath: video.artifacts.audioPath,
-      videoPath: video.artifacts.videoPath,
-    }));
+    .map(([videoId, video]) => toIndexEntry(videoId, video));
   return writeYoutubeIndexHtml(entries, generatedAt);
+}
+
+/**
+ * Write a playlist-scoped index (`index-<playlistId>.html`) containing only the
+ * videos recorded as members of that playlist in state. Shared notes/markdown
+ * are untouched; a video in multiple playlists appears in each playlist index.
+ * Returns null when the playlist has no members with notes yet.
+ */
+export async function writeYoutubePlaylistIndex(
+  playlistId: string,
+  generatedAt = new Date().toISOString(),
+): Promise<string | null> {
+  await reconcileYoutubeStateFromLibrary();
+  const state = await loadYoutubeState();
+  const videoIds = [...new Set(state.playlists[playlistId]?.videoIds ?? [])];
+  const entries: YoutubeIndexEntry[] = videoIds
+    .map((videoId) => [videoId, state.videos[videoId]] as const)
+    .filter((pair): pair is readonly [string, YoutubeVideoState] => Boolean(pair[1]?.artifacts.notesPath))
+    .map(([videoId, video]) => toIndexEntry(videoId, video));
+  if (entries.length === 0) return null;
+  return writeYoutubeIndexHtml(entries, generatedAt, playlistId);
 }
 
 export function renderYoutubeIndexHtml(input: RenderYoutubeIndexInput): string {

@@ -98,7 +98,10 @@ export function youtubeLibraryDir(): string {
   return path.join(libraryDir(), 'youtube');
 }
 
-export function youtubeLibraryIndexHtmlPath(): string {
+export function youtubeLibraryIndexHtmlPath(playlistId?: string): string {
+  if (playlistId) {
+    return path.join(youtubeLibraryDir(), `index-${safePathSegment(playlistId, 'youtube playlist id')}.html`);
+  }
   return path.join(youtubeLibraryDir(), 'index.html');
 }
 
