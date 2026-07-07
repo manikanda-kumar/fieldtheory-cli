@@ -18,6 +18,13 @@ export interface ProjectCommit {
   subject: string;
 }
 
+export interface SessionPrompt {
+  agent: 'claude';
+  repo: string;
+  timestamp: string;
+  text: string;
+}
+
 export interface ProjectRecord {
   repo: string;
   path: string;
@@ -27,6 +34,7 @@ export interface ProjectRecord {
   pendingFiles: number;
   unpushedCommits: number;
   recentCommits: ProjectCommit[];
+  recentPrompts?: { timestamp: string; text: string }[];
   scannedAt: string;
 }
 
@@ -60,11 +68,18 @@ export interface ProjectsMeta {
   scanRoot: string;
   repoCount: number;
   errors: ProjectScanError[];
+  sessionFiles?: Record<string, ProjectSessionFileState>;
 }
 
 export interface ProjectSyncOptions extends ProjectScanOptions {
   /** Stable clock injection for tests and deterministic exports. */
   now?: Date;
+  /** Skip Claude Code session prompt extraction. */
+  noSessions?: boolean;
+  /** Root containing Claude Code project JSONL directories. Defaults to ~/.claude/projects. */
+  claudeProjectsRoot?: string;
+  /** Keep session prompts newer than this many days. Default: 14. */
+  sessionRetentionDays?: number;
 }
 
 export interface ProjectSyncResult {
@@ -74,4 +89,9 @@ export interface ProjectSyncResult {
   metaPath: string;
   libraryDir: string;
   activePath: string;
+}
+
+export interface ProjectSessionFileState {
+  mtimeMs: number;
+  size: number;
 }

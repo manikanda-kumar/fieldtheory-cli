@@ -14,6 +14,12 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function truncate(value: string, max: number): string {
+  const normalized = oneLine(value);
+  if (normalized.length <= max) return normalized;
+  return normalized.slice(0, max).trimEnd();
+}
+
 function firstLines(value: string | undefined, count: number): string | undefined {
   if (!value) return undefined;
   const lines = value.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, count);
@@ -26,6 +32,10 @@ function dateOnly(value: string | undefined): string {
 
 function commitSubjectLine(commit: ProjectCommit): string {
   return `- ${dateOnly(commit.date)} ${commit.subject}`;
+}
+
+function promptLine(prompt: { timestamp: string; text: string }): string {
+  return `- ${dateOnly(prompt.timestamp)} ${truncate(prompt.text, 200)}`;
 }
 
 export function buildProjectMarkdown(record: ProjectRecord): string {
@@ -73,6 +83,12 @@ export function buildProjectMarkdown(record: ProjectRecord): string {
     lines.push('');
   }
 
+  if (record.recentPrompts && record.recentPrompts.length > 0) {
+    lines.push('## Recent agent queries');
+    for (const prompt of record.recentPrompts) lines.push(promptLine(prompt));
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 
@@ -85,6 +101,13 @@ function activityScore(record: ProjectRecord, now: Date): number {
     if (!Number.isFinite(commitMs)) continue;
     const ageDays = Math.max(0, (nowMs - commitMs) / (24 * 60 * 60 * 1000));
     score += Math.exp(-ageDays / 7);
+  }
+
+  for (const prompt of record.recentPrompts ?? []) {
+    const promptMs = Date.parse(prompt.timestamp);
+    if (!Number.isFinite(promptMs)) continue;
+    const ageDays = Math.max(0, (nowMs - promptMs) / (24 * 60 * 60 * 1000));
+    score += 0.5 * Math.exp(-ageDays / 7);
   }
 
   score += Math.min(record.pendingFiles, 20) * 0.05;
@@ -118,6 +141,7 @@ function blockForProject(record: ProjectRecord): string[] {
   const next = firstLines(record.goalNowNext?.next, 2);
   if (now) lines.push(`- Now: ${now}`);
   if (next) lines.push(`- Next: ${next}`);
+  if (record.recentPrompts?.[0]) lines.push(`- Recent focus: ${truncate(record.recentPrompts[0].text, 120)}`);
   lines.push(`- Last touched: ${dateOnly(record.lastCommitAt)}`);
   lines.push('');
   return lines;

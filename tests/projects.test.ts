@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, readFile, writeFile, mkdir, utimes } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir, utimes, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import { extractGoalNowNext, extractReadmeDescription, scanProjects } from '../src/projects/scan.js';
+import { collectSessionPrompts, decodeClaudeProjectRepo } from '../src/projects/sessions.js';
 import { buildProjectMarkdown, buildProjectsActiveMarkdown, rankActiveProjects } from '../src/projects/markdown.js';
 import { syncProjects } from '../src/projects/sync.js';
 import type { ProjectRecord } from '../src/projects/types.js';
@@ -326,4 +327,163 @@ test('projects: staleness pre-filter skips old repos before git commands', async
     assert.equal(result.records.length, 0);
     assert.equal(result.errors.length, 0);
   });
+});
+
+// ── Claude Code session prompt extraction ───────────────────────────────
+
+function claudeEncodedPath(repoPath: string): string {
+  return repoPath.replace(/\//g, '-');
+}
+
+function jsonLine(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function userLine(content: unknown, timestamp = '2026-07-06T12:00:00.000Z', extra: Record<string, unknown> = {}): string {
+  return jsonLine({
+    type: 'user',
+    timestamp,
+    message: { content },
+    ...extra,
+  });
+}
+
+test('projects: Claude dir-name decoding resolves exact and hyphenated repo paths, and skips unmapped dirs', async () => {
+  await withTempDir('ft-projects-decode-', async (scanRoot) => {
+    await mkdir(path.join(scanRoot, 'fieldtheory-cli'));
+    await mkdir(path.join(scanRoot, 'my-repo'));
+
+    assert.equal(
+      decodeClaudeProjectRepo(claudeEncodedPath(path.join(scanRoot, 'fieldtheory-cli')), scanRoot),
+      'fieldtheory-cli',
+    );
+    assert.equal(
+      decodeClaudeProjectRepo(claudeEncodedPath(path.join(scanRoot, 'my-repo')), scanRoot),
+      'my-repo',
+    );
+    assert.equal(
+      decodeClaudeProjectRepo(claudeEncodedPath(path.join(os.tmpdir(), 'elsewhere')), scanRoot),
+      null,
+    );
+  });
+});
+
+test('projects: Claude session line filtering keeps user prompts and skips sidechain/tool/noise/malformed lines', async () => {
+  await withTempDir('ft-projects-sessions-', async (root) => {
+    const scanRoot = path.join(root, 'Github');
+    const claudeRoot = path.join(root, 'claude-projects');
+    const repoPath = path.join(scanRoot, 'fieldtheory-cli');
+    const sessionDir = path.join(claudeRoot, claudeEncodedPath(repoPath));
+    await mkdir(sessionDir, { recursive: true });
+    await mkdir(repoPath, { recursive: true });
+    await writeFile(path.join(sessionDir, 'session.jsonl'), [
+      userLine('Implement the projects session parser'),
+      userLine('Skip sidechain', '2026-07-06T12:01:00.000Z', { isSidechain: true }),
+      userLine([{ type: 'tool_result', content: 'ignored' }], '2026-07-06T12:02:00.000Z'),
+      userLine('<system-reminder>ignore this</system-reminder>', '2026-07-06T12:03:00.000Z'),
+      userLine('<task-notification>\n<task-id>abc</task-id>\n</task-notification>', '2026-07-06T12:03:30.000Z'),
+      userLine('Caveat: hook wrapper noise', '2026-07-06T12:04:00.000Z'),
+      '{not json',
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = await collectSessionPrompts({
+      scanRoot,
+      claudeProjectsRoot: claudeRoot,
+      now: new Date('2026-07-07T00:00:00.000Z'),
+    });
+
+    assert.equal(result.prompts.length, 1);
+    assert.deepEqual(result.prompts[0], {
+      agent: 'claude',
+      repo: 'fieldtheory-cli',
+      timestamp: '2026-07-06T12:00:00.000Z',
+      text: 'Implement the projects session parser',
+    });
+  });
+});
+
+test('projects: Claude session retention drops prompts older than retentionDays', async () => {
+  await withTempDir('ft-projects-retention-', async (root) => {
+    const scanRoot = path.join(root, 'Github');
+    const claudeRoot = path.join(root, 'claude-projects');
+    const repoPath = path.join(scanRoot, 'fieldtheory-cli');
+    const sessionDir = path.join(claudeRoot, claudeEncodedPath(repoPath));
+    await mkdir(sessionDir, { recursive: true });
+    await mkdir(repoPath, { recursive: true });
+    await writeFile(path.join(sessionDir, 'session.jsonl'), [
+      userLine('new prompt', '2026-07-06T12:00:00.000Z'),
+      userLine('old prompt', '2026-06-01T12:00:00.000Z'),
+    ].join('\n'), 'utf8');
+
+    const result = await collectSessionPrompts({
+      scanRoot,
+      claudeProjectsRoot: claudeRoot,
+      retentionDays: 14,
+      now: new Date('2026-07-07T00:00:00.000Z'),
+    });
+
+    assert.deepEqual(result.prompts.map((prompt) => prompt.text), ['new prompt']);
+  });
+});
+
+test('projects: Claude session incremental parsing skips unchanged files without reading content', async () => {
+  await withTempDir('ft-projects-incremental-', async (root) => {
+    const scanRoot = path.join(root, 'Github');
+    const claudeRoot = path.join(root, 'claude-projects');
+    const repoPath = path.join(scanRoot, 'fieldtheory-cli');
+    const sessionDir = path.join(claudeRoot, claudeEncodedPath(repoPath));
+    const sessionFile = path.join(sessionDir, 'session.jsonl');
+    await mkdir(sessionDir, { recursive: true });
+    await mkdir(repoPath, { recursive: true });
+    await writeFile(sessionFile, `${userLine('original prompt')}\n`, 'utf8');
+    const info = await stat(sessionFile);
+    let reads = 0;
+
+    const result = await collectSessionPrompts({
+      scanRoot,
+      claudeProjectsRoot: claudeRoot,
+      now: new Date('2026-07-07T00:00:00.000Z'),
+      previousFileStates: {
+        [sessionFile]: { mtimeMs: info.mtimeMs, size: info.size },
+      },
+      readFileText: async () => {
+        reads += 1;
+        return `${userLine('mutated prompt')}\n`;
+      },
+    });
+
+    assert.equal(reads, 0);
+    assert.equal(result.prompts.length, 0);
+    assert.deepEqual(result.fileStates[sessionFile], { mtimeMs: info.mtimeMs, size: info.size });
+  });
+});
+
+test('projects: markdown renders recent agent queries, active focus, and prompt activity boost', () => {
+  const now = new Date('2026-07-07T00:00:00.000Z');
+  const prompted = makeRecord({
+    repo: 'prompted',
+    lastCommitAt: undefined,
+    recentCommits: [],
+    recentPrompts: [
+      {
+        timestamp: '2026-07-06T12:00:00.000Z',
+        text: 'Investigate Claude session prompt extraction\nand markdown wiring',
+      },
+    ],
+  });
+  const idle = makeRecord({
+    repo: 'idle',
+    lastCommitAt: undefined,
+    recentCommits: [],
+    recentPrompts: undefined,
+  });
+
+  const projectMarkdown = buildProjectMarkdown(prompted);
+  assert.match(projectMarkdown, /## Recent agent queries\n- 2026-07-06 Investigate Claude session prompt extraction and markdown wiring/);
+
+  const activeMarkdown = buildProjectsActiveMarkdown([idle, prompted], { now });
+  assert.match(activeMarkdown, /## prompted/);
+  assert.match(activeMarkdown, /- Recent focus: Investigate Claude session prompt extraction and markdown wiring/);
+  assert.equal(rankActiveProjects([idle, prompted], now)[0].repo, 'prompted');
 });

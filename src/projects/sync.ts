@@ -3,11 +3,12 @@
  * and emit deterministic markdown for agent-readable work context.
  */
 
-import { writeJson, writeJsonLines } from '../fs.js';
+import { pathExists, readJson, readJsonLines, writeJson, writeJsonLines } from '../fs.js';
 import { scanProjects } from './scan.js';
+import { collectSessionPrompts } from './sessions.js';
 import { emitProjectsMarkdown } from './markdown.js';
 import { ensureProjectsDir, ensureProjectsLibraryDir, projectsCachePath, projectsMetaPath, projectsLibraryDir } from './paths.js';
-import type { ProjectRecord, ProjectSyncOptions, ProjectSyncResult, ProjectsMeta } from './types.js';
+import type { ProjectRecord, ProjectSyncOptions, ProjectSyncResult, ProjectsMeta, SessionPrompt } from './types.js';
 
 function sortedForCache(records: ProjectRecord[]): ProjectRecord[] {
   return [...records].sort((a, b) => {
@@ -17,15 +18,79 @@ function sortedForCache(records: ProjectRecord[]): ProjectRecord[] {
   });
 }
 
+function promptKey(prompt: { timestamp: string; text: string }): string {
+  return `${prompt.timestamp}\n${prompt.text}`;
+}
+
+function recentPromptsForRepo(
+  repo: string,
+  prompts: SessionPrompt[],
+  previous: ProjectRecord | undefined,
+  cutoffMs: number,
+): { timestamp: string; text: string }[] | undefined {
+  const byKey = new Map<string, { timestamp: string; text: string }>();
+
+  for (const prompt of previous?.recentPrompts ?? []) {
+    if ((Date.parse(prompt.timestamp) || 0) < cutoffMs) continue;
+    byKey.set(promptKey(prompt), prompt);
+  }
+  for (const prompt of prompts) {
+    if (prompt.repo === repo) {
+      const value = { timestamp: prompt.timestamp, text: prompt.text };
+      byKey.set(promptKey(value), value);
+    }
+  }
+
+  const sorted = [...byKey.values()].sort((a, b) => {
+    const byTime = (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0);
+    if (byTime !== 0) return byTime;
+    return a.text.localeCompare(b.text);
+  }).slice(0, 50);
+
+  return sorted.length ? sorted : undefined;
+}
+
+async function readPreviousMeta(metaPath: string): Promise<ProjectsMeta | undefined> {
+  if (!(await pathExists(metaPath))) return undefined;
+  try {
+    return await readJson<ProjectsMeta>(metaPath);
+  } catch {
+    return undefined;
+  }
+}
+
+async function readPreviousRecords(cachePath: string): Promise<Map<string, ProjectRecord>> {
+  const records = await readJsonLines<ProjectRecord>(cachePath);
+  return new Map(records.map((record) => [record.repo, record]));
+}
+
 export async function syncProjects(options: ProjectSyncOptions = {}): Promise<ProjectSyncResult> {
   ensureProjectsDir();
   ensureProjectsLibraryDir();
 
   const now = options.now ?? new Date();
+  const sessionRetentionDays = options.sessionRetentionDays ?? 14;
+  const sessionCutoffMs = now.getTime() - sessionRetentionDays * 24 * 60 * 60 * 1000;
   const scanResult = await scanProjects({ ...options, now });
-  const records = sortedForCache(scanResult.records);
   const cachePath = projectsCachePath();
   const metaPath = projectsMetaPath();
+  const previousMeta = await readPreviousMeta(metaPath);
+  const previousRecords = await readPreviousRecords(cachePath);
+  const sessionResult = options.noSessions
+    ? { prompts: [], fileStates: previousMeta?.sessionFiles }
+    : await collectSessionPrompts({
+      scanRoot: scanResult.scanRoot,
+      claudeProjectsRoot: options.claudeProjectsRoot,
+      retentionDays: sessionRetentionDays,
+      now,
+      previousFileStates: previousMeta?.sessionFiles,
+    });
+  const records = sortedForCache(scanResult.records.map((record) => ({
+    ...record,
+    recentPrompts: options.noSessions
+      ? undefined
+      : recentPromptsForRepo(record.repo, sessionResult.prompts, previousRecords.get(record.repo), sessionCutoffMs),
+  })));
 
   await writeJsonLines(cachePath, records);
 
@@ -34,6 +99,7 @@ export async function syncProjects(options: ProjectSyncOptions = {}): Promise<Pr
     scanRoot: scanResult.scanRoot,
     repoCount: records.length,
     errors: scanResult.errors,
+    ...(sessionResult.fileStates ? { sessionFiles: sessionResult.fileStates } : {}),
   };
   await writeJson(metaPath, meta);
 
