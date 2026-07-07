@@ -16,6 +16,7 @@ import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
 import type { RaindropRecord } from '../src/raindrop/types.js';
 import type { GitHubStarRecord } from '../src/github-stars/types.js';
+import type { ProjectRecord } from '../src/projects/types.js';
 
 async function withIsolatedDataDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-canonical-'));
@@ -42,6 +43,12 @@ async function writeGitHubStars(dir: string, records: GitHubStarRecord[]): Promi
   await writeJsonLines(path.join(githubDir, 'stars.jsonl'), records);
 }
 
+async function writeProjects(dir: string, records: ProjectRecord[]): Promise<void> {
+  const projectsDir = path.join(dir, 'projects');
+  await mkdir(projectsDir, { recursive: true });
+  await writeJsonLines(path.join(projectsDir, 'projects.jsonl'), records);
+}
+
 function githubStarRecord(overrides: Partial<GitHubStarRecord> = {}): GitHubStarRecord {
   return {
     id: 123,
@@ -63,6 +70,30 @@ function githubStarRecord(overrides: Partial<GitHubStarRecord> = {}): GitHubStar
     updatedAt: '2026-05-25T09:00:00Z',
     starredAt: '2026-05-31T12:34:56Z',
     syncedAt: '2026-05-31T13:00:00Z',
+    ...overrides,
+  };
+}
+
+function projectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
+  return {
+    repo: 'tool',
+    path: '/tmp/tool',
+    description: 'Local project for agent memory',
+    goalNowNext: {
+      goal: 'Build project source indexing',
+      now: 'Testing canonical integration',
+      next: 'Wire CLI',
+    },
+    lastCommitAt: '2026-07-06T12:00:00.000Z',
+    pendingFiles: 2,
+    unpushedCommits: 1,
+    recentCommits: [
+      { hash: 'abc123', date: '2026-07-06T12:00:00.000Z', subject: 'add project canonical source' },
+    ],
+    recentPrompts: [
+      { timestamp: '2026-07-06T13:00:00.000Z', text: 'How should project prompts feed search?' },
+    ],
+    scannedAt: '2026-07-07T00:00:00.000Z',
     ...overrides,
   };
 }
@@ -153,6 +184,83 @@ test('rebuildCanonicalIndex indexes GitHub stars and searches repo metadata', as
     const matches = await searchCanonicalBookmarks({ query: 'agent memory TypeScript example', limit: 10 });
     assert.equal(matches.length, 1);
     assert.equal(matches[0].id, listed[0].id);
+  });
+});
+
+test('rebuildCanonicalIndex creates project source rows and indexes project context', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeProjects(dir, [projectRecord()]);
+
+    const result = await rebuildCanonicalIndex();
+    assert.equal(result.sourceCount, 1);
+    assert.equal(result.canonicalCount, 1);
+
+    const listed = await listCanonicalBookmarks({ source: 'project', limit: 10 });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].displayTitle, 'tool');
+    assert.equal(listed[0].canonicalUrl, '/tmp/tool');
+    assert.deepEqual(listed[0].sources, ['project']);
+
+    const matches = await searchCanonicalBookmarks({ query: 'canonical prompts', limit: 10 });
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].id, listed[0].id);
+  });
+});
+
+test('rebuildCanonicalIndex merges GitHub-remote project with matching GitHub star', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeGitHubStars(dir, [githubStarRecord()]);
+    await writeProjects(dir, [projectRecord({
+      repo: 'tool',
+      remoteUrl: 'https://github.com/example/tool',
+    })]);
+
+    const result = await rebuildCanonicalIndex();
+    assert.equal(result.sourceCount, 2);
+    assert.equal(result.canonicalCount, 1);
+
+    const listed = await listCanonicalBookmarks({ source: 'project', limit: 10 });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].canonicalUrl, 'https://github.com/example/tool');
+    assert.equal(listed[0].sourceCount, 2);
+    assert.deepEqual(listed[0].sources.sort(), ['github-stars', 'project']);
+  });
+});
+
+test('rebuildCanonicalIndex uses stable project dedupe key for projects without remote URL', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeProjects(dir, [projectRecord({ repo: 'local-only', path: '/tmp/local-only', remoteUrl: undefined })]);
+
+    await rebuildCanonicalIndex();
+
+    const db = await openDb(twitterBookmarksIndexPath());
+    try {
+      const row = db.exec(
+        `SELECT dedupe_key, source_url
+         FROM bookmark_sources
+         WHERE id = ?`,
+        ['project:local-only'],
+      )[0]?.values?.[0];
+      assert.deepEqual(row, ['project:local-only', '/tmp/local-only']);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test('rebuildCanonicalIndex caps project prompt text contribution', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeProjects(dir, [projectRecord({
+      recentPrompts: [
+        { timestamp: '2026-07-06T13:00:00.000Z', text: `${'x'.repeat(4500)}AFTER-CAP` },
+      ],
+    })]);
+
+    await rebuildCanonicalIndex();
+
+    const listed = await listCanonicalBookmarks({ source: 'project', limit: 10 });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].searchText.includes('AFTER-CAP'), false);
   });
 });
 

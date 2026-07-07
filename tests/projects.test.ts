@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { extractGoalNowNext, extractReadmeDescription, scanProjects } from '../src/projects/scan.js';
+import { extractGoalNowNext, extractReadmeDescription, normalizeProjectRemoteUrl, scanProjects } from '../src/projects/scan.js';
 import { collectSessionPrompts, decodeClaudeProjectRepo } from '../src/projects/sessions.js';
 import { buildProjectMarkdown, buildProjectsActiveMarkdown, rankActiveProjects } from '../src/projects/markdown.js';
 import { syncProjects } from '../src/projects/sync.js';
@@ -73,6 +73,17 @@ async function gitAvailable(): Promise<boolean> {
 
 async function git(cwd: string, args: string[]): Promise<void> {
   await execFileAsync('git', args, { cwd });
+}
+
+async function createCommittedRepo(repoDir: string, remoteUrl?: string): Promise<void> {
+  await mkdir(repoDir);
+  await git(repoDir, ['init']);
+  await git(repoDir, ['config', 'user.email', 'test@example.com']);
+  await git(repoDir, ['config', 'user.name', 'Test User']);
+  await writeFile(path.join(repoDir, 'README.md'), `# ${path.basename(repoDir)}\n\nFixture repo.\n`, 'utf8');
+  await git(repoDir, ['add', 'README.md']);
+  await git(repoDir, ['commit', '-m', 'initial commit']);
+  if (remoteUrl) await git(repoDir, ['remote', 'add', 'origin', remoteUrl]);
 }
 
 // ── CONTINUITY.md extraction ─────────────────────────────────────────────
@@ -295,9 +306,40 @@ test('projects: sync scans a real tiny git repo and writes JSONL plus markdown',
 
       const jsonl = await readFile(jsonlPath, 'utf8');
       assert.match(jsonl, /"repo":"tiny-repo"/);
+      assert.equal(result.records[0].remoteUrl, undefined);
       assert.match(await readFile(projectMdPath, 'utf8'), /## Now\nRunning integration test/);
       assert.match(await readFile(activeMdPath, 'utf8'), /## tiny-repo/);
     });
+  });
+});
+
+test('projects: normalizes GitHub remote URLs and preserves non-GitHub remotes', async (t) => {
+  if (!(await gitAvailable())) {
+    t.skip('git is unavailable');
+    return;
+  }
+
+  assert.equal(normalizeProjectRemoteUrl('git@github.com:owner/repo.git\n'), 'https://github.com/owner/repo');
+  assert.equal(normalizeProjectRemoteUrl('https://github.com/owner/repo.git'), 'https://github.com/owner/repo');
+  assert.equal(normalizeProjectRemoteUrl('ssh://git@example.com/owner/repo.git'), 'ssh://git@example.com/owner/repo.git');
+
+  await withTempDir('ft-projects-remotes-', async (scanRoot) => {
+    await createCommittedRepo(path.join(scanRoot, 'ssh-github'), 'git@github.com:owner/ssh-github.git');
+    await createCommittedRepo(path.join(scanRoot, 'https-github'), 'https://github.com/owner/https-github.git');
+    await createCommittedRepo(path.join(scanRoot, 'elsewhere'), 'ssh://git@example.com/owner/elsewhere.git');
+    await createCommittedRepo(path.join(scanRoot, 'missing'));
+
+    const result = await scanProjects({
+      scanRoot,
+      now: new Date('2026-07-07T00:00:00.000Z'),
+      gitTimeoutMs: 5000,
+    });
+    const byRepo = new Map(result.records.map((record) => [record.repo, record]));
+
+    assert.equal(byRepo.get('ssh-github')?.remoteUrl, 'https://github.com/owner/ssh-github');
+    assert.equal(byRepo.get('https-github')?.remoteUrl, 'https://github.com/owner/https-github');
+    assert.equal(byRepo.get('elsewhere')?.remoteUrl, 'ssh://git@example.com/owner/elsewhere.git');
+    assert.equal(byRepo.get('missing')?.remoteUrl, undefined);
   });
 });
 
@@ -383,6 +425,7 @@ test('projects: Claude session line filtering keeps user prompts and skips sidec
       userLine('<system-reminder>ignore this</system-reminder>', '2026-07-06T12:03:00.000Z'),
       userLine('<task-notification>\n<task-id>abc</task-id>\n</task-notification>', '2026-07-06T12:03:30.000Z'),
       userLine('Caveat: hook wrapper noise', '2026-07-06T12:04:00.000Z'),
+      userLine('This session is being continued from a previous conversation that ran out of context. Summary: ...', '2026-07-06T12:04:30.000Z'),
       '{not json',
       '',
     ].join('\n'), 'utf8');

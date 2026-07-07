@@ -11,6 +11,7 @@ test('buildSyncAllPlan supports dry-run planning with optional context sources',
     'x-list',
     'raindrop',
     'github-stars',
+    'projects',
     'youtube',
     'canonical-index',
   ]);
@@ -19,10 +20,11 @@ test('buildSyncAllPlan supports dry-run planning with optional context sources',
 });
 
 test('buildSyncAllPlan honors --only and --skip source filters', () => {
-  const plan = buildSyncAllPlan({ only: 'github-stars,raindrop,youtube', skip: ['youtube'], noSynthesis: true });
+  const plan = buildSyncAllPlan({ only: 'github-stars,raindrop,projects,youtube', skip: ['youtube'], noSynthesis: true });
 
   assert.equal(plan.find((step) => step.id === 'github-stars')?.enabled, true);
   assert.equal(plan.find((step) => step.id === 'raindrop')?.enabled, true);
+  assert.equal(plan.find((step) => step.id === 'projects')?.enabled, true);
   assert.equal(plan.find((step) => step.id === 'youtube')?.enabled, false);
   assert.match(plan.find((step) => step.id === 'x')?.reason ?? '', /not selected/);
   assert.equal(plan.find((step) => step.id === 'canonical-index')?.enabled, true);
@@ -41,6 +43,18 @@ test('runSyncAll isolates source failures and still runs canonical rebuild', asy
   assert.deepEqual(commands.map((command) => command[0]), ['sync-raindrop', 'sync-github-stars', 'index']);
   assert.equal(result.steps.find((step) => step.id === 'raindrop')?.status, 'failed');
   assert.equal(result.steps.find((step) => step.id === 'canonical-index')?.status, 'ok');
+});
+
+test('buildSyncAllPlan places projects after GitHub stars and before YouTube', () => {
+  const plan = buildSyncAllPlan({ playlist: 'PL1', noSynthesis: true });
+  assert.deepEqual(
+    plan.filter((step) => ['github-stars', 'projects', 'youtube'].includes(step.id)).map((step) => [step.id, step.command[0]]),
+    [
+      ['github-stars', 'sync-github-stars'],
+      ['projects', 'sync-projects'],
+      ['youtube', 'sync-youtube'],
+    ],
+  );
 });
 
 test('formatSyncAllResult prints skipped prerequisites and failures', () => {

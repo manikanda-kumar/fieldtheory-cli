@@ -161,6 +161,27 @@ function parsePendingFiles(stdout: string): number {
   return stdout.split('\n').filter((line) => line.trim() !== '').length;
 }
 
+export function normalizeProjectRemoteUrl(value: string): string {
+  const trimmed = value.trim();
+  const sshMatch = trimmed.match(/^git@github\.com:([^/\s]+)\/(.+?)(?:\.git)?$/i);
+  if (sshMatch) return `https://github.com/${sshMatch[1]}/${sshMatch[2]}`;
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === 'https:' && url.hostname.toLowerCase() === 'github.com') {
+      const parts = url.pathname.replace(/^\/+/, '').replace(/\/+$/, '').split('/');
+      if (parts.length >= 2 && parts[0] && parts[1]) {
+        const repo = parts[1].replace(/\.git$/i, '');
+        return `https://github.com/${parts[0]}/${repo}`;
+      }
+    }
+  } catch {
+    // Non-URL remotes are preserved as-is below.
+  }
+
+  return trimmed;
+}
+
 async function runGit(repoPath: string, args: string[], timeout: number): Promise<GitResult> {
   const result = await execFileAsync('git', args, {
     cwd: repoPath,
@@ -231,6 +252,10 @@ async function scanRepo(
     .then((result) => Number.parseInt(result.stdout.trim(), 10) || 0)
     .catch(() => 0);
 
+  const remoteUrl = await runGit(repoPath, ['remote', 'get-url', 'origin'], gitTimeoutMs)
+    .then((result) => normalizeProjectRemoteUrl(result.stdout))
+    .catch(() => undefined);
+
   const continuity = await readOptionalFile(path.join(repoPath, 'CONTINUITY.md'));
   const readme = await readOptionalFile(path.join(repoPath, 'README.md'));
   const goalNowNext = continuity ? extractGoalNowNext(continuity) : undefined;
@@ -239,6 +264,7 @@ async function scanRepo(
   return {
     repo,
     path: repoPath,
+    remoteUrl,
     description,
     goalNowNext,
     lastCommitAt: recentCommits[0]?.date,

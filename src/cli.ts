@@ -45,6 +45,10 @@ import { syncRaindropBookmarks } from './raindrop/sync.js';
 import type { SyncRaindropOptions } from './raindrop/sync.js';
 import { syncGitHubStars } from './github-stars/sync.js';
 import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
+import { scanProjects } from './projects/scan.js';
+import { collectSessionPrompts } from './projects/sessions.js';
+import { getProjectsStatus, syncProjects } from './projects/sync.js';
+import { projectsActiveMarkdownPath, projectsCachePath } from './projects/paths.js';
 import { createOpenRouterClient } from './llm/openrouter-client.js';
 import { createTtsClient, type TtsEngine } from './llm/tts-client.js';
 import { processVideo, type OverviewMode } from './youtube/overview.js';
@@ -305,6 +309,14 @@ export function parseVideoIdsText(text: string): string[] {
 
 function stringOption(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function pathOption(value: unknown): string | undefined {
+  const raw = stringOption(value);
+  if (!raw) return undefined;
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
 }
 
 function collectCsvOption(value: string, previous: string[]): string[] {
@@ -621,6 +633,7 @@ function requireUnifiedIndex(): boolean {
 
   Run one of:
     ft sync-github-stars
+    ft sync-projects
     ft sync-raindrop
     ft sync
 `);
@@ -1178,12 +1191,12 @@ export function buildCli() {
 
   program
     .command('sync-all')
-    .description('Run the daily unified refresh: X, Raindrop, GitHub Stars, optional X list/YouTube, then canonical rebuild')
+    .description('Run the daily unified refresh: X, Raindrop, GitHub Stars, projects, optional X list/YouTube, then canonical rebuild')
     .option('--dry-run', 'Show the planned refresh steps without running them', false)
     .option('--x-list <id>', 'Include a 24h X list digest refresh')
     .option('--playlist <url-or-id>', 'Include a capped YouTube playlist sync')
     .option('--youtube-limit <n>', 'Max YouTube videos to process when --playlist is set', (v: string) => Number(v), 8)
-    .option('--skip <sources>', 'Comma-separated sources to skip: following,x,x-list,raindrop,github-stars,youtube', collectCsvOption, [])
+    .option('--skip <sources>', 'Comma-separated sources to skip: following,x,x-list,raindrop,github-stars,projects,youtube', collectCsvOption, [])
     .option('--only <sources>', 'Comma-separated sources to run before the required canonical rebuild')
     .option('--no-synthesis', 'Skip canonical Markdown export after rebuilding the unified index')
     .option('--classify', 'Pass --classify to source commands that support it', false)
@@ -1305,6 +1318,54 @@ export function buildCli() {
         const classifyResult = await classifyCanonicalBookmarks();
         console.log(`  ✓ Classified ${classifyResult.classified}/${classifyResult.total} bookmarks`);
       }
+    }));
+
+  // ── sync-projects ─────────────────────────────────────────────────────
+
+  program
+    .command('sync-projects')
+    .description('Scan local git repositories into project markdown and the canonical bookmark index')
+    .option('--root <path>', 'Root containing depth-1 project directories', '~/Github')
+    .option('--max-age-days <n>', 'Skip repos untouched for more than this many days', (v: string) => Number(v), 90)
+    .option('--no-sessions', 'Skip Claude Code session prompt extraction')
+    .option('--dry-run', 'Scan and report counts without writing cache files or rebuilding the canonical index')
+    .action(safe(async (options) => {
+      ensureDataDir();
+      const scanRoot = pathOption(options.root);
+      const maxAgeDays = typeof options.maxAgeDays === 'number' && Number.isFinite(options.maxAgeDays) ? options.maxAgeDays : 90;
+      const noSessions = options.sessions === false;
+
+      if (options.dryRun) {
+        const scan = await scanProjects({ scanRoot, maxAgeDays });
+        let withPrompts = 0;
+        if (!noSessions) {
+          const sessions = await collectSessionPrompts({ scanRoot: scan.scanRoot });
+          const promptedRepos = new Set(sessions.prompts.map((prompt) => prompt.repo));
+          withPrompts = scan.records.filter((record) => promptedRepos.has(record.repo)).length;
+        }
+        console.log(`  Projects dry run complete:`);
+        console.log(`    repos scanned: ${scan.records.length}`);
+        console.log(`    with ledgers: ${scan.records.filter((record) => record.goalNowNext).length}`);
+        console.log(`    with prompts: ${withPrompts}`);
+        console.log(`    errors: ${scan.errors.length}`);
+        console.log(`    cache: ${projectsCachePath()}`);
+        console.log(`    active: ${projectsActiveMarkdownPath()}`);
+        console.log(`    Canonical index not rebuilt (dry run)`);
+        return;
+      }
+
+      const result = await syncProjects({ scanRoot, maxAgeDays, noSessions });
+
+      console.log(`  Projects sync complete:`);
+      console.log(`    repos scanned: ${result.records.length}`);
+      console.log(`    with ledgers: ${result.records.filter((record) => record.goalNowNext).length}`);
+      console.log(`    with prompts: ${result.records.filter((record) => (record.recentPrompts?.length ?? 0) > 0).length}`);
+      console.log(`    errors: ${result.errors.length}`);
+      console.log(`    cache: ${result.cachePath}`);
+      console.log(`    active: ${result.activePath}`);
+
+      await rebuildCanonicalIndex();
+      console.log(`  ✓ Canonical index rebuilt`);
     }));
 
   // ── sync-browser (deprecated) ──────────────────────────────────────────
@@ -1758,7 +1819,7 @@ export function buildCli() {
     .option('--before <date>', 'Bookmarks posted before this date (YYYY-MM-DD)')
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 20)
     .option('--json', 'JSON output')
-    .option('--unified', 'Search unified X, Raindrop, GitHub Stars, and YouTube bookmarks')
+    .option('--unified', 'Search unified X, Raindrop, GitHub Stars, project, and YouTube bookmarks')
     .action(safe(async (query: string, options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
@@ -1823,9 +1884,9 @@ export function buildCli() {
     .option('--folder <name>', 'Filter by X bookmark folder name (exact or unambiguous prefix)')
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 30)
     .option('--offset <n>', 'Offset into results', (v: string) => Number(v), 0)
-    .option('--source <source>', 'Filter unified list by source: x, raindrop, github-stars, youtube')
+    .option('--source <source>', 'Filter unified list by source: x, raindrop, github-stars, project, youtube')
     .option('--json', 'JSON output')
-    .option('--unified', 'List unified X, Raindrop, GitHub Stars, and YouTube bookmarks')
+    .option('--unified', 'List unified X, Raindrop, GitHub Stars, project, and YouTube bookmarks')
     .action(safe(async (options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
@@ -2243,10 +2304,12 @@ export function buildCli() {
     .action(safe(async (options) => {
       const view = await getBookmarkStatusView();
       const followingStatus = await getFollowingStatus();
+      const projectsStatus = await getProjectsStatus();
       if (options.json) {
         printJson({
           bookmarks: view,
           following: followingStatus,
+          projects: projectsStatus,
           paths: getPathReport(),
         });
         return;
@@ -2259,6 +2322,14 @@ export function buildCli() {
         console.log(`  classified: ${followingStatus.classifiedCount}/${followingStatus.count}`);
         console.log(`  last updated: ${followingStatus.lastUpdated ?? 'never'}`);
         console.log(`  cache: ${followingStatus.cachePath}`);
+      }
+      if (projectsStatus && projectsStatus.count > 0) {
+        console.log('');
+        console.log('Projects');
+        console.log(`  projects: ${projectsStatus.count}`);
+        console.log(`  with prompts: ${projectsStatus.withPrompts}`);
+        console.log(`  last synced: ${projectsStatus.lastSyncedAt ?? 'never'}`);
+        console.log(`  cache: ${projectsStatus.cachePath}`);
       }
     }));
 
@@ -2320,9 +2391,9 @@ export function buildCli() {
     .description('Export bookmarks as individual markdown files')
     .option('--force', 'Re-export all bookmarks (overwrite existing files)')
     .option('--changed', 'Re-export bookmarks whose source data changed since markdown was written')
-    .option('--canonical', 'Export from the unified canonical index (includes Raindrop, X, GitHub Stars, YouTube)')
+    .option('--canonical', 'Export from the unified canonical index (includes Raindrop, X, GitHub Stars, project, YouTube)')
     .option('--preview', 'Export to a temporary directory for preview (implies --canonical)')
-    .option('--source <source>', 'Filter by source: raindrop, x, github-stars, youtube (requires --canonical or --preview)')
+    .option('--source <source>', 'Filter by source: raindrop, x, github-stars, project, youtube (requires --canonical or --preview)')
     .option('--limit <n>', 'Max bookmarks to export', (v: string) => Number(v))
     .action(safe(async (options) => {
       if (!requireIndex()) return;
@@ -3674,7 +3745,7 @@ export function buildCli() {
 
   const bookmarksAlias = program.command('bookmarks').description('(alias) Bookmark commands').helpOption(false);
   for (const cmd of ['sync', 'search', 'list', 'show', 'stats', 'viz', 'classify', 'classify-domains',
-    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media', 'sync-raindrop', 'sync-github-stars']) {
+    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media', 'sync-raindrop', 'sync-github-stars', 'sync-projects']) {
     bookmarksAlias.command(cmd).description(`Alias for: ft ${cmd}`).allowUnknownOption(true)
       .action(async () => {
         const args = ['node', 'ft', cmd, ...process.argv.slice(4)];

@@ -173,6 +173,17 @@ test('ft sync-github-stars: exposes expected options', () => {
   assert.ok(opts.includes('--classify'));
 });
 
+test('ft sync-projects: exposes expected options', () => {
+  const program = buildCli();
+  const syncProjectsCmd = program.commands.find((c: any) => c.name() === 'sync-projects');
+  assert.ok(syncProjectsCmd, 'sync-projects command should be registered');
+  const opts = syncProjectsCmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--root'));
+  assert.ok(opts.includes('--max-age-days'));
+  assert.ok(opts.includes('--no-sessions'));
+  assert.ok(opts.includes('--dry-run'));
+});
+
 test('ft sync-all: exposes unified refresh options', () => {
   const program = buildCli();
   const syncAllCmd = program.commands.find((c: any) => c.name() === 'sync-all');

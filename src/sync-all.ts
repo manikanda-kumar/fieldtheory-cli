@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-export type SyncAllSource = 'following' | 'x' | 'x-list' | 'raindrop' | 'github-stars' | 'youtube';
+export type SyncAllSource = 'following' | 'x' | 'x-list' | 'raindrop' | 'github-stars' | 'projects' | 'youtube';
 
 export interface SyncAllOptions {
   dryRun?: boolean;
@@ -39,7 +39,7 @@ export interface SyncAllRunner {
   run(command: string[]): Promise<{ exitCode: number | null }>;
 }
 
-const ALL_SOURCES: SyncAllSource[] = ['following', 'x', 'x-list', 'raindrop', 'github-stars', 'youtube'];
+const ALL_SOURCES: SyncAllSource[] = ['following', 'x', 'x-list', 'raindrop', 'github-stars', 'projects', 'youtube'];
 
 export function parseSyncAllSources(value: string | undefined): Set<SyncAllSource> | null {
   if (!value?.trim()) return null;
@@ -100,6 +100,13 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       source: 'github-stars',
       command: ['sync-github-stars', ...(classify ? ['--classify'] : [])],
       enabled: enabled('github-stars'),
+    },
+    {
+      id: 'projects',
+      label: 'Sync local projects',
+      source: 'projects',
+      command: ['sync-projects'],
+      enabled: enabled('projects'),
     },
     {
       id: 'youtube',

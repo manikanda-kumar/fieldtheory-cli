@@ -28,6 +28,7 @@ export interface SessionPrompt {
 export interface ProjectRecord {
   repo: string;
   path: string;
+  remoteUrl?: string;
   description?: string;
   goalNowNext?: ProjectGoalNowNext;
   lastCommitAt?: string;

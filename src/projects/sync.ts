@@ -10,6 +10,13 @@ import { emitProjectsMarkdown } from './markdown.js';
 import { ensureProjectsDir, ensureProjectsLibraryDir, projectsCachePath, projectsMetaPath, projectsLibraryDir } from './paths.js';
 import type { ProjectRecord, ProjectSyncOptions, ProjectSyncResult, ProjectsMeta, SessionPrompt } from './types.js';
 
+export interface ProjectsStatusView {
+  count: number;
+  withPrompts: number;
+  lastSyncedAt: string | null;
+  cachePath: string;
+}
+
 function sortedForCache(records: ProjectRecord[]): ProjectRecord[] {
   return [...records].sort((a, b) => {
     const byCommit = (Date.parse(b.lastCommitAt ?? '') || 0) - (Date.parse(a.lastCommitAt ?? '') || 0);
@@ -113,4 +120,25 @@ export async function syncProjects(options: ProjectSyncOptions = {}): Promise<Pr
     libraryDir: projectsLibraryDir(),
     activePath: mdResult.activePath,
   };
+}
+
+export async function getProjectsStatus(): Promise<ProjectsStatusView | null> {
+  const cachePath = projectsCachePath();
+  const metaPath = projectsMetaPath();
+  if (!(await pathExists(cachePath)) && !(await pathExists(metaPath))) return null;
+
+  let lastSyncedAt: string | null = null;
+  let count = 0;
+  try {
+    const meta = await readJson<ProjectsMeta>(metaPath);
+    lastSyncedAt = meta.lastSyncedAt ?? null;
+    count = meta.repoCount ?? 0;
+  } catch {
+    // Cache can still provide counts when meta is absent or malformed.
+  }
+
+  const records = await readJsonLines<ProjectRecord>(cachePath);
+  if (records.length > 0) count = records.length;
+  const withPrompts = records.filter((record) => (record.recentPrompts?.length ?? 0) > 0).length;
+  return { count, withPrompts, lastSyncedAt, cachePath };
 }

@@ -12,6 +12,8 @@ import { raindropBookmarksCachePath } from './raindrop/paths.js';
 import type { RaindropRecord } from './raindrop/types.js';
 import { githubStarsCachePath } from './github-stars/paths.js';
 import type { GitHubStarRecord } from './github-stars/types.js';
+import { projectsCachePath } from './projects/paths.js';
+import type { ProjectRecord } from './projects/types.js';
 
 export interface CanonicalRebuildResult {
   dbPath: string;
@@ -214,6 +216,28 @@ function compactText(parts: Array<string | null | undefined | string[]>): string
   return [...new Set(values)].join('\n');
 }
 
+function capCompactText(parts: string[], maxChars: number): string | null {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  let used = 0;
+
+  for (const part of parts) {
+    const text = part.trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    const separator = kept.length ? 1 : 0;
+    const remaining = maxChars - used - separator;
+    if (remaining <= 0) break;
+    const value = text.length > remaining ? text.slice(0, remaining).trimEnd() : text;
+    if (!value) break;
+    kept.push(value);
+    used += value.length + separator;
+    if (text.length > remaining) break;
+  }
+
+  return kept.length ? kept.join('\n') : null;
+}
+
 function parseSources(value: unknown): string[] {
   if (typeof value !== 'string' || !value.trim()) return [];
   try {
@@ -358,6 +382,54 @@ export function githubStarsSourceFromRecord(record: GitHubStarRecord): Canonical
     ].filter((link): link is string => Boolean(link)),
     contentPath: null,
     metadata: null,
+  };
+}
+
+function isNormalizedGithubRepoUrl(value: string | undefined): value is string {
+  if (!value) return false;
+  return /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/i.test(value);
+}
+
+export function projectSourceFromRecord(record: ProjectRecord): CanonicalSourceInput {
+  const savedAt = record.lastCommitAt ?? record.scannedAt;
+  const promptText = capCompactText((record.recentPrompts ?? []).map((prompt) => prompt.text), 4000);
+  const dedupeKey = isNormalizedGithubRepoUrl(record.remoteUrl)
+    ? dedupeKeyForUrl(record.remoteUrl)
+    : `project:${record.repo}`;
+
+  return {
+    id: `project:${record.repo}`,
+    source: 'project',
+    profile: null,
+    sourceItemId: record.repo,
+    sourceUrl: record.remoteUrl ?? record.path,
+    targetUrl: null,
+    dedupeKey,
+    title: record.repo,
+    text: compactText([
+      record.repo,
+      record.description,
+      record.goalNowNext?.goal,
+      record.goalNowNext?.now,
+      record.goalNowNext?.next,
+      record.recentCommits.map((commit) => commit.subject),
+      promptText,
+    ]),
+    authorHandle: null,
+    savedAt,
+    createdAt: savedAt,
+    modifiedAt: record.scannedAt,
+    folderPath: ['Projects'],
+    links: record.remoteUrl ? [record.remoteUrl] : [],
+    contentPath: null,
+    metadata: {
+      repo: record.repo,
+      path: record.path,
+      ...(record.remoteUrl ? { remoteUrl: record.remoteUrl } : {}),
+      pendingFiles: record.pendingFiles,
+      unpushedCommits: record.unpushedCommits,
+      promptCount: record.recentPrompts?.length ?? 0,
+    },
   };
 }
 
@@ -614,6 +686,12 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
         .map(githubStarsSourceFromRecord)
         .filter((row): row is CanonicalSourceInput => row !== null);
       sourceRows.push(...normalized);
+    }
+
+    const projectsPath = projectsCachePath();
+    if (await pathExists(projectsPath)) {
+      const projectRecords = await readJsonLines<ProjectRecord>(projectsPath);
+      sourceRows.push(...projectRecords.map(projectSourceFromRecord));
     }
 
     sourceRows.push(...readYoutubeSourcesFromDb(db));

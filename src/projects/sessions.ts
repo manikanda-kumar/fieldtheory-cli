@@ -101,7 +101,8 @@ function shouldSkipPrompt(text: string): boolean {
   return (
     trimmed.startsWith('<') ||
     trimmed.startsWith('Caveat:') ||
-    trimmed.startsWith('[Request interrupted')
+    trimmed.startsWith('[Request interrupted') ||
+    trimmed.startsWith('This session is being continued from a previous conversation')
   );
 }
 
