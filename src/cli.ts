@@ -1353,11 +1353,13 @@ export function buildCli() {
           console.log('  Re-run with --force to regenerate.');
           return;
         }
+        // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin a cheap
+        // engine without baking flags into the sync-all step list.
         const result = await synthesizeDaily(collection, connected, {
           profile: {
-            engine: stringOption(options.engine),
-            model: stringOption(options.model),
-            effort: stringOption(options.effort),
+            engine: stringOption(options.engine) ?? stringOption(process.env.FT_DAILY_ENGINE),
+            model: stringOption(options.model) ?? stringOption(process.env.FT_DAILY_MODEL),
+            effort: stringOption(options.effort) ?? stringOption(process.env.FT_DAILY_EFFORT),
           },
         });
         if (result.skipped) {
