@@ -44,16 +44,45 @@ function snippet(item: CanonicalRecentItem): string {
   return item.searchText.replace(/\s+/g, ' ').slice(0, SNIPPET_CHARS);
 }
 
-export function buildDailyPrompt(collection: DailyCollection, connected: ConnectedItem[]): string {
+export interface DailyAliases {
+  /** Short prompt alias (i1, r2, ...) → real canonical id. */
+  items: Map<string, string>;
+  related: Map<string, string>;
+}
+
+/** Long canonical hash ids get mangled by smaller models; the prompt uses
+ *  short ordinal aliases (i1/r1) and citations are mapped back locally. */
+export function buildDailyAliases(collection: DailyCollection, connected: ConnectedItem[]): DailyAliases {
+  const items = new Map<string, string>();
+  collection.items.forEach((item, index) => items.set(`i${index + 1}`, item.id));
+
+  const related = new Map<string, string>();
+  const seen = new Set<string>();
+  let counter = 0;
+  for (const { related: refs } of connected) {
+    for (const ref of refs) {
+      if (seen.has(ref.id)) continue;
+      seen.add(ref.id);
+      counter += 1;
+      related.set(`r${counter}`, ref.id);
+    }
+  }
+  return { items, related };
+}
+
+export function buildDailyPrompt(collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): string {
+  const itemAlias = new Map([...aliases.items.entries()].map(([alias, id]) => [id, alias]));
+  const relatedAlias = new Map([...aliases.related.entries()].map(([alias, id]) => [id, alias]));
+
   const lines: string[] = [];
   lines.push(`Date: ${collection.date}`);
   lines.push('');
   lines.push('NEW ITEMS (saved today):');
   for (const { item, related } of connected) {
-    lines.push(`- id=${item.id} source=${item.sources.join(',')} title=${JSON.stringify(item.displayTitle ?? item.canonicalUrl ?? item.id)}`);
+    lines.push(`- id=${itemAlias.get(item.id)} source=${item.sources.join(',')} title=${JSON.stringify(item.displayTitle ?? item.canonicalUrl ?? item.id)}`);
     lines.push(`  snippet: ${snippet(item)}`);
     for (const ref of related) {
-      lines.push(`  related: id=${ref.id} title=${JSON.stringify(ref.title ?? ref.url ?? ref.id)}`);
+      lines.push(`  related: id=${relatedAlias.get(ref.id)} title=${JSON.stringify(ref.title ?? ref.url ?? ref.id)}`);
     }
   }
   lines.push('');
@@ -66,15 +95,13 @@ export function buildDailyPrompt(collection: DailyCollection, connected: Connect
   lines.push('');
   lines.push(`TASK: Group the new items into 3-${MAX_THEMES} themes. Respond with ONLY a JSON array:`);
   lines.push('[{"title": "...", "summary": "2-4 sentences on what is new and why it matters together",');
-  lines.push('  "itemIds": ["<id from NEW ITEMS>"], "relatedIds": ["<id from related lines>"], "projects": ["<repo from PROJECT ACTIVITY>"]}]');
-  lines.push('Rules: every id you cite MUST appear verbatim above. Mention a project only when a theme genuinely connects to that repo\'s activity. Do not invent items, ids, or repos.');
+  lines.push('  "itemIds": ["<id like i1 from NEW ITEMS>"], "relatedIds": ["<id like r1 from related lines>"], "projects": ["<repo from PROJECT ACTIVITY>"]}]');
+  lines.push('Rules: cite only the short ids (i1, i2, r1, ...) and repo names that appear verbatim above. Mention a project only when a theme genuinely connects to that repo\'s activity. Do not invent items, ids, or repos.');
 
   return withSystemOverride('personal knowledge-synthesis engine that groups newly saved reading material into themes', lines.join('\n'));
 }
 
-export function validateThemes(raw: unknown, collection: DailyCollection, connected: ConnectedItem[]): { themes: DailyTheme[]; dropped: number } {
-  const itemIds = new Set(collection.items.map((item) => item.id));
-  const relatedIds = new Set(connected.flatMap(({ related }) => related.map((ref) => ref.id)));
+export function validateThemes(raw: unknown, collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): { themes: DailyTheme[]; dropped: number } {
   const repos = new Set(collection.projectDeltas.map((delta) => delta.repo));
   const themes: DailyTheme[] = [];
   let dropped = 0;
@@ -88,20 +115,32 @@ export function validateThemes(raw: unknown, collection: DailyCollection, connec
     const summary = typeof candidate.summary === 'string' ? candidate.summary.trim() : '';
     if (!title || !summary) continue;
 
-    const keepIds = (value: unknown, allowed: Set<string>): { kept: string[]; removed: number } => {
+    const mapAliases = (value: unknown, aliasMap: Map<string, string>): { kept: string[]; removed: number } => {
       if (!Array.isArray(value)) return { kept: [], removed: 0 };
       const kept: string[] = [];
       let removed = 0;
-      for (const id of value) {
-        if (typeof id === 'string' && allowed.has(id) && !kept.includes(id)) kept.push(id);
+      for (const alias of value) {
+        const real = typeof alias === 'string' ? aliasMap.get(alias.trim()) : undefined;
+        if (real && !kept.includes(real)) kept.push(real);
         else removed += 1;
       }
       return { kept, removed };
     };
 
-    const items = keepIds(candidate.itemIds, itemIds);
-    const related = keepIds(candidate.relatedIds, relatedIds);
-    const projects = keepIds(candidate.projects, repos);
+    const keepRepos = (value: unknown): { kept: string[]; removed: number } => {
+      if (!Array.isArray(value)) return { kept: [], removed: 0 };
+      const kept: string[] = [];
+      let removed = 0;
+      for (const repo of value) {
+        if (typeof repo === 'string' && repos.has(repo) && !kept.includes(repo)) kept.push(repo);
+        else removed += 1;
+      }
+      return { kept, removed };
+    };
+
+    const items = mapAliases(candidate.itemIds, aliases.items);
+    const related = mapAliases(candidate.relatedIds, aliases.related);
+    const projects = keepRepos(candidate.projects);
     dropped += items.removed + related.removed + projects.removed;
 
     if (items.kept.length === 0) {
@@ -138,6 +177,7 @@ function renderDigestMarkdown(
   themes: DailyTheme[],
   usedLlm: boolean,
 ): string {
+  const linkLabel = (value: string): string => value.replace(/\s+/g, ' ').replace(/[[\]]/g, '').trim().slice(0, 120);
   const itemById = new Map(collection.items.map((item) => [item.id, item]));
   const relatedById = new Map<string, RelatedRef>();
   for (const { related } of connected) {
@@ -165,8 +205,9 @@ function renderDigestMarkdown(
     for (const id of theme.itemIds) {
       const item = itemById.get(id);
       if (!item) continue;
-      const label = item.displayTitle ?? item.canonicalUrl ?? id;
-      const saved = item.firstSavedAt ? item.firstSavedAt.slice(0, 10) : collection.date;
+      const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
+      const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
+      const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
       lines.push(`- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}`);
     }
     if (theme.relatedIds.length > 0) {
@@ -175,7 +216,7 @@ function renderDigestMarkdown(
       for (const id of theme.relatedIds) {
         const ref = relatedById.get(id);
         if (!ref) continue;
-        const label = ref.title ?? ref.url ?? id;
+        const label = linkLabel(ref.title ?? ref.url ?? id);
         lines.push(`- ${ref.url ? `[${label}](${ref.url})` : label}`);
       }
     }
@@ -222,11 +263,12 @@ export async function synthesizeDaily(
 
   if (collection.items.length > 0) {
     try {
+      const aliases = buildDailyAliases(collection, connected);
       const invoke = options.invoke ?? ((prompt: string) => defaultInvoke(options.profile ?? {}, prompt));
-      const raw = await invoke(buildDailyPrompt(collection, connected));
+      const raw = await invoke(buildDailyPrompt(collection, connected, aliases));
       const jsonText = extractJsonArray(raw);
       if (jsonText) {
-        const validated = validateThemes(JSON.parse(jsonText), collection, connected);
+        const validated = validateThemes(JSON.parse(jsonText), collection, connected, aliases);
         themes = validated.themes;
         droppedCitations = validated.dropped;
         usedLlm = themes.length > 0;

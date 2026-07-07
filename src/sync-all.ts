@@ -132,6 +132,13 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       enabled: !options.noSynthesis,
       reason: options.noSynthesis ? 'disabled by --no-synthesis' : undefined,
     },
+    {
+      id: 'daily',
+      label: 'Write daily digest and interests profile',
+      command: ['daily', '--write'],
+      enabled: !options.noSynthesis,
+      reason: options.noSynthesis ? 'disabled by --no-synthesis' : undefined,
+    },
   ];
 
   if (only) {

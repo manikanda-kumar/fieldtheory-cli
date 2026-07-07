@@ -78,7 +78,11 @@ function windowFor(options: CollectDailyOptions, meta: DailyMeta): { date: strin
 
 function withinWindow(iso: string | undefined, sinceIso: string, untilIso: string): boolean {
   if (!iso) return false;
-  return iso >= sinceIso && iso < untilIso;
+  // Timestamps come in mixed formats (ISO with offsets, Twitter-style) —
+  // compare parsed epochs, never raw strings.
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return false;
+  return ms >= Date.parse(sinceIso) && ms < Date.parse(untilIso);
 }
 
 async function collectProjectDeltas(sinceIso: string, untilIso: string): Promise<DailyProjectDelta[]> {

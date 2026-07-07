@@ -815,7 +815,17 @@ export interface CanonicalRecentItem {
   primaryDomain: string | null;
 }
 
+/** Parse the mixed timestamp formats stored in first_saved_at: ISO-8601 (with
+ *  any offset) and Twitter's "Wed Sep 30 13:43:32 +0000 2020". String
+ *  comparison is NOT safe across these — always compare parsed epochs. */
+export function parseSavedAt(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 export async function getCanonicalBookmarksSince(sinceIso: string, limit = 200): Promise<CanonicalRecentItem[]> {
+  const sinceMs = Date.parse(sinceIso);
   const db = await openDb(twitterBookmarksIndexPath());
   try {
     initCanonicalSchema(db);
@@ -823,12 +833,16 @@ export async function getCanonicalBookmarksSince(sinceIso: string, limit = 200):
       `SELECT id, canonical_url, display_title, search_text, sources_json,
               first_saved_at, last_saved_at, primary_category, primary_domain
        FROM canonical_bookmarks
-       WHERE first_saved_at >= ?
-       ORDER BY first_saved_at DESC
-       LIMIT ?`,
-      [sinceIso, limit],
+       WHERE first_saved_at IS NOT NULL`,
     );
-    return (rows[0]?.values ?? []).map((row) => ({
+    return (rows[0]?.values ?? [])
+      .filter((row) => {
+        const ms = parseSavedAt(row[5] == null ? null : String(row[5]));
+        return ms != null && ms >= sinceMs;
+      })
+      .sort((a, b) => (parseSavedAt(String(b[5])) ?? 0) - (parseSavedAt(String(a[5])) ?? 0))
+      .slice(0, limit)
+      .map((row) => ({
       id: String(row[0]),
       canonicalUrl: row[1] == null ? null : String(row[1]),
       displayTitle: row[2] == null ? null : String(row[2]),
@@ -874,6 +888,7 @@ export async function findRelatedCanonicalBookmarks(seedText: string, options: F
   const ftsQuery = terms.map((term) => `"${term}"`).join(' OR ');
   const excludeIds = options.excludeIds ?? [];
   const limit = options.limit ?? 3;
+  const beforeMs = options.beforeIso ? Date.parse(options.beforeIso) : null;
   const db = await openDb(twitterBookmarksIndexPath());
 
   try {
@@ -884,15 +899,13 @@ export async function findRelatedCanonicalBookmarks(seedText: string, options: F
       conditions.push(`c.id NOT IN (${excludeIds.map(() => '?').join(',')})`);
       params.push(...excludeIds);
     }
-    if (options.beforeIso) {
-      conditions.push('COALESCE(c.first_saved_at, \'\') < ?');
-      params.push(options.beforeIso);
-    }
-    params.push(limit);
+    // beforeIso is applied in JS: first_saved_at mixes ISO and Twitter-format
+    // strings, so SQL string comparison would silently drop X bookmarks.
+    params.push(beforeMs == null ? limit : limit * 5);
 
     const rows = db.exec(
       `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count, c.sources_json,
-              bm25(canonical_bookmarks_fts) AS score
+              bm25(canonical_bookmarks_fts) AS score, c.first_saved_at
        FROM canonical_bookmarks c
        JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid
        WHERE ${conditions.join(' AND ')}
@@ -900,7 +913,12 @@ export async function findRelatedCanonicalBookmarks(seedText: string, options: F
        LIMIT ?`,
       params,
     );
-    return (rows[0]?.values ?? []).map(mapSearchRow);
+    const values = (rows[0]?.values ?? []).filter((row) => {
+      if (beforeMs == null) return true;
+      const ms = parseSavedAt(row[7] == null ? null : String(row[7]));
+      return ms != null && ms < beforeMs;
+    });
+    return values.slice(0, limit).map(mapSearchRow);
   } finally {
     db.close();
   }

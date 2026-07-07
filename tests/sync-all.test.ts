@@ -17,6 +17,16 @@ test('buildSyncAllPlan supports dry-run planning with optional context sources',
   ]);
   assert.deepEqual(plan.find((step) => step.id === 'youtube')?.command, ['sync-youtube', '--playlist', 'PL1', '--limit', '3']);
   assert.equal(plan.find((step) => step.id === 'canonical-md')?.enabled, false);
+  assert.equal(plan.find((step) => step.id === 'daily')?.enabled, false);
+});
+
+test('buildSyncAllPlan runs the daily digest step in the synthesis tail', () => {
+  const plan = buildSyncAllPlan({});
+  const dailyStep = plan.find((step) => step.id === 'daily');
+  assert.equal(dailyStep?.enabled, true);
+  assert.deepEqual(dailyStep?.command, ['daily', '--write']);
+  const ids = plan.map((step) => step.id);
+  assert.ok(ids.indexOf('daily') > ids.indexOf('canonical-md'), 'daily runs after canonical markdown export');
 });
 
 test('buildSyncAllPlan honors --only and --skip source filters', () => {

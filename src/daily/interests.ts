@@ -42,16 +42,25 @@ export function interestsMarkdownPath(): string {
   return path.join(libraryDir(), 'interests.md');
 }
 
+function inWindowMs(value: unknown, sinceMs: number, untilMs: number): boolean {
+  if (value == null) return false;
+  const ms = Date.parse(String(value));
+  return Number.isFinite(ms) && ms >= sinceMs && ms < untilMs;
+}
+
 async function topicCounts(sinceIso: string, untilIso: string): Promise<Map<string, number>> {
   const db = await openDb(twitterBookmarksIndexPath());
   const counts = new Map<string, number>();
+  const sinceMs = Date.parse(sinceIso);
+  const untilMs = Date.parse(untilIso);
   try {
+    // first_saved_at mixes ISO and Twitter-format strings — filter in JS.
     const rows = db.exec(
-      `SELECT primary_category, primary_domain FROM canonical_bookmarks
-       WHERE first_saved_at >= ? AND first_saved_at < ?`,
-      [sinceIso, untilIso],
+      `SELECT primary_category, primary_domain, first_saved_at FROM canonical_bookmarks
+       WHERE first_saved_at IS NOT NULL`,
     );
     for (const row of rows[0]?.values ?? []) {
+      if (!inWindowMs(row[2], sinceMs, untilMs)) continue;
       for (const value of [row[0], row[1]]) {
         if (value == null) continue;
         const topic = String(value).trim().toLowerCase();
@@ -72,13 +81,14 @@ async function topicCounts(sinceIso: string, untilIso: string): Promise<Map<stri
 async function recentItemTerms(sinceIso: string): Promise<Map<string, number>> {
   const db = await openDb(twitterBookmarksIndexPath());
   const counts = new Map<string, number>();
+  const sinceMs = Date.parse(sinceIso);
   try {
     const rows = db.exec(
-      `SELECT display_title, substr(search_text, 1, 400) FROM canonical_bookmarks
-       WHERE first_saved_at >= ?`,
-      [sinceIso],
+      `SELECT display_title, substr(search_text, 1, 400), first_saved_at FROM canonical_bookmarks
+       WHERE first_saved_at IS NOT NULL`,
     );
     for (const row of rows[0]?.values ?? []) {
+      if (!inWindowMs(row[2], sinceMs, Number.POSITIVE_INFINITY)) continue;
       const terms = relatedSeedTerms(`${row[0] ?? ''} ${row[1] ?? ''}`, 20);
       for (const term of terms) counts.set(term, (counts.get(term) ?? 0) + 1);
     }
@@ -95,10 +105,12 @@ async function promptTerms(sinceIso: string): Promise<Map<string, number>> {
   const cachePath = projectsCachePath();
   if (!(await pathExists(cachePath))) return counts;
 
+  const sinceMs = Date.parse(sinceIso);
   const records = await readJsonLines<ProjectRecord>(cachePath);
   for (const record of records) {
     for (const prompt of record.recentPrompts ?? []) {
-      if (prompt.timestamp < sinceIso) continue;
+      const ms = Date.parse(prompt.timestamp);
+      if (!Number.isFinite(ms) || ms < sinceMs) continue;
       for (const term of relatedSeedTerms(prompt.text, 20)) {
         counts.set(term, (counts.get(term) ?? 0) + 1);
       }

@@ -145,6 +145,35 @@ test('daily: connect links new items to older related items only', async () => {
   });
 });
 
+test('daily: collect handles Twitter-format and offset-ISO timestamps in first_saved_at', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    // Offset ISO inside the 2026-07-06 UTC day (10:46+05:30 = 05:16Z) and a
+    // Twitter-format date far outside it. Lexical comparison gets BOTH wrong.
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/offset-repo', starredAt: '2026-07-06T10:46:03+05:30' }),
+    ]);
+    const projectsDir = path.join(dir, 'projects');
+    await mkdir(projectsDir, { recursive: true });
+    await writeJsonLines(path.join(projectsDir, 'projects.jsonl'), []);
+    await rebuildCanonicalIndex();
+
+    // Simulate a legacy Twitter-format row alongside.
+    const { openDb, saveDb } = await import('../src/db.js');
+    const { twitterBookmarksIndexPath } = await import('../src/paths.js');
+    const db = await openDb(twitterBookmarksIndexPath());
+    db.run(
+      `UPDATE canonical_bookmarks SET first_saved_at = 'Wed Sep 30 13:43:32 +0000 2020'
+       WHERE id NOT IN (SELECT id FROM canonical_bookmarks LIMIT 1)`,
+    );
+    await saveDb(db, twitterBookmarksIndexPath());
+    db.close();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    assert.equal(collection.items.length, 1);
+    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/offset-repo');
+  });
+});
+
 test('daily: relatedSeedTerms drops stopwords, short words, and numbers', () => {
   const terms = relatedSeedTerms('This is about Vector Search with 12345 embeddings from GitHub http links');
   assert.deepEqual(terms, ['vector', 'search', 'embeddings', 'links']);
@@ -166,17 +195,17 @@ test('daily: synthesize validates citations, writes digest, and advances waterma
     const collection = await collectDaily({ date: '2026-07-06' });
     const connected = await connectDailyItems(collection);
     const newId = collection.items[0].id;
-    const relatedId = connected[0].related[0]?.id;
+    const hasRelated = (connected[0].related.length ?? 0) > 0;
 
     const fakeResponse = JSON.stringify([
       {
         title: 'Agent harnesses',
         summary: 'New runner harness saved; builds on the primer read earlier.',
-        itemIds: [newId, 'canonical:hallucinated'],
-        relatedIds: relatedId ? [relatedId, 'canonical:fake'] : ['canonical:fake'],
+        itemIds: ['i1', 'i99'],
+        relatedIds: hasRelated ? ['r1', 'r99'] : ['r99'],
         projects: ['not-a-repo'],
       },
-      { title: 'Ghost theme', summary: 'Only hallucinated ids.', itemIds: ['canonical:ghost'], relatedIds: [], projects: [] },
+      { title: 'Ghost theme', summary: 'Only hallucinated ids.', itemIds: ['i77'], relatedIds: [], projects: [] },
     ]);
 
     const result = await synthesizeDaily(collection, connected, { invoke: async () => fakeResponse });
