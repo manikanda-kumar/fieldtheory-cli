@@ -2,6 +2,8 @@
 
 This is the Field Theory CLI — a standalone tool for syncing and querying X/Twitter bookmarks locally.
 
+Agent recall contract (how to query the knowledge base from any agent): `docs/AGENTS-recall.md`.
+
 ## Commands
 
 ```bash
