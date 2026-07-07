@@ -5,9 +5,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { writeJson, writeJsonLines } from '../src/fs.js';
 import { rebuildCanonicalIndex, relatedSeedTerms } from '../src/canonical-bookmarks-db.js';
+import { readFile } from 'node:fs/promises';
 import { collectDaily } from '../src/daily/collect.js';
 import { connectDailyItems } from '../src/daily/connect.js';
+import { synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+
+async function readFileText(filePath: string): Promise<string> {
+  return readFile(filePath, 'utf8');
+}
 import type { GitHubStarRecord } from '../src/github-stars/types.js';
 import type { ProjectRecord } from '../src/projects/types.js';
 
@@ -147,4 +153,78 @@ test('daily: relatedSeedTerms drops stopwords, short words, and numbers', () => 
 test('daily: digest path validates date shape', () => {
   assert.throws(() => dailyDigestPath('not-a-date'));
   assert.match(dailyDigestPath('2026-07-07'), /daily[/\\]2026-07-07\.md$/);
+});
+
+test('daily: synthesize validates citations, writes digest, and advances watermark', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/agent-runner', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent runner harness' }),
+      starRecord({ id: 2, fullName: 'b/agent-primer', starredAt: '2026-06-10T00:00:00.000Z', description: 'primer on agent runner harnesses' }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const connected = await connectDailyItems(collection);
+    const newId = collection.items[0].id;
+    const relatedId = connected[0].related[0]?.id;
+
+    const fakeResponse = JSON.stringify([
+      {
+        title: 'Agent harnesses',
+        summary: 'New runner harness saved; builds on the primer read earlier.',
+        itemIds: [newId, 'canonical:hallucinated'],
+        relatedIds: relatedId ? [relatedId, 'canonical:fake'] : ['canonical:fake'],
+        projects: ['not-a-repo'],
+      },
+      { title: 'Ghost theme', summary: 'Only hallucinated ids.', itemIds: ['canonical:ghost'], relatedIds: [], projects: [] },
+    ]);
+
+    const result = await synthesizeDaily(collection, connected, { invoke: async () => fakeResponse });
+
+    assert.equal(result.skipped, false);
+    assert.equal(result.usedLlm, true);
+    assert.equal(result.themes.length, 1);
+    assert.deepEqual(result.themes[0].itemIds, [newId]);
+    assert.ok(result.droppedCitations >= 3);
+
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /# Daily Digest — 2026-07-06/);
+    assert.match(digest, /agent-runner/);
+    assert.match(digest, /synthesis: llm/);
+    assert.ok(!digest.includes('hallucinated'));
+
+    const meta = JSON.parse(await readFileText(dailyMetaPath()));
+    assert.equal(meta.lastDigestDate, '2026-07-06');
+    assert.ok(meta.lastRunAt);
+  });
+});
+
+test('daily: synthesize falls back to mechanical themes when the LLM fails', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/solo-tool', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool' }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const connected = await connectDailyItems(collection);
+    const result = await synthesizeDaily(collection, connected, {
+      invoke: async () => { throw new Error('engine down'); },
+    });
+
+    assert.equal(result.usedLlm, false);
+    assert.equal(result.themes.length, 1);
+    assert.match(result.themes[0].title, /github-stars/);
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /synthesis: mechanical/);
+  });
+});
+
+test('daily: synthesize skips when the window is empty', async () => {
+  await withIsolatedDataDir(async () => {
+    await rebuildCanonicalIndex();
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const result = await synthesizeDaily(collection, [], { invoke: async () => '[]' });
+    assert.equal(result.skipped, true);
+  });
 });

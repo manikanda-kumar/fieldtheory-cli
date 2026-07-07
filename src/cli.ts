@@ -47,6 +47,8 @@ import { syncGitHubStars } from './github-stars/sync.js';
 import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
 import { collectDaily } from './daily/collect.js';
 import { connectDailyItems } from './daily/connect.js';
+import { synthesizeDaily } from './daily/synthesize.js';
+import { dailyDigestPath } from './daily/paths.js';
 import { scanProjects } from './projects/scan.js';
 import { collectSessionPrompts } from './projects/sessions.js';
 import { getProjectsStatus, syncProjects } from './projects/sync.js';
@@ -1329,6 +1331,11 @@ export function buildCli() {
     .description('Collect what was saved today across all sources and connect it to older items')
     .option('--date <date>', 'Digest a specific UTC day (YYYY-MM-DD) instead of the rolling window')
     .option('--window-hours <n>', 'Rolling window size in hours when no watermark exists', (v: string) => Number(v), 24)
+    .option('--write', 'Synthesize the digest markdown and advance the watermark', false)
+    .option('--force', 'Overwrite an existing digest for the same date', false)
+    .option('--engine <engine>', 'LLM engine for digest synthesis (claude, codex, droid)')
+    .option('--model <model>', 'Model override for digest synthesis')
+    .option('--effort <effort>', 'Effort override for digest synthesis')
     .option('--json', 'JSON output')
     .action(safe(async (options) => {
       ensureDataDir();
@@ -1337,6 +1344,30 @@ export function buildCli() {
         windowHours: typeof options.windowHours === 'number' && Number.isFinite(options.windowHours) ? options.windowHours : 24,
       });
       const connected = await connectDailyItems(collection);
+
+      if (options.write) {
+        const digestPath = dailyDigestPath(collection.date);
+        if (fs.existsSync(digestPath) && !options.force) {
+          console.log(`  Digest already exists for ${collection.date}: ${digestPath}`);
+          console.log('  Re-run with --force to regenerate.');
+          return;
+        }
+        const result = await synthesizeDaily(collection, connected, {
+          profile: {
+            engine: stringOption(options.engine),
+            model: stringOption(options.model),
+            effort: stringOption(options.effort),
+          },
+        });
+        if (result.skipped) {
+          console.log(`  Nothing new in this window — no digest written.`);
+          return;
+        }
+        console.log(`  ✓ Digest written: ${result.digestPath}`);
+        console.log(`    themes: ${result.themes.length} (${result.usedLlm ? 'llm' : 'mechanical'})`);
+        if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);
+        return;
+      }
 
       if (options.json) {
         console.log(JSON.stringify({
