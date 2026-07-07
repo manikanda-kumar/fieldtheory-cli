@@ -48,6 +48,7 @@ import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
 import { collectDaily } from './daily/collect.js';
 import { connectDailyItems } from './daily/connect.js';
 import { synthesizeDaily } from './daily/synthesize.js';
+import { writeInterests } from './daily/interests.js';
 import { dailyDigestPath } from './daily/paths.js';
 import { scanProjects } from './projects/scan.js';
 import { collectSessionPrompts } from './projects/sessions.js';
@@ -1366,6 +1367,8 @@ export function buildCli() {
         console.log(`  ✓ Digest written: ${result.digestPath}`);
         console.log(`    themes: ${result.themes.length} (${result.usedLlm ? 'llm' : 'mechanical'})`);
         if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);
+        const interests = await writeInterests();
+        console.log(`  ✓ Interests updated: ${interests.path}`);
         return;
       }
 

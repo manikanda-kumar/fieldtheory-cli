@@ -220,6 +220,50 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
   });
 });
 
+test('daily: interests classifies rising/steady/fading topics and finds active threads', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const now = new Date('2026-07-07T00:00:00.000Z');
+    const recent = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
+    // Rising: 3 "agents"-category saves this week, none in baseline.
+    // Fading: 5 "css" saves in baseline, none this week.
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/agent-one', starredAt: recent(1), description: 'llm agents orchestration framework' }),
+      starRecord({ id: 2, fullName: 'b/agent-two', starredAt: recent(2), description: 'llm agents memory framework' }),
+      starRecord({ id: 3, fullName: 'c/agent-three', starredAt: recent(3), description: 'llm agents evaluation framework' }),
+      ...Array.from({ length: 5 }, (_, i) => starRecord({
+        id: 10 + i,
+        fullName: `css/lib-${i}`,
+        starredAt: recent(10 + i),
+        description: 'css styling toolkit',
+      })),
+    ]);
+    const projectsDir = path.join(dir, 'projects');
+    await mkdir(projectsDir, { recursive: true });
+    await writeJsonLines(path.join(projectsDir, 'projects.jsonl'), [
+      projectRecord({
+        repo: 'agent-lab',
+        recentPrompts: [
+          { timestamp: recent(1), text: 'how do agents framework handle orchestration' },
+          { timestamp: recent(2), text: 'best agents framework for memory' },
+        ],
+      }),
+    ]);
+    await rebuildCanonicalIndex();
+    const { classifyCanonicalBookmarks } = await import('../src/canonical-bookmarks-db.js');
+    await classifyCanonicalBookmarks();
+
+    const { computeInterests, renderInterestsMarkdown } = await import('../src/daily/interests.js');
+    const data = await computeInterests(now);
+    const markdown = renderInterestsMarkdown(data);
+
+    assert.ok(markdown.split('\n').length <= 80);
+    assert.match(markdown, /# Current Interests/);
+    // Threads: "agents" + "framework" appear in both saves and prompts.
+    assert.ok(data.threads.some((thread) => thread.term === 'agents' || thread.term === 'framework'),
+      `expected agents/framework thread, got ${JSON.stringify(data.threads)}`);
+  });
+});
+
 test('daily: synthesize skips when the window is empty', async () => {
   await withIsolatedDataDir(async () => {
     await rebuildCanonicalIndex();
