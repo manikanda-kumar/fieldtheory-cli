@@ -391,7 +391,9 @@ function isNormalizedGithubRepoUrl(value: string | undefined): value is string {
 }
 
 export function projectSourceFromRecord(record: ProjectRecord): CanonicalSourceInput {
-  const savedAt = record.lastCommitAt ?? record.scannedAt;
+  // No scannedAt fallback: a rescan must not make commit-less repos look
+  // newly saved, or every daily collection window fills with stale projects.
+  const savedAt = record.lastCommitAt ?? null;
   const promptText = capCompactText((record.recentPrompts ?? []).map((prompt) => prompt.text), 4000);
   const dedupeKey = isNormalizedGithubRepoUrl(record.remoteUrl)
     ? dedupeKeyForUrl(record.remoteUrl)
@@ -795,6 +797,109 @@ export async function searchCanonicalBookmarks(options: SearchCanonicalOptions):
         [limit],
       );
 
+    return (rows[0]?.values ?? []).map(mapSearchRow);
+  } finally {
+    db.close();
+  }
+}
+
+export interface CanonicalRecentItem {
+  id: string;
+  canonicalUrl: string | null;
+  displayTitle: string | null;
+  searchText: string;
+  sources: string[];
+  firstSavedAt: string | null;
+  lastSavedAt: string | null;
+  primaryCategory: string | null;
+  primaryDomain: string | null;
+}
+
+export async function getCanonicalBookmarksSince(sinceIso: string, limit = 200): Promise<CanonicalRecentItem[]> {
+  const db = await openDb(twitterBookmarksIndexPath());
+  try {
+    initCanonicalSchema(db);
+    const rows = db.exec(
+      `SELECT id, canonical_url, display_title, search_text, sources_json,
+              first_saved_at, last_saved_at, primary_category, primary_domain
+       FROM canonical_bookmarks
+       WHERE first_saved_at >= ?
+       ORDER BY first_saved_at DESC
+       LIMIT ?`,
+      [sinceIso, limit],
+    );
+    return (rows[0]?.values ?? []).map((row) => ({
+      id: String(row[0]),
+      canonicalUrl: row[1] == null ? null : String(row[1]),
+      displayTitle: row[2] == null ? null : String(row[2]),
+      searchText: String(row[3] ?? ''),
+      sources: parseSources(row[4]),
+      firstSavedAt: row[5] == null ? null : String(row[5]),
+      lastSavedAt: row[6] == null ? null : String(row[6]),
+      primaryCategory: row[7] == null ? null : String(row[7]),
+      primaryDomain: row[8] == null ? null : String(row[8]),
+    }));
+  } finally {
+    db.close();
+  }
+}
+
+const RELATED_STOPWORDS = new Set([
+  'this', 'that', 'with', 'from', 'have', 'what', 'your', 'when', 'where', 'will',
+  'about', 'into', 'over', 'more', 'like', 'just', 'them', 'they', 'then', 'than',
+  'been', 'being', 'each', 'other', 'some', 'such', 'only', 'very', 'https', 'http',
+  'github', 'youtube', 'video', 'using', 'used', 'their', 'there', 'here', 'also',
+]);
+
+export function relatedSeedTerms(seedText: string, maxTerms = 8): string[] {
+  const terms: string[] = [];
+  for (const raw of seedText.toLowerCase().split(/[^a-z0-9_]+/)) {
+    if (raw.length < 4 || RELATED_STOPWORDS.has(raw) || /^\d+$/.test(raw)) continue;
+    if (!terms.includes(raw)) terms.push(raw);
+    if (terms.length >= maxTerms) break;
+  }
+  return terms;
+}
+
+export interface FindRelatedOptions {
+  excludeIds?: string[];
+  beforeIso?: string;
+  limit?: number;
+}
+
+export async function findRelatedCanonicalBookmarks(seedText: string, options: FindRelatedOptions = {}): Promise<CanonicalSearchResult[]> {
+  const terms = relatedSeedTerms(seedText);
+  if (terms.length === 0) return [];
+
+  const ftsQuery = terms.map((term) => `"${term}"`).join(' OR ');
+  const excludeIds = options.excludeIds ?? [];
+  const limit = options.limit ?? 3;
+  const db = await openDb(twitterBookmarksIndexPath());
+
+  try {
+    initCanonicalSchema(db);
+    const conditions = ['canonical_bookmarks_fts MATCH ?'];
+    const params: (string | number)[] = [ftsQuery];
+    if (excludeIds.length > 0) {
+      conditions.push(`c.id NOT IN (${excludeIds.map(() => '?').join(',')})`);
+      params.push(...excludeIds);
+    }
+    if (options.beforeIso) {
+      conditions.push('COALESCE(c.first_saved_at, \'\') < ?');
+      params.push(options.beforeIso);
+    }
+    params.push(limit);
+
+    const rows = db.exec(
+      `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count, c.sources_json,
+              bm25(canonical_bookmarks_fts) AS score
+       FROM canonical_bookmarks c
+       JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY score ASC
+       LIMIT ?`,
+      params,
+    );
     return (rows[0]?.values ?? []).map(mapSearchRow);
   } finally {
     db.close();

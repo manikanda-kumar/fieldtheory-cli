@@ -45,6 +45,8 @@ import { syncRaindropBookmarks } from './raindrop/sync.js';
 import type { SyncRaindropOptions } from './raindrop/sync.js';
 import { syncGitHubStars } from './github-stars/sync.js';
 import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
+import { collectDaily } from './daily/collect.js';
+import { connectDailyItems } from './daily/connect.js';
 import { scanProjects } from './projects/scan.js';
 import { collectSessionPrompts } from './projects/sessions.js';
 import { getProjectsStatus, syncProjects } from './projects/sync.js';
@@ -1318,6 +1320,53 @@ export function buildCli() {
         const classifyResult = await classifyCanonicalBookmarks();
         console.log(`  ✓ Classified ${classifyResult.classified}/${classifyResult.total} bookmarks`);
       }
+    }));
+
+  // ── daily ─────────────────────────────────────────────────────────────
+
+  program
+    .command('daily')
+    .description('Collect what was saved today across all sources and connect it to older items')
+    .option('--date <date>', 'Digest a specific UTC day (YYYY-MM-DD) instead of the rolling window')
+    .option('--window-hours <n>', 'Rolling window size in hours when no watermark exists', (v: string) => Number(v), 24)
+    .option('--json', 'JSON output')
+    .action(safe(async (options) => {
+      ensureDataDir();
+      const collection = await collectDaily({
+        date: stringOption(options.date),
+        windowHours: typeof options.windowHours === 'number' && Number.isFinite(options.windowHours) ? options.windowHours : 24,
+      });
+      const connected = await connectDailyItems(collection);
+
+      if (options.json) {
+        console.log(JSON.stringify({
+          date: collection.date,
+          sinceIso: collection.sinceIso,
+          untilIso: collection.untilIso,
+          items: connected.map(({ item, related }) => ({ ...item, related })),
+          projectDeltas: collection.projectDeltas,
+        }, null, 2));
+        return;
+      }
+
+      console.log(`  Daily collection for ${collection.date} (${collection.sinceIso} → ${collection.untilIso})`);
+      console.log(`    new items: ${collection.items.length}`);
+      console.log(`    active projects: ${collection.projectDeltas.length}`);
+      for (const { item, related } of connected) {
+        const sources = item.sources.join(',');
+        console.log(`\n  • [${sources}] ${item.displayTitle ?? item.canonicalUrl ?? item.id}`);
+        if (item.canonicalUrl) console.log(`    ${item.canonicalUrl}`);
+        for (const ref of related) {
+          console.log(`    ↳ related: ${ref.title ?? ref.url ?? ref.id}${ref.url ? `  ${ref.url}` : ''}`);
+        }
+      }
+      if (collection.projectDeltas.length > 0) {
+        console.log('\n  Project activity:');
+        for (const delta of collection.projectDeltas.slice(0, 10)) {
+          console.log(`    ${delta.repo}: ${delta.commits.length} commits, ${delta.prompts.length} agent prompts`);
+        }
+      }
+      console.log('\n  (digest markdown synthesis lands with ft daily --write in a later step)');
     }));
 
   // ── sync-projects ─────────────────────────────────────────────────────
