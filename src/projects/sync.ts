@@ -88,6 +88,10 @@ export async function syncProjects(options: ProjectSyncOptions = {}): Promise<Pr
     : await collectSessionPrompts({
       scanRoot: scanResult.scanRoot,
       claudeProjectsRoot: options.claudeProjectsRoot,
+      codexSessionsRoot: options.codexSessionsRoot,
+      ampThreadsRoot: options.ampThreadsRoot,
+      piSessionsRoot: options.piSessionsRoot,
+      droidRoot: options.droidRoot,
       retentionDays: sessionRetentionDays,
       now,
       previousFileStates: previousMeta?.sessionFiles,

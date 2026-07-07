@@ -8,7 +8,17 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { extractGoalNowNext, extractReadmeDescription, normalizeProjectRemoteUrl, scanProjects } from '../src/projects/scan.js';
-import { collectSessionPrompts, decodeClaudeProjectRepo } from '../src/projects/sessions.js';
+import {
+  collectSessionPrompts,
+  decodeClaudeProjectRepo,
+  parseAgentMessageLines,
+  parseAmpThread,
+  parseCodexRollout,
+  parseDroidIndex,
+  parseCwdHeaderSession,
+  parsePiSession,
+  repoForCwd,
+} from '../src/projects/sessions.js';
 import { buildProjectMarkdown, buildProjectsActiveMarkdown, rankActiveProjects } from '../src/projects/markdown.js';
 import { syncProjects } from '../src/projects/sync.js';
 import type { ProjectRecord } from '../src/projects/types.js';
@@ -59,6 +69,17 @@ function makeRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
     ],
     scannedAt: '2026-07-07T00:00:00.000Z',
     ...overrides,
+  };
+}
+
+/** Point every non-Claude session source at a nonexistent dir so tests never
+ *  read the real ~/.codex, amp, pi, or droid stores. */
+function hermeticSessionRoots(root: string) {
+  return {
+    codexSessionsRoot: path.join(root, 'no-codex'),
+    ampThreadsRoot: path.join(root, 'no-amp'),
+    piSessionsRoot: path.join(root, 'no-pi'),
+    droidRoot: path.join(root, 'no-droid'),
   };
 }
 
@@ -281,6 +302,8 @@ test('projects: sync scans a real tiny git repo and writes JSONL plus markdown',
         scanRoot,
         now: new Date('2026-07-07T00:00:00.000Z'),
         gitTimeoutMs: 5000,
+        claudeProjectsRoot: path.join(scanRoot, 'no-claude'),
+        ...hermeticSessionRoots(scanRoot),
       });
 
       assert.equal(result.records.length, 1);
@@ -433,6 +456,7 @@ test('projects: Claude session line filtering keeps user prompts and skips sidec
     const result = await collectSessionPrompts({
       scanRoot,
       claudeProjectsRoot: claudeRoot,
+      ...hermeticSessionRoots(root),
       now: new Date('2026-07-07T00:00:00.000Z'),
     });
 
@@ -462,6 +486,7 @@ test('projects: Claude session retention drops prompts older than retentionDays'
     const result = await collectSessionPrompts({
       scanRoot,
       claudeProjectsRoot: claudeRoot,
+      ...hermeticSessionRoots(root),
       retentionDays: 14,
       now: new Date('2026-07-07T00:00:00.000Z'),
     });
@@ -486,11 +511,13 @@ test('projects: Claude session incremental parsing skips unchanged files without
     const result = await collectSessionPrompts({
       scanRoot,
       claudeProjectsRoot: claudeRoot,
+      ...hermeticSessionRoots(root),
       now: new Date('2026-07-07T00:00:00.000Z'),
       previousFileStates: {
         [sessionFile]: { mtimeMs: info.mtimeMs, size: info.size },
       },
-      readFileText: async () => {
+      readFileText: async (filePath: string) => {
+        if (filePath.endsWith('sessions-index.json')) throw new Error('absent');
         reads += 1;
         return `${userLine('mutated prompt')}\n`;
       },
@@ -529,4 +556,179 @@ test('projects: markdown renders recent agent queries, active focus, and prompt 
   assert.match(activeMarkdown, /## prompted/);
   assert.match(activeMarkdown, /- Recent focus: Investigate Claude session prompt extraction and markdown wiring/);
   assert.equal(rankActiveProjects([idle, prompted], now)[0].repo, 'prompted');
+});
+
+// ── Codex / Amp / Pi / Droid session parsing ─────────────────────────────
+
+const SESSION_CUTOFF = Date.parse('2026-06-25T00:00:00.000Z');
+
+test('projects: parseCodexRollout maps cwd to repo and keeps only real user prompts', () => {
+  const raw = [
+    JSON.stringify({ timestamp: '2026-07-06T10:00:00.000Z', type: 'session_meta', payload: { cwd: '/Users/x/Github/my-repo/sub' } }),
+    JSON.stringify({ timestamp: '2026-07-06T10:01:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '# AGENTS.md instructions\nboilerplate' }] } }),
+    JSON.stringify({ timestamp: '2026-07-06T10:02:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>stuff</environment_context>' }] } }),
+    JSON.stringify({ timestamp: '2026-07-06T10:03:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'fix the flaky retry logic' }] } }),
+    JSON.stringify({ timestamp: '2026-06-01T10:00:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'too old to keep' }] } }),
+  ].join('\n');
+
+  const prompts = parseCodexRollout(raw, '/Users/x/Github', '2026-07-06T00:00:00.000Z', SESSION_CUTOFF);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].agent, 'codex');
+  assert.equal(prompts[0].repo, 'my-repo');
+  assert.equal(prompts[0].text, 'fix the flaky retry logic');
+});
+
+test('projects: parseCodexRollout returns nothing when cwd is outside the scan root', () => {
+  const raw = [
+    JSON.stringify({ type: 'session_meta', payload: { cwd: '/tmp/elsewhere' } }),
+    JSON.stringify({ timestamp: '2026-07-06T10:03:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'question' }] } }),
+  ].join('\n');
+  assert.deepEqual(parseCodexRollout(raw, '/Users/x/Github', '2026-07-06T00:00:00.000Z', SESSION_CUTOFF), []);
+});
+
+test('projects: parseAmpThread reads repo from env trees and stamps thread created time', () => {
+  const raw = JSON.stringify({
+    created: Date.parse('2026-07-05T09:00:00.000Z'),
+    env: { initial: { trees: [{ uri: 'file:///Users/x/Github/tools' }] } },
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: 'why does the trace parser stall?' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'because...' }] },
+      { role: 'user', content: [{ type: 'text', text: '<system-reminder>noise</system-reminder>' }] },
+    ],
+  });
+
+  const prompts = parseAmpThread(raw, '/Users/x/Github', '2026-07-05T00:00:00.000Z', SESSION_CUTOFF);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].agent, 'amp');
+  assert.equal(prompts[0].repo, 'tools');
+  assert.equal(prompts[0].timestamp, '2026-07-05T09:00:00.000Z');
+});
+
+test('projects: parseAmpThread drops whole thread when older than retention or outside root', () => {
+  const old = JSON.stringify({
+    created: Date.parse('2026-01-01T00:00:00.000Z'),
+    env: { initial: { trees: [{ uri: 'file:///Users/x/Github/tools' }] } },
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'ancient' }] }],
+  });
+  assert.deepEqual(parseAmpThread(old, '/Users/x/Github', '2026-07-05T00:00:00.000Z', SESSION_CUTOFF), []);
+
+  const foreign = JSON.stringify({
+    created: Date.parse('2026-07-05T00:00:00.000Z'),
+    env: { initial: { trees: [{ uri: 'file:///opt/elsewhere' }] } },
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+  });
+  assert.deepEqual(parseAmpThread(foreign, '/Users/x/Github', '2026-07-05T00:00:00.000Z', SESSION_CUTOFF), []);
+});
+
+test('projects: parsePiSession reads cwd from the session header line', () => {
+  const raw = [
+    JSON.stringify({ type: 'session', version: 3, timestamp: '2026-07-04T11:20:56.401Z', cwd: '/Users/x/Github/summarize' }),
+    JSON.stringify({ type: 'model_change', timestamp: '2026-07-04T11:21:00.470Z' }),
+    JSON.stringify({ type: 'message', timestamp: '2026-07-04T11:21:58.606Z', message: { role: 'user', content: [{ type: 'text', text: 'does summarize support opencode models?' }] } }),
+  ].join('\n');
+
+  const prompts = parsePiSession(raw, '/Users/x/Github', '2026-07-04T00:00:00.000Z', SESSION_CUTOFF);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].agent, 'pi');
+  assert.equal(prompts[0].repo, 'summarize');
+});
+
+test('projects: parseDroidIndex + parseAgentMessageLines cover the droid layout', () => {
+  const index = parseDroidIndex(JSON.stringify({
+    version: 2,
+    entries: [
+      { sessionId: 'abc', cwd: '/Users/x/Github/omnigent', mtime: Date.parse('2026-07-06T00:00:00.000Z') },
+      { sessionId: 'broken' },
+    ],
+  }));
+  assert.equal(index.length, 2);
+  assert.equal(index[0].cwd, '/Users/x/Github/omnigent');
+
+  const raw = [
+    JSON.stringify({ type: 'session_start', id: 'abc', title: 't' }),
+    JSON.stringify({ type: 'message', timestamp: '2026-07-06T02:45:00.000Z', message: { role: 'user', content: [{ type: 'text', text: '<system-reminder>env dump</system-reminder>' }] } }),
+    JSON.stringify({ type: 'message', timestamp: '2026-07-06T02:46:00.000Z', message: { role: 'user', content: [{ type: 'text', text: 'add retry to the uploader' }] } }),
+  ].join('\n');
+  const prompts = parseAgentMessageLines(raw, 'droid', 'omnigent', '2026-07-06T00:00:00.000Z', SESSION_CUTOFF);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].agent, 'droid');
+  assert.equal(prompts[0].text, 'add retry to the uploader');
+});
+
+test('projects: repoForCwd maps subdirectories to their depth-1 repo', () => {
+  assert.equal(repoForCwd('/Users/x/Github/my-repo/deep/sub', '/Users/x/Github'), 'my-repo');
+  assert.equal(repoForCwd('/Users/x/Github', '/Users/x/Github'), null);
+  assert.equal(repoForCwd('/opt/other', '/Users/x/Github'), null);
+});
+
+test('projects: collectSessionPrompts merges codex, amp, pi, and droid sources', async () => {
+  await withTempDir('ft-projects-multi-', async (root) => {
+    const scanRoot = path.join(root, 'Github');
+    await mkdir(path.join(scanRoot, 'my-repo'), { recursive: true });
+
+    const codexRoot = path.join(root, 'codex');
+    await mkdir(path.join(codexRoot, '2026', '07', '06'), { recursive: true });
+    await writeFile(path.join(codexRoot, '2026', '07', '06', 'rollout-1.jsonl'), [
+      JSON.stringify({ type: 'session_meta', payload: { cwd: path.join(scanRoot, 'my-repo') } }),
+      JSON.stringify({ timestamp: '2026-07-06T10:00:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'codex question' }] } }),
+    ].join('\n'), 'utf8');
+
+    const ampRoot = path.join(root, 'amp');
+    await mkdir(ampRoot, { recursive: true });
+    await writeFile(path.join(ampRoot, 'T-1.json'), JSON.stringify({
+      created: Date.parse('2026-07-06T11:00:00.000Z'),
+      env: { initial: { trees: [{ uri: `file://${path.join(scanRoot, 'my-repo')}` }] } },
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'amp question' }] }],
+    }), 'utf8');
+
+    const piRoot = path.join(root, 'pi');
+    await mkdir(path.join(piRoot, 'enc'), { recursive: true });
+    await writeFile(path.join(piRoot, 'enc', 's1.jsonl'), [
+      JSON.stringify({ type: 'session', cwd: path.join(scanRoot, 'my-repo') }),
+      JSON.stringify({ type: 'message', timestamp: '2026-07-06T12:00:00.000Z', message: { role: 'user', content: [{ type: 'text', text: 'pi question' }] } }),
+    ].join('\n'), 'utf8');
+
+    const droidRoot = path.join(root, 'droid');
+    await mkdir(path.join(droidRoot, 'sessions'), { recursive: true });
+    await writeFile(path.join(droidRoot, 'sessions-index.json'), JSON.stringify({
+      version: 2,
+      entries: [{ sessionId: 's9', cwd: path.join(scanRoot, 'my-repo'), mtime: Date.parse('2026-07-06T13:00:00.000Z') }],
+    }), 'utf8');
+    await writeFile(path.join(droidRoot, 'sessions', 's9.jsonl'), [
+      JSON.stringify({ type: 'message', timestamp: '2026-07-06T13:00:00.000Z', message: { role: 'user', content: [{ type: 'text', text: 'droid question' }] } }),
+    ].join('\n'), 'utf8');
+
+    const result = await collectSessionPrompts({
+      scanRoot,
+      claudeProjectsRoot: path.join(root, 'no-claude'),
+      codexSessionsRoot: codexRoot,
+      ampThreadsRoot: ampRoot,
+      piSessionsRoot: piRoot,
+      droidRoot,
+      now: new Date('2026-07-07T00:00:00.000Z'),
+    });
+
+    const byAgent = new Map(result.prompts.map((prompt) => [prompt.agent, prompt.text]));
+    assert.equal(result.prompts.length, 4);
+    assert.equal(byAgent.get('codex'), 'codex question');
+    assert.equal(byAgent.get('amp'), 'amp question');
+    assert.equal(byAgent.get('pi'), 'pi question');
+    assert.equal(byAgent.get('droid'), 'droid question');
+    assert.ok(result.prompts.every((prompt) => prompt.repo === 'my-repo'));
+  });
+});
+
+test('projects: droid subdir layout parses cwd from session_start header and filters env-dump blocks', () => {
+  const raw = [
+    JSON.stringify({ type: 'session_start', id: 'x', title: 't', cwd: '/Users/x/Github/openrouter-cli' }),
+    JSON.stringify({ type: 'message', timestamp: '2026-07-06T02:45:00.000Z', message: { role: 'user', content: [
+      { type: 'text', text: '<system-reminder>env dump</system-reminder>' },
+      { type: 'text', text: 'review the plan and suggest improvements' },
+    ] } }),
+  ].join('\n');
+
+  const prompts = parseCwdHeaderSession(raw, 'droid', ['session_start'], '/Users/x/Github', '2026-07-06T00:00:00.000Z', SESSION_CUTOFF);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].repo, 'openrouter-cli');
+  assert.equal(prompts[0].text, 'review the plan and suggest improvements');
 });

@@ -19,7 +19,7 @@ export interface ProjectCommit {
 }
 
 export interface SessionPrompt {
-  agent: 'claude';
+  agent: 'claude' | 'codex' | 'amp' | 'pi' | 'droid';
   repo: string;
   timestamp: string;
   text: string;
@@ -79,6 +79,14 @@ export interface ProjectSyncOptions extends ProjectScanOptions {
   noSessions?: boolean;
   /** Root containing Claude Code project JSONL directories. Defaults to ~/.claude/projects. */
   claudeProjectsRoot?: string;
+  /** Root containing Codex rollout JSONL files. Defaults to ~/.codex/sessions. */
+  codexSessionsRoot?: string;
+  /** Directory containing Amp thread JSON files. Defaults to ~/.local/share/amp/threads. */
+  ampThreadsRoot?: string;
+  /** Root containing Pi session dirs. Defaults to ~/.pi/agent/sessions. */
+  piSessionsRoot?: string;
+  /** Factory droid data dir holding sessions-index.json + sessions/. Defaults to ~/.factory. */
+  droidRoot?: string;
   /** Keep session prompts newer than this many days. Default: 14. */
   sessionRetentionDays?: number;
 }
