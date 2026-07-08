@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
 import { readJson, readJsonLines, writeJson, writeJsonLines } from '../fs.js';
 import { pathExists } from '../fs.js';
 import type {
@@ -163,6 +164,9 @@ export async function syncRaindropBookmarks(
   const cachePath = raindropBookmarksCachePath();
   const metaPath = raindropMetaPath();
   const statePath = raindropBackfillStatePath();
+  // Resume state is written after every page — the directory must exist
+  // before the first page lands, not only at the final cache write.
+  if (!dryRun) await mkdir(path.dirname(cachePath), { recursive: true });
 
   let existingRecords = new Map<number, RaindropRecord>();
   let state: RaindropBackfillState = {};
