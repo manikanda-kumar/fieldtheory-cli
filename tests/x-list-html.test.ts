@@ -105,7 +105,7 @@ test('renderXListHtml renders inline images from media objects', () => {
   assert.match(html, /<img src="https:\/\/pbs\.twimg\.com\/media\/photo\.jpg" alt="diagram &lt;one&gt;" loading="lazy">/);
 });
 
-test('renderXListHtml renders video preview with source link', () => {
+test('renderXListHtml embeds an inline video player with poster and mp4 source', () => {
   const html = renderXListHtml({
     listId: '197',
     fetchedAt: '2026-06-04T00:00:00Z',
@@ -119,9 +119,53 @@ test('renderXListHtml renders video preview with source link', () => {
     }],
   });
 
+  assert.match(html, /<video controls preload="none" playsinline poster="https:\/\/pbs\.twimg\.com\/media\/poster\.jpg" src="https:\/\/video\.twimg\.com\/ext_tw_video\/video\.mp4"><\/video>/);
+});
+
+test('renderXListHtml falls back to a poster with a play badge when no mp4 variant', () => {
+  const html = renderXListHtml({
+    listId: '197',
+    fetchedAt: '2026-06-04T00:00:00Z',
+    tweets: [{
+      ...baseTweet,
+      links: [],
+      mediaObjects: [{ type: 'video', url: 'https://pbs.twimg.com/media/poster.jpg' }],
+    }],
+  });
+
+  assert.match(html, /media-item video no-src/);
   assert.match(html, /<img src="https:\/\/pbs\.twimg\.com\/media\/poster\.jpg" alt="Video preview" loading="lazy">/);
-  assert.match(html, /href="https:\/\/video\.twimg\.com\/ext_tw_video\/video\.mp4"/);
-  assert.match(html, /Open video/);
+});
+
+test('renderXListHtml renders link preview cards with favicon, host, and path', () => {
+  const html = renderXListHtml({
+    listId: '197',
+    fetchedAt: '2026-06-04T00:00:00Z',
+    tweets: [{ ...baseTweet, links: ['https://example.com/blog/post?a=1'] }],
+  });
+
+  assert.match(html, /class="link-card other"/);
+  assert.match(html, /class="link-favicon" src="https:\/\/www\.google\.com\/s2\/favicons\?domain=example\.com&amp;sz=64"/);
+  assert.match(html, /<span class="link-host">example\.com<\/span>/);
+  assert.match(html, /<span class="link-tail">\/blog\/post\?a=1<\/span>/);
+});
+
+test('renderXListHtml gives X-family links human labels instead of numeric ids', () => {
+  const html = renderXListHtml({
+    listId: '197',
+    fetchedAt: '2026-06-04T00:00:00Z',
+    tweets: [{
+      ...baseTweet,
+      links: ['http://x.com/i/article/2075070857827819520', 'https://x.com/paulsolt/status/2075336345300377615'],
+    }],
+  });
+
+  assert.match(html, /<span class="link-badge x">X Article<\/span>/);
+  assert.match(html, /<span class="link-host">X Article<\/span>/);
+  assert.match(html, /<span class="link-host">@paulsolt<\/span>/);
+  assert.match(html, /<span class="link-tail">Post on X<\/span>/);
+  // The opaque numeric article id must not surface as the card detail.
+  assert.doesNotMatch(html, /2075070857827819520<\/span>/);
 });
 
 test('renderXListHtml renders quoted tweets as nested cards', () => {

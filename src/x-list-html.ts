@@ -66,13 +66,16 @@ function renderMedia(mediaObjects: BookmarkMediaObject[] | undefined): string {
     if (!url) return '';
     const type = media.type ?? 'photo';
     const alt = media.altText ?? media.extAltText ?? (type === 'video' ? 'Video preview' : 'Tweet media');
-    const image = `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`;
     const videoUrl = bestVideoUrl(media);
+    // Inline playback when an mp4 variant exists; the preview image is the poster.
+    if ((type === 'video' || type === 'animated_gif') && videoUrl) {
+      const loop = type === 'animated_gif' ? ' loop muted' : '';
+      return `<figure class="media-item video"><video controls preload="none" playsinline poster="${escapeHtml(url)}"${loop} src="${escapeHtml(videoUrl)}"></video></figure>`;
+    }
+    const image = `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`;
     if (type === 'video' || type === 'animated_gif') {
-      const link = videoUrl
-        ? `<a class="media-link" href="${escapeHtml(videoUrl)}" target="_blank" rel="noreferrer">Open video</a>`
-        : '';
-      return `<figure class="media-item video">${image}${link}</figure>`;
+      // No mp4 variant — fall back to the poster with a play affordance.
+      return `<figure class="media-item video no-src"><span class="play-badge">▶</span>${image}</figure>`;
     }
     return `<figure class="media-item">${image}</figure>`;
   }).filter(Boolean);
@@ -109,11 +112,52 @@ function linkType(url: string): { label: string; slug: string } {
   return { label: host, slug: 'other' };
 }
 
+// Build the preview card's label/host/tail. Generic links show host + path;
+// X-family URLs carry opaque numeric ids, so derive a human label from the
+// path shape (article / broadcast / @handle post) instead of the raw id.
+interface LinkPreview { label: string; slug: string; host: string; primary: string; secondary: string; }
+
+function describeLink(url: string): LinkPreview {
+  const { label, slug } = linkType(url);
+  let host = '';
+  let segments: string[] = [];
+  let tail = '';
+  try {
+    const u = new URL(url);
+    host = u.hostname.replace(/^www\./, '');
+    segments = u.pathname.split('/').filter(Boolean);
+    tail = `${u.pathname}${u.search}`.replace(/\/$/, '');
+    if (tail === '/') tail = '';
+  } catch {
+    return { label, slug, host: url, primary: url, secondary: '' };
+  }
+
+  if (slug === 'x') {
+    const [a, b] = segments;
+    if (a === 'i' && b === 'article') return { label: 'X Article', slug, host, primary: 'X Article', secondary: 'Long-form post on X' };
+    if (a === 'i' && b === 'broadcasts') return { label: 'Broadcast', slug, host, primary: 'X Broadcast', secondary: 'Live on X' };
+    if (a === 'i' && b === 'status') return { label, slug, host, primary: 'X Post', secondary: 'Post on X' };
+    if (segments[1] === 'status') return { label, slug, host, primary: `@${a}`, secondary: 'Post on X' };
+    if (a === 'i' && b === 'spaces') return { label: 'Space', slug, host, primary: 'X Space', secondary: 'Audio on X' };
+    if (segments.length === 1 && a && a !== 'i') return { label, slug, host, primary: `@${a}`, secondary: 'Profile on X' };
+  }
+
+  return { label, slug, host, primary: host, secondary: tail };
+}
+
 function renderLinks(links: string[] | undefined): string {
   if (!links?.length) return '';
   return `<div class="links">${links.map((link) => {
-    const { label, slug } = linkType(link);
-    return `<a class="link-row" href="${escapeHtml(link)}" target="_blank" rel="noreferrer"><span class="link-badge ${slug}">${escapeHtml(label)}</span><span class="link-url">${escapeHtml(link)}</span></a>`;
+    const { label, slug, host, primary, secondary } = describeLink(link);
+    // Favicon fetched at view time (same remote-media model as tweet images).
+    const favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
+    return `<a class="link-card ${slug}" href="${escapeHtml(link)}" target="_blank" rel="noreferrer">
+      <img class="link-favicon" src="${escapeHtml(favicon)}" alt="" loading="lazy" width="32" height="32">
+      <span class="link-body">
+        <span class="link-top"><span class="link-badge ${slug}">${escapeHtml(label)}</span><span class="link-host">${escapeHtml(primary)}</span></span>
+        ${secondary ? `<span class="link-tail">${escapeHtml(secondary)}</span>` : ''}
+      </span>
+    </a>`;
   }).join('')}</div>`;
 }
 
@@ -187,7 +231,7 @@ function renderSection(title: string, tweets: XListHtmlTweet[]): string {
   return `
     <section id="${title.toLowerCase().replaceAll(' ', '-')}">
       <h2>${escapeHtml(title)} <span>${tweets.length}</span></h2>
-      ${tweets.length ? tweets.map(renderTweet).join('') : '<p class="empty">No tweets in this section.</p>'}
+      ${tweets.length ? `<div class="tweet-grid">${tweets.map(renderTweet).join('')}</div>` : '<p class="empty">No tweets in this section.</p>'}
     </section>`;
 }
 
@@ -244,8 +288,9 @@ export function renderXListHtml(input: XListHtmlInput): string {
   h2 { margin: 0 0 14px; padding-top: 10px; font-size: 18px; letter-spacing: -.01em; }
   h2 span { margin-left: 8px; color: var(--accent); font-size: 13px; font-weight: 800; }
   section + section { margin-top: 26px; }
-  .tweet-card { border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 16px; margin: 0; background: var(--bg); }
-  .tweet-card:hover { background: #1d2125; }
+  .tweet-grid { columns: 2; column-gap: 16px; }
+  .tweet-card { break-inside: avoid; display: inline-block; width: 100%; border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin: 0 0 16px; background: var(--card); transition: border-color .15s; }
+  .tweet-card:hover { border-color: var(--line-strong); }
   .tweet-card.list-tweet .kind { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--accent-soft); color: var(--accent); }
   .tweet-card.conversation-context .kind { border-color: color-mix(in srgb, var(--context) 35%, var(--line)); background: var(--context-soft); color: #a78bfa; }
   .tweet-card header, .tweet-card footer { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
@@ -253,19 +298,24 @@ export function renderXListHtml(input: XListHtmlInput): string {
   time, .quote-byline, .empty { color: var(--muted); font-size: 13px; }
   .kind { flex: 0 0 auto; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent); background: var(--accent-soft); font-size: 12px; font-weight: 600; }
   .tweet-text { white-space: pre-wrap; line-height: 1.55; font-size: 15px; max-width: 72ch; margin: 14px 0; }
-  .media-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 14px 0; }
-  .media-item { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
-  .media-item img { display: block; width: 100%; max-height: 540px; object-fit: contain; }
-  .media-link { display: block; padding: 10px 12px; color: var(--accent); text-decoration: none; border-top: 1px solid var(--line); }
+  .media-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 14px 0; }
+  .media-item { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  .media-item img, .media-item video { display: block; width: 100%; max-height: 460px; object-fit: contain; background: #000; }
+  .media-item.video { position: relative; }
+  .media-item.no-src .play-badge { position: absolute; inset: 0; display: grid; place-items: center; font-size: 34px; color: #fff; text-shadow: 0 1px 8px rgb(0 0 0 / 60%); pointer-events: none; }
   .quote-card { margin: 14px 0; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
   .quote-label { color: var(--accent); font-size: 11px; font-weight: 850; text-transform: uppercase; letter-spacing: .09em; margin-bottom: 4px; }
   .quote-card p { white-space: pre-wrap; line-height: 1.5; margin: 10px 0; }
-  .links { display: grid; gap: 6px; margin: 12px 0; overflow-wrap: anywhere; }
-  .links a, .open, .quote-card a { color: var(--accent); text-underline-offset: 3px; }
-  .link-row { display: flex; align-items: baseline; gap: 8px; text-decoration: none; }
-  .link-row:hover .link-url { text-decoration: underline; }
-  .link-url { color: var(--accent); min-width: 0; word-break: break-all; }
-  .link-badge { flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--text); background: var(--panel); border: 1px solid var(--line-strong); }
+  .links { display: grid; gap: 8px; margin: 12px 0; }
+  .open, .quote-card a { color: var(--accent); text-underline-offset: 3px; }
+  .link-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); text-decoration: none; transition: border-color .15s, background .15s; }
+  .link-card:hover { border-color: var(--line-strong); background: #1d2125; }
+  .link-favicon { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 8px; background: var(--card); object-fit: contain; }
+  .link-body { min-width: 0; display: grid; gap: 3px; }
+  .link-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .link-host { color: var(--text); font-weight: 650; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .link-tail { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .link-badge { flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--text); background: var(--card); border: 1px solid var(--line-strong); }
   .metrics { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 13px; }
   .metrics span { display: inline-flex; align-items: baseline; gap: 5px; }
   .metrics b { color: var(--text); font-size: 13px; }
@@ -281,6 +331,7 @@ export function renderXListHtml(input: XListHtmlInput): string {
   .filterbar button:hover { color: var(--text); border-color: var(--line-strong); }
   .filterbar button.active { color: #fff; background: var(--context); border-color: var(--context); }
   @media (max-width: 860px) { .page-header, .layout { grid-template-columns: 1fr; } .rail { position: static; grid-template-columns: repeat(2, 1fr); } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { .tweet-grid { columns: 1; } }
   @media (max-width: 640px) { main { width: min(100% - 20px, 1180px); padding-top: 20px; } h1 { font-size: 30px; } .tweet-card header, .tweet-card footer { display: grid; } .rail { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -363,14 +414,14 @@ export function renderXListHtml(input: XListHtmlInput): string {
     }
 
     function sortAll() {
-      document.querySelectorAll('section').forEach((section) => {
-        Array.from(section.querySelectorAll('.tweet-card'))
+      document.querySelectorAll('.tweet-grid').forEach((grid) => {
+        Array.from(grid.querySelectorAll('.tweet-card'))
           .sort((a, b) => {
             const av = Number(a.dataset[key] || 0);
             const bv = Number(b.dataset[key] || 0);
             return dir === 'desc' ? bv - av : av - bv;
           })
-          .forEach((card) => section.appendChild(card));
+          .forEach((card) => grid.appendChild(card));
       });
     }
 
