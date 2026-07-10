@@ -19,6 +19,15 @@ import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir }
 
 const SNIPPET_CHARS = 240;
 const MAX_THEMES = 7;
+// Historically, 21% of X bookmarks and 29% of Raindrop items were bare link
+// shares. Excluding these saves prevents URL/title-word matching from wasting
+// synthesis context without discarding them from the digest.
+export const THIN_CONTENT_CHARS = 120;
+
+/** Length of meaningful saved text after URL-only content is removed. */
+export function contentLength(text: string): number {
+  return text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim().length;
+}
 
 export interface DailyTheme {
   title: string;
@@ -34,6 +43,10 @@ export interface SynthesizeDailyOptions {
   invoke?: (prompt: string) => Promise<string>;
   /** Overwrite an existing digest for the same date. */
   force?: boolean;
+  /** Current digest items supplied with a cached or fresh link enrichment. */
+  enrichedCount?: number;
+  /** Enriched items join the LLM partition even if a concise summary is under the normal text threshold. */
+  enrichedItemIds?: Iterable<string>;
 }
 
 export interface SynthesizeDailyResult {
@@ -43,6 +56,9 @@ export interface SynthesizeDailyResult {
   droppedCitations: number;
   themedCount: number;
   alsoSavedCount: number;
+  /** Thin items are a subset of alsoSavedCount, never a separate rendering path. */
+  thinSkipped: number;
+  enrichedCount: number;
   skipped: boolean;
 }
 
@@ -258,6 +274,8 @@ export function renderDigestMarkdown(
   lines.push(`collected: ${coverage.counts.collected}`);
   lines.push(`themed: ${coverage.counts.themed}`);
   lines.push(`also_saved: ${coverage.counts.alsoSaved}`);
+  lines.push(`thin_skipped: ${coverage.counts.thinSkipped}`);
+  lines.push(`enriched: ${coverage.counts.enriched}`);
   lines.push(`carried_over: ${coverage.counts.carriedOver}`);
   lines.push(`citations_dropped: ${coverage.counts.citationsDropped}`);
   lines.push(`undateable_excluded: ${coverage.counts.undateableExcluded}`);
@@ -320,7 +338,8 @@ export function renderDigestMarkdown(
     lines.push(`- ${source}: ${coverage.freshness[source]}`);
   }
   lines.push('- Dark sources: x-list and following are not yet in the canonical index.');
-  lines.push(`- This run: collected ${coverage.counts.collected}; themed ${coverage.counts.themed}; also-saved ${coverage.counts.alsoSaved}; carried-over ${coverage.counts.carriedOver}; citations dropped ${coverage.counts.citationsDropped}; undateable excluded (canonical total) ${coverage.counts.undateableExcluded}; synthesis ${coverage.counts.synthesis}.`);
+  // thinSkipped is included in alsoSaved, preserving collected = themed + also-saved.
+  lines.push(`- This run: collected ${coverage.counts.collected}; themed ${coverage.counts.themed}; also-saved ${coverage.counts.alsoSaved}; thin links skipped from synthesis ${coverage.counts.thinSkipped}; carried-over ${coverage.counts.carriedOver}; enriched links available to this digest ${coverage.counts.enriched}; citations dropped ${coverage.counts.citationsDropped}; undateable excluded (canonical total) ${coverage.counts.undateableExcluded}; synthesis ${coverage.counts.synthesis}.`);
   lines.push('');
 
   return lines.join('\n');
@@ -348,6 +367,8 @@ export async function synthesizeDaily(
       droppedCitations: 0,
       themedCount: 0,
       alsoSavedCount: 0,
+      thinSkipped: 0,
+      enrichedCount: options.enrichedCount ?? 0,
       skipped: true,
     };
   }
@@ -355,23 +376,33 @@ export async function synthesizeDaily(
   let themes: DailyTheme[] = [];
   let usedLlm = false;
   let droppedCitations = 0;
+  let llmFailed = false;
+  const enrichedItemIds = new Set(options.enrichedItemIds ?? []);
+  const promptItems = collection.items.filter((item) => contentLength(item.searchText) >= THIN_CONTENT_CHARS || enrichedItemIds.has(item.id));
+  const thinSkipped = collection.items.length - promptItems.length;
 
-  if (collection.items.length > 0) {
+  if (promptItems.length > 0) {
+    const promptItemIds = new Set(promptItems.map((item) => item.id));
+    const promptCollection: DailyCollection = { ...collection, items: promptItems };
+    const promptConnected = connected.filter(({ item }) => promptItemIds.has(item.id));
     try {
-      const aliases = buildDailyAliases(collection, connected);
+      const aliases = buildDailyAliases(promptCollection, promptConnected);
       const invoke = options.invoke ?? ((prompt: string) => defaultInvoke(options.profile ?? {}, prompt));
-      const raw = await invoke(buildDailyPrompt(collection, connected, aliases));
+      const raw = await invoke(buildDailyPrompt(promptCollection, promptConnected, aliases));
       const jsonText = extractJsonArray(raw);
       if (jsonText) {
-        const validated = validateThemes(JSON.parse(jsonText), collection, connected, aliases);
+        const validated = validateThemes(JSON.parse(jsonText), promptCollection, promptConnected, aliases);
         themes = validated.themes;
         droppedCitations = validated.dropped;
         usedLlm = themes.length > 0;
-      }
+      } else llmFailed = true;
     } catch {
       // LLM unavailable or invalid output — fall back to mechanical grouping.
+      llmFailed = true;
     }
-    if (themes.length === 0) themes = mechanicalThemes(collection);
+    // On an LLM failure the fallback intentionally covers all items, including
+    // thin links: it is a mechanical availability fallback, not synthesis.
+    if (llmFailed) themes = mechanicalThemes(collection);
   }
 
   const themedIds = new Set(themes.flatMap((theme) => theme.itemIds));
@@ -390,6 +421,8 @@ export async function synthesizeDaily(
     collected: collection.items.length,
     themed: themedIds.size,
     alsoSaved: alsoSavedIds.length,
+    thinSkipped,
+    enriched: options.enrichedCount ?? 0,
     carriedOver: collection.carriedOver,
     citationsDropped: droppedCitations,
     undateableExcluded: collection.undateableExcluded,
@@ -416,6 +449,8 @@ export async function synthesizeDaily(
     droppedCitations,
     themedCount: themedIds.size,
     alsoSavedCount: alsoSavedIds.length,
+    thinSkipped,
+    enrichedCount: options.enrichedCount ?? 0,
     skipped: false,
   };
 }

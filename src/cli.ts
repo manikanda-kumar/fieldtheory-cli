@@ -47,6 +47,7 @@ import { syncGitHubStars } from './github-stars/sync.js';
 import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
 import { collectDaily } from './daily/collect.js';
 import { connectDailyItems } from './daily/connect.js';
+import { enrichThinItems, mergeEnrichmentSummaries } from './daily/enrich.js';
 import { synthesizeDaily } from './daily/synthesize.js';
 import { writeInterests } from './daily/interests.js';
 import { dailyDigestPath } from './daily/paths.js';
@@ -1344,6 +1345,10 @@ export function buildCli() {
         date: stringOption(options.date),
         windowHours: typeof options.windowHours === 'number' && Number.isFinite(options.windowHours) ? options.windowHours : 24,
       });
+      const enrichment = await enrichThinItems(collection.items, {
+        onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
+      });
+      mergeEnrichmentSummaries(collection.items, enrichment.summaries);
       const connected = await connectDailyItems(collection);
 
       if (options.write) {
@@ -1356,6 +1361,8 @@ export function buildCli() {
         // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin a cheap
         // engine without baking flags into the sync-all step list.
         const result = await synthesizeDaily(collection, connected, {
+          enrichedCount: enrichment.enrichedCount,
+          enrichedItemIds: collection.items.filter((item) => item.canonicalUrl && enrichment.summaries.has(item.canonicalUrl)).map((item) => item.id),
           profile: {
             engine: stringOption(options.engine) ?? stringOption(process.env.FT_DAILY_ENGINE),
             model: stringOption(options.model) ?? stringOption(process.env.FT_DAILY_MODEL),
@@ -1368,6 +1375,7 @@ export function buildCli() {
         }
         console.log(`  ✓ Digest written: ${result.digestPath}`);
         console.log(`    themes: ${result.themes.length} (${result.usedLlm ? 'llm' : 'mechanical'})`);
+        if (result.enrichedCount > 0) console.log(`    enriched links available: ${result.enrichedCount}`);
         if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);
         const interests = await writeInterests();
         console.log(`  ✓ Interests updated: ${interests.path}`);

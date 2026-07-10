@@ -9,7 +9,8 @@ import { readFile } from 'node:fs/promises';
 import { collectDaily } from '../src/daily/collect.js';
 import { connectDailyItems } from '../src/daily/connect.js';
 import { collectDailyCoverage } from '../src/daily/coverage.js';
-import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+import { enrichThinItems, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
+import { contentLength, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
 
 async function readFileText(filePath: string): Promise<string> {
@@ -37,7 +38,9 @@ function starRecord(overrides: Partial<GitHubStarRecord> & { id: number; fullNam
     owner,
     name,
     htmlUrl: `https://github.com/${overrides.fullName}`,
-    description: null,
+    // Most synthesis fixtures represent substantive saves; thin-link behavior
+    // is covered explicitly below with searchText overrides.
+    description: 'Detailed saved commentary about implementation tradeoffs, architecture, practical examples, and the reasons this resource is worth revisiting. '.repeat(2),
     homepageUrl: null,
     language: null,
     topics: [],
@@ -156,7 +159,7 @@ test('daily: overflow advances only through the oldest collected items and drain
     assert.match(firstDigest, /themed: 3/);
     assert.match(firstDigest, /also_saved: 0/);
     assert.match(firstDigest, /carried_over: 2/);
-    assert.match(firstDigest, /This run: collected 3; themed 3; also-saved 0; carried-over 2;/);
+    assert.match(firstDigest, /This run: collected 3; themed 3; also-saved 0; thin links skipped from synthesis 0; carried-over 2;/);
     const meta = JSON.parse(await readFileText(dailyMetaPath()));
     assert.equal(meta.lastRunAt, '2026-07-06T02:00:00.000Z');
     assert.ok(meta.lastRunItemId);
@@ -259,7 +262,7 @@ test('daily: digest path validates date shape', () => {
 test('daily: synthesize validates citations, writes digest, and advances the rolling watermark', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeStars(dir, [
-      starRecord({ id: 1, fullName: 'a/agent-runner', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent runner harness' }),
+      starRecord({ id: 1, fullName: 'a/agent-runner', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent runner harness with detailed notes on orchestration, evaluation, implementation choices, failure recovery, and practical usage patterns for teams. '.repeat(2) }),
       starRecord({ id: 2, fullName: 'b/agent-primer', starredAt: '2026-06-10T00:00:00.000Z', description: 'primer on agent runner harnesses' }),
     ]);
     await rebuildCanonicalIndex();
@@ -304,7 +307,7 @@ test('daily: synthesize validates citations, writes digest, and advances the rol
 test('daily: synthesize falls back to mechanical themes when the LLM fails', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeStars(dir, [
-      starRecord({ id: 1, fullName: 'a/solo-tool', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool' }),
+      starRecord({ id: 1, fullName: 'a/solo-tool', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool with detailed commentary about architecture, deployment tradeoffs, operational considerations, and practical implementation guidance. '.repeat(2) }),
     ]);
     await rebuildCanonicalIndex();
 
@@ -334,6 +337,7 @@ test('daily: X coverage freshness uses the newest full or incremental sync times
       collected: 0,
       themed: 0,
       alsoSaved: 0,
+      thinSkipped: 0,
       carriedOver: 0,
       citationsDropped: 0,
       undateableExcluded: 0,
@@ -460,6 +464,202 @@ test('daily: synthesize renders items from themes dropped by the cap under Also 
     for (const item of collection.items.slice(7)) {
       assert.ok(alsoSaved.includes(item.canonicalUrl ?? item.id));
     }
+  });
+});
+
+test('daily: thin bare links are excluded from synthesis and reconciled into Also saved', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'eligible/in-prompt', starredAt: '2026-07-06T12:00:00.000Z' }),
+      starRecord({ id: 2, fullName: 'thin/otherwise-ignored', starredAt: '2026-07-06T13:00:00.000Z' }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const item = collection.items.find((candidate) => candidate.canonicalUrl?.includes('thin/otherwise-ignored'))!;
+    item.displayTitle = 'Distinctive thin link title';
+    item.searchText = 'https://example.com/a/very/long/path/that/is/still/only/a/link a few words';
+    assert.ok(contentLength(item.searchText) < 120);
+    const connected = await connectDailyItems(collection);
+    let prompt = '';
+    const result = await synthesizeDaily(collection, connected, {
+      invoke: async (value) => {
+        prompt = value;
+        return JSON.stringify([{ title: 'Eligible', summary: 'The substantive item.', itemIds: ['i1'], relatedIds: [], projects: [] }]);
+      },
+    });
+
+    assert.equal(result.thinSkipped, 1);
+    assert.equal(result.themedCount + result.alsoSavedCount, collection.items.length);
+    assert.match(prompt, /id=i1 source=github-stars title="eligible\/in-prompt"/);
+    assert.ok(!prompt.includes('Distinctive thin link title'));
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /## Also saved/);
+    assert.match(digest, /Distinctive thin link title/);
+    assert.match(digest, /thin_skipped: 1/);
+    assert.match(digest, /thin links skipped from synthesis 1/);
+  });
+});
+
+test('daily: URL plus substantial commentary remains eligible for synthesis', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [starRecord({ id: 1, fullName: 'commentary/eligible', starredAt: '2026-07-06T12:00:00.000Z' })]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    collection.items[0].displayTitle = 'Distinctive commentary title';
+    collection.items[0].searchText = `https://example.com/article ${'useful commentary '.repeat(10)}`;
+    assert.ok(contentLength(collection.items[0].searchText) >= 120);
+    let prompt = '';
+    const result = await synthesizeDaily(collection, [], {
+      invoke: async (value) => {
+        prompt = value;
+        return JSON.stringify([{ title: 'Commentary', summary: 'Substantial saved commentary.', itemIds: ['i1'], relatedIds: [], projects: [] }]);
+      },
+    });
+
+    assert.equal(result.thinSkipped, 0);
+    assert.ok(prompt.includes('i1'));
+  });
+});
+
+test('daily: skips the LLM when every item is thin', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'thin/one', starredAt: '2026-07-06T12:00:00.000Z' }),
+      starRecord({ id: 2, fullName: 'thin/two', starredAt: '2026-07-06T13:00:00.000Z' }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    for (const item of collection.items) item.searchText = `${item.canonicalUrl} brief share`;
+    let invoked = false;
+    const result = await synthesizeDaily(collection, [], { invoke: async () => { invoked = true; return '[]'; } });
+
+    assert.equal(invoked, false);
+    assert.equal(result.usedLlm, false);
+    assert.equal(result.themes.length, 0);
+    assert.equal(result.thinSkipped, 2);
+    assert.equal(result.alsoSavedCount, 2);
+  });
+});
+
+test('daily: enriches a thin link into the prompt and reuses its durable cache', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [starRecord({ id: 75, fullName: 'a/enriched-link', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
+    await rebuildCanonicalIndex();
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const item = collection.items[0];
+    item.searchText = `${item.canonicalUrl} brief`;
+    let fetchCalls = 0;
+    const enrichment = await enrichThinItems(collection.items, {
+      fetch: async () => {
+        fetchCalls += 1;
+        return new Response('<html><title>Enriched page</title><meta name="description" content="A useful page."><body>Detailed article material for the digest.</body></html>');
+      },
+      llm: async () => 'This page explains a useful implementation technique with practical context.',
+    });
+    mergeEnrichmentSummaries(collection.items, enrichment.summaries);
+    assert.equal(enrichment.enrichedCount, 1);
+    assert.match(item.searchText, /summary: This page explains/);
+    let prompt = '';
+    const result = await synthesizeDaily(collection, await connectDailyItems(collection), {
+      enrichedCount: enrichment.enrichedCount,
+      enrichedItemIds: [item.id],
+      invoke: async (value) => {
+        prompt = value;
+        return '[{"title":"Useful technique","summary":"A connected implementation idea.","itemIds":["i1"],"relatedIds":[],"projects":[]}]';
+      },
+    });
+    assert.equal(result.usedLlm, true);
+    assert.match(prompt, /enriched-link/);
+    assert.equal(fetchCalls, 1);
+
+    await rebuildCanonicalIndex();
+    const cached = await enrichThinItems(collection.items, {
+      fetch: async () => { throw new Error('cache miss'); },
+      llm: async () => { throw new Error('cache miss'); },
+    });
+    assert.equal(cached.enrichedCount, 1);
+  });
+});
+
+test('daily: empty enrichment completion is cached as failed and leaves the item thin', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [starRecord({ id: 76, fullName: 'a/empty-enrichment', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
+    await rebuildCanonicalIndex();
+    const collection = await collectDaily({ date: '2026-07-06' });
+    collection.items[0].searchText = `${collection.items[0].canonicalUrl} brief`;
+    const enrichment = await enrichThinItems(collection.items, {
+      fetch: async () => new Response('<title>Page</title><body>body</body>'),
+      llm: async () => '',
+    });
+    mergeEnrichmentSummaries(collection.items, enrichment.summaries);
+    assert.equal(enrichment.enrichedCount, 0);
+    assert.ok(contentLength(collection.items[0].searchText) < 120);
+    const result = await synthesizeDaily(collection, [], { invoke: async () => { throw new Error('should not invoke'); } });
+    assert.equal(result.thinSkipped, 1);
+    assert.match(await readFileText(result.digestPath), /Also saved/);
+  });
+});
+
+test('daily: enrichment silently no-ops without an OpenCode key', async () => {
+  const previousGo = process.env.OPENCODE_GO_API_KEY;
+  const previousApi = process.env.OPENCODE_API_KEY;
+  delete process.env.OPENCODE_GO_API_KEY;
+  delete process.env.OPENCODE_API_KEY;
+  try {
+    const result = await enrichThinItems([{ id: 'thin', canonicalUrl: 'https://example.com/thin', displayTitle: 'thin', searchText: 'https://example.com/thin', sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null }]);
+    assert.equal(result.enrichedCount, 0);
+  } finally {
+    if (previousGo === undefined) delete process.env.OPENCODE_GO_API_KEY;
+    else process.env.OPENCODE_GO_API_KEY = previousGo;
+    if (previousApi === undefined) delete process.env.OPENCODE_API_KEY;
+    else process.env.OPENCODE_API_KEY = previousApi;
+  }
+});
+
+test('daily: enrichment never fetches private IPs or redirects to them', async () => {
+  await withIsolatedDataDir(async () => {
+    const thin = (url: string): CanonicalRecentItem => ({ id: url, canonicalUrl: url, displayTitle: url, searchText: url, sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null });
+    let fetchCalls = 0;
+    const privateResult = await enrichThinItems([thin('http://192.168.1.1/x')], {
+      fetch: async () => { fetchCalls += 1; throw new Error('must not fetch'); },
+      llm: async () => 'unused',
+    });
+    assert.equal(privateResult.enrichedCount, 0);
+    assert.equal(fetchCalls, 0);
+
+    const redirectResult = await enrichThinItems([thin('https://example.com/redirect')], {
+      fetch: async () => {
+        fetchCalls += 1;
+        return new Response('', { status: 302, headers: { location: 'http://127.0.0.1/internal' } });
+      },
+      llm: async () => 'unused',
+    });
+    assert.equal(redirectResult.enrichedCount, 0);
+    assert.equal(fetchCalls, 1);
+  });
+});
+
+test('daily: an OpenCode timeout records a failed enrichment without hanging', async () => {
+  await withIsolatedDataDir(async () => {
+    const item: CanonicalRecentItem = { id: 'timeout', canonicalUrl: 'https://example.com/timeout', displayTitle: 'timeout', searchText: 'https://example.com/timeout', sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null };
+    const { createOpenCodeClient } = await import('../src/llm/opencode-client.js');
+    const client = createOpenCodeClient({ apiKey: 'test-key', timeoutMs: 5, fetch: async () => new Promise<Response>(() => {}) });
+    const result = await enrichThinItems([item], {
+      fetch: async () => new Response('<title>Page</title><body>body</body>'),
+      llm: async (prompt) => (await client.chat({ prompt })).text,
+    });
+    assert.equal(result.enrichedCount, 0);
+
+    let retried = false;
+    const cachedFailure = await enrichThinItems([item], {
+      fetch: async () => { retried = true; throw new Error('should remain cached failed'); },
+      llm: async () => { retried = true; return 'should not run'; },
+    });
+    assert.equal(cachedFailure.enrichedCount, 0);
+    assert.equal(retried, false);
   });
 });
 

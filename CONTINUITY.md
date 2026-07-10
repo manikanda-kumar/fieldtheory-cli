@@ -6,19 +6,19 @@ Key decisions:
 - Overflow: oldest-first drain, `(first_saved_at, canonical id)` cursor persisted as lastRunAt + lastRunItemId; cursor applied only when effective sinceIso equals persisted watermark instant (clamp-safe). carriedOver=0 → watermark = untilIso, cursor cleared.
 - `ft daily --date` (historical) never writes daily meta (was rewinding live watermark — bug found during brainstorm, fixed).
 - Coverage footer mechanical, never LLM: 5-source freshness probes (per-source meta timestamps, try/catch → unknown/never synced), dark-sources line (x-list, following not in canonical), run counts in footer + frontmatter. Undateable count = canonical-total (labeled honestly; window attribution impossible for unparseable dates). X freshness = max(full, incremental) via latestBookmarkSyncAt.
-State: T1 (R1–R4), T2 (R5–R7), T3 (R8–R11) all implemented, reviewed (3 P2s found+fixed: droppedCitations semantics, stale clamp cursor, X freshness field pick), verified 822/822 + build green. UNCOMMITTED.
+State: T1 (R1–R4), T2 (R5–R7), T3 (R8–R11) committed 6b7a247, pushed. T4 (thin-content filter: contentLength strips URLs, THIN_CONTENT_CHARS=120, thin items skip LLM prompt → Also saved, thin_skipped count) + T5 (link enrichment: src/llm/opencode-client.ts zen/go deepseek-v4-flash, src/daily/enrich.ts fetch+summarize thin links, link_enrichment cache table survives rebuilds, SSRF guards, 30s LLM timeout, 200KB body cap everywhere, maxTokens 2000 — 600 starved reasoning model to empty content, found via live smoke) verified 833/833 + live E2E (real page → real summary cached ok).
 Done:
 - Ideation doc docs/ideation/2026-07-10-daily-digest-surprise.html (idea #0 coverage + 7 surprises + skip-vector map).
 - Requirements plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (ce-brainstorm).
 - T1–T3 implemented via Codex; new module src/daily/coverage.ts.
 Now:
-- Work complete, uncommitted (per policy: no commit until asked).
+- Thin-link enrichment calibrated for live deepseek-v4-flash: client/enrichment default max tokens raised from 600 to 2000 so reasoning leaves room for `message.content`. Security review fixes retained. Focused tests 30/30 + build pass. Uncommitted.
 Next:
 - Optional: commit; x-list/following canonical ingest (dark sources); per-source watermark; ideation ideas #1–8 (audio briefing top pick).
 Open questions (UNCONFIRMED if needed):
 - None.
 Working set (files/ids/commands):
-- src/daily/{coverage,collect,synthesize}.ts; src/canonical-bookmarks-db.ts; tests/daily.test.ts; `npm run test`; `npm run build`; .harness/runs/* (codex receipts)
+- src/daily/{coverage,collect,connect,enrich,synthesize}.ts; src/llm/opencode-client.ts; src/cli.ts; tests/{daily,opencode-client}.test.ts; `node --import tsx --test tests/daily.test.ts tests/opencode-client.test.ts` = 30/30; `npm run build` ✓; `.harness/runs/*` (codex receipts)
 
 VISION SESSION (2026-07-07) — daily-synthesis companion agent:
 - Goal: agent that synthesizes all consumed data (X bm, YT playlists, Raindrop, GitHub stars, following, x-lists) daily, learns interests, proactively recalls during any project/research ("we studied that last week", "gotcha in blog X", "hot on X right now").

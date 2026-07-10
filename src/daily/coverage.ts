@@ -20,6 +20,10 @@ export interface DailyCoverageCounts {
   collected: number;
   themed: number;
   alsoSaved: number;
+  /** Subset of alsoSaved: bare-link items omitted from the LLM prompt. */
+  thinSkipped: number;
+  /** Current digest items with an enrichment summary available (cached or fresh). */
+  enriched: number;
   carriedOver: number;
   citationsDropped: number;
   /** Counted across the full canonical index, not just this digest window. */
