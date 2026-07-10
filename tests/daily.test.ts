@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { writeJson, writeJsonLines } from '../src/fs.js';
-import { rebuildCanonicalIndex, relatedSeedTerms } from '../src/canonical-bookmarks-db.js';
+import { rebuildCanonicalIndex, relatedSeedTerms, type CanonicalRecentItem } from '../src/canonical-bookmarks-db.js';
 import { readFile } from 'node:fs/promises';
 import { collectDaily } from '../src/daily/collect.js';
 import { connectDailyItems } from '../src/daily/connect.js';
-import { synthesizeDaily } from '../src/daily/synthesize.js';
+import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
 
 async function readFileText(filePath: string): Promise<string> {
@@ -299,5 +299,59 @@ test('daily: synthesize skips when the window is empty', async () => {
     const collection = await collectDaily({ date: '2026-07-06' });
     const result = await synthesizeDaily(collection, [], { invoke: async () => '[]' });
     assert.equal(result.skipped, true);
+  });
+});
+
+test('daily: extractYoutubeVideoId handles watch, short, shorts, and embed URLs', () => {
+  assert.equal(extractYoutubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(extractYoutubeVideoId('https://www.youtube.com/watch?list=PL1&v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(extractYoutubeVideoId('https://youtu.be/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(extractYoutubeVideoId('https://www.youtube.com/shorts/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(extractYoutubeVideoId('https://www.youtube.com/embed/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(extractYoutubeVideoId('https://github.com/a/b'), null);
+  assert.equal(extractYoutubeVideoId(null), null);
+});
+
+test('daily: digest links youtube items to their library notes when notes exist', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const notesPath = path.join(dir, 'md', 'youtube', '2026-07', 'dQw4w9WgXcQ.md');
+    await mkdir(path.dirname(notesPath), { recursive: true });
+    await writeFile(notesPath, '# Talk notes\n');
+    await mkdir(path.join(dir, 'youtube'), { recursive: true });
+    await writeJson(path.join(dir, 'youtube', 'state.json'), {
+      version: 1,
+      playlists: {},
+      videos: {
+        dQw4w9WgXcQ: { status: 'done', artifacts: { notesPath }, updatedAt: '2026-07-06T00:00:00.000Z' },
+        gone123xyz: { status: 'done', artifacts: { notesPath: path.join(dir, 'missing.md') }, updatedAt: '2026-07-06T00:00:00.000Z' },
+      },
+    });
+
+    const item = (id: string, url: string): CanonicalRecentItem => ({
+      id,
+      canonicalUrl: url,
+      displayTitle: id,
+      searchText: id,
+      sources: ['youtube'],
+      firstSavedAt: '2026-07-06T10:00:00.000Z',
+      lastSavedAt: '2026-07-06T10:00:00.000Z',
+      primaryCategory: null,
+      primaryDomain: null,
+    });
+    const collection = {
+      date: '2026-07-06',
+      sinceIso: '2026-07-06T00:00:00.000Z',
+      untilIso: '2026-07-07T00:00:00.000Z',
+      items: [
+        item('vid-with-notes', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+        item('vid-missing-notes', 'https://www.youtube.com/watch?v=gone123xyz'),
+      ],
+      projectDeltas: [],
+    };
+
+    const result = await synthesizeDaily(collection, [], { invoke: async () => '[]' });
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /\[notes\]\(\.\.\/youtube\/2026-07\/dQw4w9WgXcQ\.md\)/);
+    assert.ok(!digest.includes('missing.md'), 'must not link notes whose file is gone');
   });
 });

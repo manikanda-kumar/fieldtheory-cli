@@ -4,11 +4,14 @@
  * digest can never reference items that were not actually collected.
  */
 
-import { writeJson } from '../fs.js';
+import path from 'node:path';
+
+import { pathExists, writeJson } from '../fs.js';
 import { writeMd } from '../fs.js';
 import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunProfile } from '../engine.js';
 import { extractJsonArray } from '../bookmark-classify-llm.js';
 import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+import { loadYoutubeState } from '../youtube/state.js';
 import type { DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
@@ -171,12 +174,56 @@ function mechanicalThemes(collection: DailyCollection): DailyTheme[] {
   }));
 }
 
+/** Pull a YouTube video id out of watch/youtu.be/shorts/embed URLs. */
+export function extractYoutubeVideoId(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const match = url.match(
+    /(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{6,})/,
+  );
+  return match ? match[1] : null;
+}
+
+/** Map videoId → digest-relative link to its library notes .md, for every
+ *  YouTube URL among the digest's items and related refs. */
+export async function buildYoutubeNotesLinks(
+  urls: Array<string | null | undefined>,
+  digestPath: string,
+): Promise<Map<string, string>> {
+  const links = new Map<string, string>();
+  const videoIds = new Set<string>();
+  for (const url of urls) {
+    const videoId = extractYoutubeVideoId(url);
+    if (videoId) videoIds.add(videoId);
+  }
+  if (videoIds.size === 0) return links;
+
+  let state;
+  try {
+    state = await loadYoutubeState();
+  } catch {
+    return links;
+  }
+  const digestDir = path.dirname(digestPath);
+  for (const videoId of videoIds) {
+    const notesPath = state.videos[videoId]?.artifacts?.notesPath;
+    if (!notesPath || !(await pathExists(notesPath))) continue;
+    links.set(videoId, path.relative(digestDir, notesPath).split(path.sep).join('/'));
+  }
+  return links;
+}
+
 function renderDigestMarkdown(
   collection: DailyCollection,
   connected: ConnectedItem[],
   themes: DailyTheme[],
   usedLlm: boolean,
+  youtubeNotes: Map<string, string> = new Map(),
 ): string {
+  const notesSuffix = (url: string | null | undefined): string => {
+    const videoId = extractYoutubeVideoId(url);
+    const link = videoId ? youtubeNotes.get(videoId) : undefined;
+    return link ? ` · [notes](${link})` : '';
+  };
   const linkLabel = (value: string): string => value.replace(/\s+/g, ' ').replace(/[[\]]/g, '').trim().slice(0, 120);
   const itemById = new Map(collection.items.map((item) => [item.id, item]));
   const relatedById = new Map<string, RelatedRef>();
@@ -208,7 +255,7 @@ function renderDigestMarkdown(
       const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
       const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
       const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
-      lines.push(`- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}`);
+      lines.push(`- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`);
     }
     if (theme.relatedIds.length > 0) {
       lines.push('');
@@ -217,7 +264,7 @@ function renderDigestMarkdown(
         const ref = relatedById.get(id);
         if (!ref) continue;
         const label = linkLabel(ref.title ?? ref.url ?? id);
-        lines.push(`- ${ref.url ? `[${label}](${ref.url})` : label}`);
+        lines.push(`- ${ref.url ? `[${label}](${ref.url})` : label}${notesSuffix(ref.url)}`);
       }
     }
     if (theme.projects.length > 0) {
@@ -279,7 +326,14 @@ export async function synthesizeDaily(
     if (themes.length === 0) themes = mechanicalThemes(collection);
   }
 
-  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, usedLlm));
+  const youtubeNotes = await buildYoutubeNotesLinks(
+    [
+      ...collection.items.map((item) => item.canonicalUrl),
+      ...connected.flatMap(({ related }) => related.map((ref) => ref.url)),
+    ],
+    digestPath,
+  );
+  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, usedLlm, youtubeNotes));
   await writeJson(dailyMetaPath(), { lastRunAt: collection.untilIso, lastDigestDate: collection.date });
 
   return { digestPath, themes, usedLlm, droppedCitations, skipped: false };
