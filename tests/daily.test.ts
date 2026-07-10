@@ -8,6 +8,7 @@ import { rebuildCanonicalIndex, relatedSeedTerms, type CanonicalRecentItem } fro
 import { readFile } from 'node:fs/promises';
 import { collectDaily } from '../src/daily/collect.js';
 import { connectDailyItems } from '../src/daily/connect.js';
+import { collectDailyCoverage } from '../src/daily/coverage.js';
 import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
 
@@ -108,20 +109,91 @@ test('daily: collect windows on first_saved_at and gathers project deltas', asyn
 test('daily: collect uses watermark when no date given and caps at 7 days', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeStars(dir, [
+      starRecord({ id: 0, fullName: 'a/clamped-boundary', starredAt: '2026-06-30T00:00:00.000Z' }),
       starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
       starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
     ]);
     await rebuildCanonicalIndex();
 
     ensureDailyDir();
-    await writeJson(dailyMetaPath(), { lastRunAt: '2026-05-01T00:00:00.000Z' });
+    await writeJson(dailyMetaPath(), {
+      lastRunAt: '2026-05-01T00:00:00.000Z',
+      // This stale cursor must not be applied to the clamped 2026-06-30 boundary.
+      lastRunItemId: 'zzzzzzzz',
+    });
 
     const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
 
     // Watermark is older than the 7-day cap, so the window is clamped.
     assert.equal(collection.sinceIso, '2026-06-30T00:00:00.000Z');
-    assert.equal(collection.items.length, 1);
-    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/new-tool');
+    assert.equal(collection.items.length, 2);
+    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/clamped-boundary'));
+    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/new-tool'));
+  });
+});
+
+test('daily: overflow advances only through the oldest collected items and drains on the next run', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, Array.from({ length: 5 }, (_, index) => starRecord({
+      id: index + 1,
+      fullName: `overflow/item-${index + 1}`,
+      starredAt: `2026-07-06T0${index}:00:00.000Z`,
+    })));
+    await rebuildCanonicalIndex();
+
+    const first = await collectDaily({
+      now: new Date('2026-07-07T00:00:00.000Z'),
+      windowHours: 24,
+      maxItems: 3,
+    });
+    assert.equal(first.items.length, 3);
+    assert.equal(first.carriedOver, 2);
+    assert.equal(first.nextWatermark, '2026-07-06T02:00:00.000Z');
+
+    await synthesizeDaily(first, [], { invoke: async () => { throw new Error('offline'); } });
+    const firstDigest = await readFileText(dailyDigestPath(first.date));
+    assert.match(firstDigest, /collected: 3/);
+    assert.match(firstDigest, /themed: 3/);
+    assert.match(firstDigest, /also_saved: 0/);
+    assert.match(firstDigest, /carried_over: 2/);
+    assert.match(firstDigest, /This run: collected 3; themed 3; also-saved 0; carried-over 2;/);
+    const meta = JSON.parse(await readFileText(dailyMetaPath()));
+    assert.equal(meta.lastRunAt, '2026-07-06T02:00:00.000Z');
+    assert.ok(meta.lastRunItemId);
+
+    const second = await collectDaily({
+      now: new Date('2026-07-07T00:00:00.000Z'),
+      maxItems: 3,
+    });
+    assert.equal(second.items.length, 2);
+    assert.equal(second.carriedOver, 0);
+    assert.deepEqual(second.items.map((item) => item.canonicalUrl), [
+      'https://github.com/overflow/item-4',
+      'https://github.com/overflow/item-5',
+    ]);
+  });
+});
+
+test('daily: explicit date synthesis does not move the rolling watermark', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'history/item', starredAt: '2026-07-01T12:00:00.000Z' }),
+    ]);
+    await rebuildCanonicalIndex();
+    ensureDailyDir();
+    await writeJson(dailyMetaPath(), {
+      lastRunAt: '2026-07-10T00:00:00.000Z',
+      lastDigestDate: '2026-07-10',
+    });
+
+    const historical = await collectDaily({ date: '2026-07-01' });
+    await synthesizeDaily(historical, [], { invoke: async () => { throw new Error('offline'); }, force: true });
+
+    const meta = JSON.parse(await readFileText(dailyMetaPath()));
+    assert.deepEqual(meta, {
+      lastRunAt: '2026-07-10T00:00:00.000Z',
+      lastDigestDate: '2026-07-10',
+    });
   });
 });
 
@@ -184,7 +256,7 @@ test('daily: digest path validates date shape', () => {
   assert.match(dailyDigestPath('2026-07-07'), /daily[/\\]2026-07-07\.md$/);
 });
 
-test('daily: synthesize validates citations, writes digest, and advances watermark', async () => {
+test('daily: synthesize validates citations, writes digest, and advances the rolling watermark', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeStars(dir, [
       starRecord({ id: 1, fullName: 'a/agent-runner', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent runner harness' }),
@@ -192,7 +264,7 @@ test('daily: synthesize validates citations, writes digest, and advances waterma
     ]);
     await rebuildCanonicalIndex();
 
-    const collection = await collectDaily({ date: '2026-07-06' });
+    const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
     const connected = await connectDailyItems(collection);
     const newId = collection.items[0].id;
     const hasRelated = (connected[0].related.length ?? 0) > 0;
@@ -217,13 +289,14 @@ test('daily: synthesize validates citations, writes digest, and advances waterma
     assert.ok(result.droppedCitations >= 3);
 
     const digest = await readFileText(result.digestPath);
-    assert.match(digest, /# Daily Digest — 2026-07-06/);
+    assert.match(digest, /# Daily Digest — 2026-07-07/);
     assert.match(digest, /agent-runner/);
     assert.match(digest, /synthesis: llm/);
     assert.ok(!digest.includes('hallucinated'));
+    assert.ok(!digest.includes('## Also saved'));
 
     const meta = JSON.parse(await readFileText(dailyMetaPath()));
-    assert.equal(meta.lastDigestDate, '2026-07-06');
+    assert.equal(meta.lastDigestDate, '2026-07-07');
     assert.ok(meta.lastRunAt);
   });
 });
@@ -246,6 +319,147 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
     assert.match(result.themes[0].title, /github-stars/);
     const digest = await readFileText(result.digestPath);
     assert.match(digest, /synthesis: mechanical/);
+    assert.match(digest, /## Coverage/);
+    assert.match(digest, /- raindrop: never synced/);
+  });
+});
+
+test('daily: X coverage freshness uses the newest full or incremental sync timestamp', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeJson(path.join(dir, 'bookmarks-meta.json'), {
+      lastIncrementalSyncAt: '2026-07-06T10:00:00.000Z',
+      lastFullSyncAt: '2026-07-06T12:00:00.000Z',
+    });
+    const coverage = await collectDailyCoverage({
+      collected: 0,
+      themed: 0,
+      alsoSaved: 0,
+      carriedOver: 0,
+      citationsDropped: 0,
+      undateableExcluded: 0,
+      synthesis: 'mechanical',
+    });
+    assert.equal(coverage.freshness.x, '2026-07-06T12:00:00.000Z');
+  });
+});
+
+test('daily: coverage counts canonical rows excluded for undateable first_saved_at', async () => {
+  await withIsolatedDataDir(async () => {
+    await writeStars(process.env.FT_DATA_DIR!, Array.from({ length: 4 }, (_, index) => starRecord({
+      id: index + 1,
+      fullName: `undateable/item-${index + 1}`,
+      starredAt: '2026-07-06T12:00:00.000Z',
+    })));
+    await rebuildCanonicalIndex();
+
+    const { openDb, saveDb } = await import('../src/db.js');
+    const { twitterBookmarksIndexPath } = await import('../src/paths.js');
+    const db = await openDb(twitterBookmarksIndexPath());
+    const rows = db.exec('SELECT id, canonical_url FROM canonical_bookmarks ORDER BY id ASC')[0]?.values ?? [];
+    const ids = rows.map((row) => String(row[0]));
+    const excludedUrls = rows.slice(0, 3).map((row) => String(row[1]));
+    db.run('UPDATE canonical_bookmarks SET first_saved_at = NULL WHERE id = ?', [ids[0]]);
+    db.run("UPDATE canonical_bookmarks SET first_saved_at = 'not a date' WHERE id = ?", [ids[1]]);
+    db.run("UPDATE canonical_bookmarks SET first_saved_at = 'also not a date' WHERE id = ?", [ids[2]]);
+    await saveDb(db, twitterBookmarksIndexPath());
+    db.close();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    assert.equal(collection.items.length, 1);
+    assert.equal(collection.undateableExcluded, 3);
+    const result = await synthesizeDaily(collection, [], { invoke: async () => { throw new Error('offline'); } });
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /undateable_excluded: 3/);
+    assert.match(digest, /undateable excluded \(canonical total\) 3/);
+    for (const url of excludedUrls) assert.ok(!digest.includes(url));
+  });
+});
+
+test('daily: synthesize suppresses duplicate valid citations without counting them as dropped', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'duplicate/item', starredAt: '2026-07-06T12:00:00.000Z' }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const result = await synthesizeDaily(collection, [], {
+      invoke: async () => JSON.stringify([
+        { title: 'First', summary: 'The saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
+        { title: 'Duplicate', summary: 'The same saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
+      ]),
+    });
+
+    assert.equal(result.droppedCitations, 0);
+    assert.equal(result.themedCount, 1);
+    assert.equal(result.alsoSavedCount, 0);
+    const digest = await readFileText(result.digestPath);
+    assert.equal(digest.match(/^- \[/gm)?.length, 1);
+  });
+});
+
+test('daily: synthesize renders uncited items under Also saved', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, Array.from({ length: 11 }, (_, index) => starRecord({
+      id: index + 1,
+      fullName: `saved/item-${index + 1}`,
+      starredAt: '2026-07-06T12:00:00.000Z',
+    })));
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const result = await synthesizeDaily(collection, [], {
+      invoke: async () => JSON.stringify([
+        { title: 'First', summary: 'The first three saved items.', itemIds: ['i1', 'i2', 'i3'], relatedIds: [], projects: [] },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          title: `Theme ${index + 2}`,
+          summary: `Saved item ${index + 4}.`,
+          itemIds: [`i${index + 4}`],
+          relatedIds: [],
+          projects: [],
+        })),
+      ]),
+    });
+
+    assert.equal(result.themedCount, 9);
+    assert.equal(result.alsoSavedCount, 2);
+    const digest = await readFileText(result.digestPath);
+    const alsoSaved = digest.split('## Also saved\n\n')[1];
+    assert.ok(alsoSaved);
+    for (const item of collection.items.slice(9)) {
+      assert.ok(alsoSaved.includes(item.canonicalUrl ?? item.id));
+    }
+  });
+});
+
+test('daily: synthesize renders items from themes dropped by the cap under Also saved', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, Array.from({ length: 9 }, (_, index) => starRecord({
+      id: index + 1,
+      fullName: `overflow/item-${index + 1}`,
+      starredAt: '2026-07-06T12:00:00.000Z',
+    })));
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const result = await synthesizeDaily(collection, [], {
+      invoke: async () => JSON.stringify(Array.from({ length: 9 }, (_, index) => ({
+        title: `Theme ${index + 1}`,
+        summary: `Saved item ${index + 1}.`,
+        itemIds: [`i${index + 1}`],
+        relatedIds: [],
+        projects: [],
+      }))),
+    });
+
+    assert.equal(result.themedCount, 7);
+    assert.equal(result.alsoSavedCount, 2);
+    const digest = await readFileText(result.digestPath);
+    const alsoSaved = digest.split('## Also saved\n\n')[1];
+    assert.ok(alsoSaved);
+    for (const item of collection.items.slice(7)) {
+      assert.ok(alsoSaved.includes(item.canonicalUrl ?? item.id));
+    }
   });
 });
 

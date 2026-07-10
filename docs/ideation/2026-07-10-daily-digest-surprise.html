@@ -1,0 +1,198 @@
+<title>Daily Digest — Surprise-Me Ideation</title>
+<style>
+  :root {
+    --bg: #faf9f7; --panel: #ffffff; --ink: #1f2430; --muted: #6b7280;
+    --line: #e7e3dc; --accent: #b4532a; --accent-soft: #f3e6df;
+    --good: #2f7d5b; --warn: #a06a12; --chip: #f1efe9;
+    --shadow: 0 1px 2px rgba(31,36,48,.04), 0 6px 20px rgba(31,36,48,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel: #1c1f26; --ink: #e8e6e1; --muted: #9aa1ad;
+      --line: #2b2f39; --accent: #e0794c; --accent-soft: #33241d;
+      --good: #63c093; --warn: #d6a94a; --chip: #262a33;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#14161a;--panel:#1c1f26;--ink:#e8e6e1;--muted:#9aa1ad;--line:#2b2f39;
+    --accent:#e0794c;--accent-soft:#33241d;--good:#63c093;--warn:#d6a94a;--chip:#262a33;
+  }
+  :root[data-theme="light"] {
+    --bg:#faf9f7;--panel:#ffffff;--ink:#1f2430;--muted:#6b7280;--line:#e7e3dc;
+    --accent:#b4532a;--accent-soft:#f3e6df;--good:#2f7d5b;--warn:#a06a12;--chip:#f1efe9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 56px 24px 96px; }
+  header.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 8px; }
+  .kicker { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  h1 { font-size: 34px; line-height: 1.15; margin: 10px 0 6px; letter-spacing: -.02em; }
+  .sub { color: var(--muted); font-size: 15px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .chip { background: var(--chip); border: 1px solid var(--line); color: var(--muted);
+    font-size: 12px; padding: 3px 10px; border-radius: 999px; }
+  .lede { font-size: 17px; margin: 28px 0 8px; }
+  .lede b { color: var(--accent); }
+  h2.section { font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin: 48px 0 4px; border-top: 1px solid var(--line); padding-top: 24px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 24px; margin: 18px 0; box-shadow: var(--shadow); }
+  .card.hero { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+  .rank { display: flex; align-items: baseline; gap: 12px; }
+  .rank .num { font-size: 13px; font-weight: 800; color: var(--accent);
+    background: var(--accent-soft); border-radius: 8px; padding: 2px 9px; white-space: nowrap; }
+  .rank h3 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+  .tagline { color: var(--muted); font-style: italic; margin: 6px 0 14px; }
+  .card p { margin: 10px 0; }
+  .label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .basis { font-size: 14px; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; margin-top: 14px; }
+  .basis code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .badge { font-size: 11.5px; padding: 3px 9px; border-radius: 6px; font-weight: 600; border: 1px solid transparent; }
+  .badge.effort-lo { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+  .badge.effort-md { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .badge.surprise { color: var(--accent); background: var(--accent-soft); }
+  .badge.axis { color: var(--muted); background: var(--chip); border-color: var(--line); }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14.5px; }
+  .scroll { overflow-x: auto; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  td.idea { font-weight: 600; white-space: nowrap; }
+  .why { color: var(--muted); }
+  .stretch { border-style: dashed; }
+  footer { margin-top: 56px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 20px; }
+  a { color: var(--accent); }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="kicker">Field Theory · Ideation · Surprise-Me</div>
+    <h1>Making the daily digest talk back</h1>
+    <div class="sub">Bold, unexpected directions for daily synthesis &amp; the second-brain loop — 2026-07-10</div>
+    <div class="meta">
+      <span class="chip">surprise-me mode</span>
+      <span class="chip">repo-grounded</span>
+      <span class="chip">1 foundation + 7 surprises + 1 stretch</span>
+      <span class="chip">engine: ft daily</span>
+    </div>
+  </header>
+
+  <p class="lede">Today's digest is a <b>flat, passive, read-only list</b>. It groups new saves into themes, then dumps 10+ unranked raw links under "connects to earlier saves" with no reason for the connection. <code>interests.md</code> is mechanical term-counting — its top "interests" are junk tokens like <em>stars</em>, <em>code</em>, <em>tool</em>. Nothing takes a stance, nothing resurfaces, nothing closes a loop, and the digest is never read back. Meanwhile a working TTS client sits unused. Every idea below turns one of those gaps into a feature.</p>
+
+  <h2 class="section">Foundation — fix trust before delight</h2>
+
+  <div class="card hero">
+    <div class="rank"><span class="num">00</span><h3>The trustworthy coverage footer</h3></div>
+    <div class="tagline">The digest claims to be your whole day. It silently sees ~5 of 6 sources. Make it confess.</div>
+    <p><span class="label">What</span> — A mechanical (never LLM) provenance footer on every digest: which sources were indexed and how fresh, which are dark, and whether limits were hit. <em>"Coverage: X ✓ · Raindrop ✗ stale 8d · GitHub ✓ · YouTube ✓ · Projects ✓ · x-list &amp; following not indexed · 200-item cap hit (14 dropped)."</em> Optionally gate the digest on a freshness threshold and warn loudly when a source has gone silent.</p>
+    <p><span class="label">Why it's the foundation</span> — Every other idea assumes the digest is <em>complete</em>. It isn't, and worse, a partial digest looks identical to a full one — you can't tell a quiet day from a broken sync. This is the correctness fix that makes audio briefings, verdicts, and tension detection <em>trustworthy</em>. Not surprising; load-bearing.</p>
+    <div class="basis"><b>Basis (verified in code):</b> (1) <code>rebuildCanonicalIndex()</code> ingests only 5 families — X, Raindrop, GitHub-stars, Projects, YouTube (<code>canonical-bookmarks-db.ts:662–700</code>); <code>x-list</code> and <code>following</code> have zero canonical ingest. (2) Membership = <code>first_saved_at ∈ [watermark, now)</code> with <code>MAX_ITEMS=200</code> newest-first, oldest truncated silently (<code>daily/collect.ts</code>). (3) Cross-source merge keeps the <em>earliest</em> date (<code>:534</code>), so re-engaging a known URL is invisible. (4) No dead-source check anywhere — a never-synced Raindrop just vanishes from output.</p>
+    <div class="badges"><span class="badge effort-lo">Effort: low</span><span class="badge surprise">Type: correctness</span><span class="badge axis">axis: ingestion / trust</span></div>
+  </div>
+  <p class="why" style="margin:0 0 8px 4px;font-size:13.5px;">Related gaps this exposes, each a candidate fix in its own right: <b>x-list + following ingest</b> (2 dark sources), <b>per-source watermark</b> (late-landing items dropped), <b>re-engagement surfacing</b> (earliest-date masking), <b>overflow signal</b> (200-cap), <b>null-date rescue</b> (<code>first_saved_at IS NULL</code> = invisible forever).</p>
+
+  <h2 class="section">Kept — ranked (the surprises)</h2>
+
+  <div class="card hero">
+    <div class="rank"><span class="num">01</span><h3>The 3-minute morning briefing (audio)</h3></div>
+    <div class="tagline">Your digest, read to you while you make coffee — not a wall of text you'll skip.</div>
+    <p><span class="label">What</span> — After <code>ft daily --write</code>, pipe the themed digest through a short "radio host" script prompt and the existing TTS client to a dated <code>library/daily/YYYY-MM-DD.mp3</code>. A tight, spoken narration of the day's synthesis: three themes, the one connection that matters, one thing to act on. New <code>ft daily --audio</code> flag; nightly launchd writes it alongside the markdown.</p>
+    <p><span class="label">Why it's the pick</span> — Highest delight-per-effort. Text digests get skimmed or ignored; audio you consume passively. It reframes the second brain from "a file I grep" to "a companion that briefs me." Nothing else on this list changes the <em>relationship</em> to the tool this cheaply.</p>
+    <div class="basis"><b>Basis (verified):</b> <code>createTtsClient().synthesize(text, path)</code> already ships and is used for YouTube overviews — <code>src/youtube/overview.ts:135–138, 286</code>. Script-shaping prompt pattern exists in the same file. This is wiring, not new infra.</div>
+    <div class="badges"><span class="badge effort-lo">Effort: low</span><span class="badge surprise">Surprise: high</span><span class="badge axis">axis: output format</span></div>
+  </div>
+
+  <div class="card">
+    <div class="rank"><span class="num">02</span><h3>A digest with a verdict (front page, not a feed)</h3></div>
+    <div class="tagline">One hero story above the fold. Every theme ends with an opinion.</div>
+    <p><span class="label">What</span> — Change the synthesis contract from "group into themes" to "edit a front page." Pick <em>one</em> hero connection for the day (biggest cross-source signal) and lead with it. Each theme closes with an opinionated call: <em>"Read the Modal talk, skip the three rehashes"</em> · <em>"This contradicts Tuesday"</em> · <em>"Adjacent to your fieldtheory Now — worth 20 min."</em> The LLM takes a stance instead of neutrally summarizing.</p>
+    <p><span class="label">Why</span> — The current digest gives every theme and every link equal weight, so nothing stands out and everything gets skimmed. Editorial hierarchy + a stance is what makes a briefing worth reading. Pure prompt-contract change — no new plumbing.</p>
+    <div class="basis"><b>Basis:</b> Prompt lives in <code>buildDailyPrompt()</code>, <code>src/daily/synthesize.ts</code>. Themes already carry summary + itemIds; add a <code>verdict</code> field + a <code>hero</code> flag and validate them the same way citations are validated today.</div>
+    <div class="badges"><span class="badge effort-lo">Effort: low</span><span class="badge surprise">Surprise: med</span><span class="badge axis">axis: synthesis quality</span></div>
+  </div>
+
+  <div class="card">
+    <div class="rank"><span class="num">03</span><h3>The tension detector</h3></div>
+    <div class="tagline">Surface where your saves disagree — with each other, or with last week.</div>
+    <p><span class="label">What</span> — A dedicated pass that hunts for <em>friction</em>, not consensus: two items this week that argue opposite sides (pro-MCP vs. "skills &gt; MCP"), or a new save that contradicts something you saved and endorsed weeks ago. A "⚡ Tensions" section: <em>"You saved both 'model selectors are the future' and 'model selectors are limiting' this week — here's the split."</em></p>
+    <p><span class="label">Why</span> — Grouping similar things is what every feed reader does. Surfacing contradictions is what a <em>thinking partner</em> does — it's where learning actually happens, and it's genuinely differentiating. Directly usable against the connect-step data you already compute.</p>
+    <div class="basis"><b>Basis:</b> <code>connect.ts</code> already gives each new item its top-3 related past items via FTS. A second LLM sub-pass over those pairs asking "do these agree or conflict?" is the whole feature. Real signal exists in today's digest — MCP-vs-skills tension is sitting right there ungrouped.</div>
+    <div class="badges"><span class="badge effort-md">Effort: med</span><span class="badge surprise">Surprise: high</span><span class="badge axis">axis: synthesis quality</span></div>
+  </div>
+
+  <div class="card">
+    <div class="rank"><span class="num">04</span><h3>Anti-recency: resurface the thread you dropped</h3></div>
+    <div class="tagline">Spaced repetition for bookmarks. The digest remembers what you forgot.</div>
+    <p><span class="label">What</span> — Each digest resurfaces one forgotten gem: a topic that was <em>rising</em> a few weeks ago then went silent, or a strong item saved N weeks back that connects to today and was never revisited. <em>"Three weeks ago you were deep in local model training — 4 saves, then nothing. Today's vLLM-MoE save reopens it."</em></p>
+    <p><span class="label">Why</span> — A recency-only digest is a leaky bucket: you save, it scrolls, it's gone. Deliberate resurfacing is the difference between a log and a memory. It's the second-brain promise the current pipeline doesn't yet keep.</p>
+    <div class="basis"><b>Basis:</b> <code>interests.ts</code> <em>already computes</em> rising / steady / fading topic velocity (<code>RECENT_DAYS=7</code> vs <code>BASELINE_DAYS=30</code>). "Fading but reactivated today" is a query over data already in hand — see the <code>Fading</code> block in current <code>interests.md</code>.</div>
+    <div class="badges"><span class="badge effort-md">Effort: med</span><span class="badge surprise">Surprise: high</span><span class="badge axis">axis: temporal / memory</span></div>
+  </div>
+
+  <div class="card">
+    <div class="rank"><span class="num">05</span><h3>One sharp question a day</h3></div>
+    <div class="tagline">Turn consumption into thinking. The agent asks you something.</div>
+    <p><span class="label">What</span> — Alongside the digest, the agent poses <em>one</em> pointed question forced out of the day's material: <em>"You've saved 4 agent-harness talks this month but fieldtheory has no harness abstraction — is that a gap or a deliberate no?"</em> Answers get appended to a <code>library/reflections.md</code> — a private thinking log that itself becomes a source.</p>
+    <p><span class="label">Why</span> — Every other feature makes consuming easier. This one makes you <em>synthesize</em>. It's active recall — the single highest-leverage move for actually retaining what you read — and it flips the tool from output-only to a dialogue. Bold because it demands something of the user.</p>
+    <div class="basis"><b>Basis:</b> Same synthesis call and material; add a <code>question</code> to the output contract. Capture is a one-line <code>ft daily --answer "…"</code> append. Reflections feed back through the existing canonical index as a new source.</div>
+    <div class="badges"><span class="badge effort-md">Effort: med</span><span class="badge surprise">Surprise: high</span><span class="badge axis">axis: feedback loop</span></div>
+  </div>
+
+  <div class="card">
+    <div class="rank"><span class="num">06</span><h3>Novelty score — suppress the echo</h3></div>
+    <div class="tagline">Is this genuinely new, or the sixth rehash? Rank accordingly.</div>
+    <p><span class="label">What</span> — Score each new item by distance from what you already hold. The 6th "train an LLM from scratch" repo gets folded into a one-line "+5 more like this," while a genuinely novel save gets a ⭐ and top billing. The digest stops treating the echo and the discovery as equals.</p>
+    <p><span class="label">Why</span> — Look at today's digest: the local-training theme lists six near-identical repos as if each were news. Signal drowns. A novelty gate is the cheapest way to make the digest denser and more honest about what actually moved.</p>
+    <div class="basis"><b>Basis:</b> FTS BM25 self-similarity (query the new item's terms against the pre-existing index; high overlap = echo) is pure SQL over <code>canonical_bookmarks_fts</code> — the same index <code>connect.ts</code> already uses. No embeddings required for v1.</div>
+    <div class="badges"><span class="badge effort-md">Effort: med</span><span class="badge surprise">Surprise: med</span><span class="badge axis">axis: synthesis quality</span></div>
+  </div>
+
+  <div class="card">
+    <div class="rank"><span class="num">07</span><h3>The read-receipt loop (real interests, not word counts)</h3></div>
+    <div class="tagline">Learn what you actually open — kill the junk-token interest model.</div>
+    <p><span class="label">What</span> — Track which digest links you actually open/click, and feed engagement back into the interest model. Themes you consistently ignore get down-weighted; items you open define your <em>real</em> interests — replacing today's mechanical term-frequency (which thinks "stars," "code," and "tool" are your passions).</p>
+    <p><span class="label">Why</span> — <code>interests.md</code> is the one artifact in the pipeline that's actively misleading — it counts words, not attention, so its top signals are noise. A behavioral signal, however coarse, beats a term count. Highest payoff, but needs a surface that observes opens.</p>
+    <div class="basis"><b>Basis:</b> Needs a reader that can log opens — dovetails with the planned bookmarks web interface (<code>docs/plans/2026-06-24-bookmarks-web-interface.md</code>). Interim: a shell wrapper / <code>ft open &lt;id&gt;</code> that records the open before launching the URL. Interest model already regenerates each run in <code>interests.ts</code> — just add an engagement input.</div>
+    <div class="badges"><span class="badge effort-md">Effort: med-high</span><span class="badge surprise">Surprise: med</span><span class="badge axis">axis: feedback loop</span></div>
+  </div>
+
+  <h2 class="section">Stretch — high ceiling, thinner grounding</h2>
+  <div class="card stretch">
+    <div class="rank"><span class="num">08</span><h3>Ambient project-sliced primer</h3></div>
+    <div class="tagline">When you open a repo, inject only the digest slice relevant to that repo.</div>
+    <p>The north-star Layer 4. On entering any project session, surface just the recent-digest themes that touch <em>this</em> repo's Goal/Now/Next — plus a drift alert when your consumption diverges from what you're building (<em>"heavy on local-training reads, none of your active repos touch it"</em>). Extends <code>projects-active.md</code> + the <code>second-brain</code> recall skill from pull to push. Kept as stretch because the trigger surface (session-start hook injecting per-repo context) is the ambitious, less-proven part — but it's the direction everything else feeds.</p>
+    <div class="badges"><span class="badge effort-md">Effort: high</span><span class="badge surprise">Surprise: med</span><span class="badge axis">axis: ambient recall</span></div>
+  </div>
+
+  <h2 class="section">Rejected — and why</h2>
+  <div class="card">
+    <div class="scroll"><table>
+      <thead><tr><th>Idea</th><th>Reason cut</th></tr></thead>
+      <tbody>
+        <tr><td class="idea">Interest forecast</td><td class="why">Extrapolate topic velocity to predict next week's rabbit hole. Too speculative — thin grounding, high hallucination risk, and the payoff over "resurface the dropped thread" (#4) is marginal. Folded intent into #4.</td></tr>
+        <tr><td class="idea">Auto-write TODOs into repo CONTINUITY.md</td><td class="why">Digest edits your project ledgers directly. Too invasive / hard to reverse for an unattended nightly job. The safer read-only version lives inside stretch #8.</td></tr>
+        <tr><td class="idea">Editorial hero-story layout (standalone)</td><td class="why">Good, but a subset of #2 — merged rather than listed twice.</td></tr>
+        <tr><td class="idea">Weekly rollup as a bigger list</td><td class="why">The plan already defers this, and "more of the same, weekly" isn't surprising. If revisited, it should be a <em>narrative arc</em> ("this week you pivoted from X to Y"), not a longer digest — but that's a variant of #2/#4, not its own idea.</td></tr>
+        <tr><td class="idea">Zettelkasten permanent-note promotion</td><td class="why">Compelling long-term, but overlaps #5's reflections log and demands a note-lifecycle model the pipeline doesn't have yet. Premature — reconsider after #5 ships.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <h2 class="section">Grounding context</h2>
+  <div class="card">
+    <p class="why"><b>Subject (surprise-me):</b> daily digest / second-brain synthesis in fieldtheory-cli. Decomposition skipped — surprise-me mode.</p>
+    <p class="why"><b>Current state:</b> <code>ft daily --write</code> → themed LLM digest (<code>src/daily/{collect,connect,synthesize,interests}.ts</code>) → <code>library/daily/YYYY-MM-DD.md</code> + <code>interests.md</code>. Nightly launchd @ 09:00. 5 digests written so far. Model: droid + deepseek-v4-flash.</p>
+    <p class="why"><b>Observed gaps driving these ideas:</b> (1) passive read-only artifact, never read back; (2) "connects to earlier saves" = 10+ unranked raw links, no stated reason; (3) <code>interests.md</code> ranks junk tokens (stars/code/tool); (4) no stance, no hierarchy — all themes equal-weight; (5) no contradiction/novelty detection; (6) no resurfacing/memory; (7) no engagement feedback; (8) unused TTS infra.</p>
+    <p class="why"><b>North star (memory):</b> a companion agent that synthesizes daily consumption, tracks evolving interests, and proactively recalls during any project/research session.</p>
+  </div>
+
+  <footer>
+    Generated by <b>ce-ideate</b> · surprise-me mode · adversarial critique → 1 foundation + 7 surprises + 1 stretch + 5 rejected. #0 added after tracing the ingest path (<code>collect.ts</code> + <code>rebuildCanonicalIndex</code>).
+    Next: pick one to run through <code>ce-brainstorm</code> for a requirements spec, or refine the set.
+  </footer>
+</div>

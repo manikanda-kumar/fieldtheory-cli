@@ -12,8 +12,9 @@ import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunPro
 import { extractJsonArray } from '../bookmark-classify-llm.js';
 import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import { loadYoutubeState } from '../youtube/state.js';
-import type { DailyCollection } from './collect.js';
+import { readDailyMeta, type DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
+import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
 
 const SNIPPET_CHARS = 240;
@@ -40,6 +41,8 @@ export interface SynthesizeDailyResult {
   themes: DailyTheme[];
   usedLlm: boolean;
   droppedCitations: number;
+  themedCount: number;
+  alsoSavedCount: number;
   skipped: boolean;
 }
 
@@ -106,6 +109,7 @@ export function buildDailyPrompt(collection: DailyCollection, connected: Connect
 
 export function validateThemes(raw: unknown, collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): { themes: DailyTheme[]; dropped: number } {
   const repos = new Set(collection.projectDeltas.map((delta) => delta.repo));
+  const citedItems = new Set<string>();
   const themes: DailyTheme[] = [];
   let dropped = 0;
 
@@ -142,16 +146,20 @@ export function validateThemes(raw: unknown, collection: DailyCollection, connec
     };
 
     const items = mapAliases(candidate.itemIds, aliases.items);
+    const uniqueItems = items.kept.filter((id) => {
+      if (citedItems.has(id)) return false;
+      citedItems.add(id);
+      return true;
+    });
     const related = mapAliases(candidate.relatedIds, aliases.related);
     const projects = keepRepos(candidate.projects);
     dropped += items.removed + related.removed + projects.removed;
 
-    if (items.kept.length === 0) {
-      dropped += 1;
+    if (uniqueItems.length === 0) {
       continue;
     }
 
-    themes.push({ title, summary, itemIds: items.kept, relatedIds: related.kept, projects: projects.kept });
+    themes.push({ title, summary, itemIds: uniqueItems, relatedIds: related.kept, projects: projects.kept });
   }
 
   return { themes, dropped };
@@ -212,12 +220,14 @@ export async function buildYoutubeNotesLinks(
   return links;
 }
 
-function renderDigestMarkdown(
+export function renderDigestMarkdown(
   collection: DailyCollection,
   connected: ConnectedItem[],
   themes: DailyTheme[],
+  alsoSavedIds: string[],
   usedLlm: boolean,
   youtubeNotes: Map<string, string> = new Map(),
+  coverage: DailyCoverage,
 ): string {
   const notesSuffix = (url: string | null | undefined): string => {
     const videoId = extractYoutubeVideoId(url);
@@ -231,6 +241,12 @@ function renderDigestMarkdown(
     for (const ref of related) relatedById.set(ref.id, ref);
   }
   const sources = [...new Set(collection.items.flatMap((item) => item.sources))].sort();
+  const renderItem = (item: CanonicalRecentItem, id: string): string => {
+    const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
+    const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
+    const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
+    return `- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`;
+  };
 
   const lines: string[] = [];
   lines.push('---');
@@ -239,6 +255,12 @@ function renderDigestMarkdown(
   lines.push(`sources: [${sources.join(', ')}]`);
   lines.push(`themes: ${themes.length}`);
   lines.push(`synthesis: ${usedLlm ? 'llm' : 'mechanical'}`);
+  lines.push(`collected: ${coverage.counts.collected}`);
+  lines.push(`themed: ${coverage.counts.themed}`);
+  lines.push(`also_saved: ${coverage.counts.alsoSaved}`);
+  lines.push(`carried_over: ${coverage.counts.carriedOver}`);
+  lines.push(`citations_dropped: ${coverage.counts.citationsDropped}`);
+  lines.push(`undateable_excluded: ${coverage.counts.undateableExcluded}`);
   lines.push('---');
   lines.push('');
   lines.push(`# Daily Digest — ${collection.date}`);
@@ -252,10 +274,7 @@ function renderDigestMarkdown(
     for (const id of theme.itemIds) {
       const item = itemById.get(id);
       if (!item) continue;
-      const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
-      const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
-      const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
-      lines.push(`- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`);
+      lines.push(renderItem(item, id));
     }
     if (theme.relatedIds.length > 0) {
       lines.push('');
@@ -274,6 +293,17 @@ function renderDigestMarkdown(
     lines.push('');
   }
 
+  if (alsoSavedIds.length > 0) {
+    lines.push('## Also saved');
+    lines.push('');
+    for (const id of alsoSavedIds) {
+      const item = itemById.get(id);
+      if (!item) continue;
+      lines.push(renderItem(item, id));
+    }
+    lines.push('');
+  }
+
   if (collection.projectDeltas.length > 0) {
     lines.push('## Project activity');
     lines.push('');
@@ -282,6 +312,16 @@ function renderDigestMarkdown(
     }
     lines.push('');
   }
+
+  lines.push('## Coverage');
+  lines.push('');
+  lines.push('Source freshness:');
+  for (const source of ['x', 'raindrop', 'github-stars', 'youtube', 'projects'] as const) {
+    lines.push(`- ${source}: ${coverage.freshness[source]}`);
+  }
+  lines.push('- Dark sources: x-list and following are not yet in the canonical index.');
+  lines.push(`- This run: collected ${coverage.counts.collected}; themed ${coverage.counts.themed}; also-saved ${coverage.counts.alsoSaved}; carried-over ${coverage.counts.carriedOver}; citations dropped ${coverage.counts.citationsDropped}; undateable excluded (canonical total) ${coverage.counts.undateableExcluded}; synthesis ${coverage.counts.synthesis}.`);
+  lines.push('');
 
   return lines.join('\n');
 }
@@ -301,7 +341,15 @@ export async function synthesizeDaily(
   const digestPath = dailyDigestPath(collection.date);
 
   if (collection.items.length === 0 && collection.projectDeltas.length === 0) {
-    return { digestPath, themes: [], usedLlm: false, droppedCitations: 0, skipped: true };
+    return {
+      digestPath,
+      themes: [],
+      usedLlm: false,
+      droppedCitations: 0,
+      themedCount: 0,
+      alsoSavedCount: 0,
+      skipped: true,
+    };
   }
 
   let themes: DailyTheme[] = [];
@@ -326,6 +374,11 @@ export async function synthesizeDaily(
     if (themes.length === 0) themes = mechanicalThemes(collection);
   }
 
+  const themedIds = new Set(themes.flatMap((theme) => theme.itemIds));
+  const alsoSavedIds = collection.items
+    .filter((item) => !themedIds.has(item.id))
+    .map((item) => item.id);
+
   const youtubeNotes = await buildYoutubeNotesLinks(
     [
       ...collection.items.map((item) => item.canonicalUrl),
@@ -333,8 +386,36 @@ export async function synthesizeDaily(
     ],
     digestPath,
   );
-  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, usedLlm, youtubeNotes));
-  await writeJson(dailyMetaPath(), { lastRunAt: collection.untilIso, lastDigestDate: collection.date });
+  const coverage = await collectDailyCoverage({
+    collected: collection.items.length,
+    themed: themedIds.size,
+    alsoSaved: alsoSavedIds.length,
+    carriedOver: collection.carriedOver,
+    citationsDropped: droppedCitations,
+    undateableExcluded: collection.undateableExcluded,
+    synthesis: usedLlm ? 'llm' : 'mechanical',
+  });
+  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage));
+  if (!collection.isExplicitDate) {
+    const meta = await readDailyMeta();
+    const { lastRunItemId: _lastRunItemId, ...metaWithoutCursor } = meta;
+    await writeJson(dailyMetaPath(), {
+      ...metaWithoutCursor,
+      lastRunAt: collection.nextWatermark,
+      ...(collection.nextWatermarkItemId ? { lastRunItemId: collection.nextWatermarkItemId } : {}),
+      lastDigestDate: collection.date,
+    });
+  }
+  // Historical --date renders are deliberately read-only for daily metadata:
+  // lastDigestDate reflects the most recent rolling digest, just like lastRunAt.
 
-  return { digestPath, themes, usedLlm, droppedCitations, skipped: false };
+  return {
+    digestPath,
+    themes,
+    usedLlm,
+    droppedCitations,
+    themedCount: themedIds.size,
+    alsoSavedCount: alsoSavedIds.length,
+    skipped: false,
+  };
 }

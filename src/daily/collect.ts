@@ -4,7 +4,7 @@
  */
 
 import { pathExists, readJson, readJsonLines } from '../fs.js';
-import { getCanonicalBookmarksSince, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+import { countCanonicalUndateableBookmarks, getCanonicalBookmarksSince, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import { projectsCachePath } from '../projects/paths.js';
 import type { ProjectRecord } from '../projects/types.js';
 import { dailyMetaPath } from './paths.js';
@@ -15,6 +15,8 @@ const MAX_ITEMS = 200;
 
 export interface DailyMeta {
   lastRunAt?: string;
+  /** Canonical-id tie-breaker for an overflow watermark timestamp. */
+  lastRunItemId?: string;
   lastDigestDate?: string;
 }
 
@@ -28,7 +30,17 @@ export interface DailyCollection {
   date: string;
   sinceIso: string;
   untilIso: string;
+  /** True when this is a historical `--date` digest rather than a rolling run. */
+  isExplicitDate: boolean;
   items: CanonicalRecentItem[];
+  /** Items left in this window after the capped oldest-first batch. */
+  carriedOver: number;
+  /** All canonical rows excluded because first_saved_at is null or unparseable. */
+  undateableExcluded: number;
+  /** Watermark to persist after this batch; never moves past carried-over rows. */
+  nextWatermark: string;
+  /** Tie-breaker paired with nextWatermark when overflow occurs. */
+  nextWatermarkItemId?: string;
   projectDeltas: DailyProjectDelta[];
 }
 
@@ -39,6 +51,8 @@ export interface CollectDailyOptions {
   windowHours?: number;
   /** Stable clock injection for tests. */
   now?: Date;
+  /** Test seam for the production collection cap. */
+  maxItems?: number;
 }
 
 export async function readDailyMeta(): Promise<DailyMeta> {
@@ -110,10 +124,42 @@ async function collectProjectDeltas(sinceIso: string, untilIso: string): Promise
 export async function collectDaily(options: CollectDailyOptions = {}): Promise<DailyCollection> {
   const meta = await readDailyMeta();
   const { date, sinceIso, untilIso } = windowFor(options, meta);
-
-  const items = (await getCanonicalBookmarksSince(sinceIso, MAX_ITEMS))
-    .filter((item) => withinWindow(item.firstSavedAt ?? undefined, sinceIso, untilIso));
+  const maxItems = options.maxItems ?? MAX_ITEMS;
+  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
+  const useOverflowCursor = !options.date
+    && Boolean(meta.lastRunItemId)
+    // windowFor normalizes dates, so compare instants rather than ISO strings.
+    && Number.isFinite(persistedWatermarkMs)
+    && Date.parse(sinceIso) === persistedWatermarkMs;
+  // Oldest-first means each capped rolling batch drains the backlog before
+  // newer arrivals; the timestamp+id cursor below prevents equal timestamps
+  // from causing a permanent tie at the watermark.
+  const windowItems = await getCanonicalBookmarksSince(
+    sinceIso,
+    undefined,
+    untilIso,
+    useOverflowCursor ? meta.lastRunItemId : undefined,
+  );
+  const items = windowItems.slice(0, maxItems);
+  const carriedOver = windowItems.length - items.length;
+  const lastCollected = items.at(-1);
+  const nextWatermark = carriedOver > 0 && lastCollected?.firstSavedAt
+    ? lastCollected.firstSavedAt
+    : untilIso;
+  const nextWatermarkItemId = carriedOver > 0 ? lastCollected?.id : undefined;
   const projectDeltas = await collectProjectDeltas(sinceIso, untilIso);
+  const undateableExcluded = await countCanonicalUndateableBookmarks();
 
-  return { date, sinceIso, untilIso, items, projectDeltas };
+  return {
+    date,
+    sinceIso,
+    untilIso,
+    isExplicitDate: Boolean(options.date),
+    items,
+    carriedOver,
+    undateableExcluded,
+    nextWatermark,
+    nextWatermarkItemId,
+    projectDeltas,
+  };
 }

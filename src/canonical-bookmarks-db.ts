@@ -824,8 +824,14 @@ export function parseSavedAt(value: string | null | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-export async function getCanonicalBookmarksSince(sinceIso: string, limit = 200): Promise<CanonicalRecentItem[]> {
+export async function getCanonicalBookmarksSince(
+  sinceIso: string,
+  limit?: number,
+  untilIso?: string,
+  afterId?: string,
+): Promise<CanonicalRecentItem[]> {
   const sinceMs = Date.parse(sinceIso);
+  const untilMs = untilIso ? Date.parse(untilIso) : NaN;
   const db = await openDb(twitterBookmarksIndexPath());
   try {
     initCanonicalSchema(db);
@@ -838,9 +844,15 @@ export async function getCanonicalBookmarksSince(sinceIso: string, limit = 200):
     return (rows[0]?.values ?? [])
       .filter((row) => {
         const ms = parseSavedAt(row[5] == null ? null : String(row[5]));
-        return ms != null && ms >= sinceMs;
+        if (ms == null || ms < sinceMs || (Number.isFinite(untilMs) && ms >= untilMs)) return false;
+        // A timestamp alone is not a sufficient cursor: busy syncs can save
+        // many rows in the same millisecond. The canonical id breaks that tie.
+        return !(afterId && ms === sinceMs && String(row[0]) <= afterId);
       })
-      .sort((a, b) => (parseSavedAt(String(b[5])) ?? 0) - (parseSavedAt(String(a[5])) ?? 0))
+      .sort((a, b) => {
+        const bySavedAt = (parseSavedAt(String(a[5])) ?? 0) - (parseSavedAt(String(b[5])) ?? 0);
+        return bySavedAt || String(a[0]).localeCompare(String(b[0]));
+      })
       .slice(0, limit)
       .map((row) => ({
       id: String(row[0]),
@@ -853,6 +865,22 @@ export async function getCanonicalBookmarksSince(sinceIso: string, limit = 200):
       primaryCategory: row[7] == null ? null : String(row[7]),
       primaryDomain: row[8] == null ? null : String(row[8]),
     }));
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Count rows the daily collector cannot place in any time window. This is an
+ * all-index metric (rather than an attempted-window metric) because malformed
+ * timestamps have no reliable window to which they can be attributed.
+ */
+export async function countCanonicalUndateableBookmarks(): Promise<number> {
+  const db = await openDb(twitterBookmarksIndexPath());
+  try {
+    initCanonicalSchema(db);
+    const rows = db.exec('SELECT first_saved_at FROM canonical_bookmarks');
+    return (rows[0]?.values ?? []).filter((row) => parseSavedAt(row[0] == null ? null : String(row[0])) == null).length;
   } finally {
     db.close();
   }
