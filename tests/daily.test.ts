@@ -9,7 +9,9 @@ import { readFile } from 'node:fs/promises';
 import { collectDaily } from '../src/daily/collect.js';
 import { connectDailyItems } from '../src/daily/connect.js';
 import { collectDailyCoverage } from '../src/daily/coverage.js';
-import { enrichThinItems, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
+import { enrichBackfill, enrichThinItems, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
+import { openDb, saveDb } from '../src/db.js';
+import { twitterBookmarksIndexPath } from '../src/paths.js';
 import { contentLength, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
 
@@ -581,6 +583,37 @@ test('daily: enriches a thin link into the prompt and reuses its durable cache',
       llm: async () => { throw new Error('cache miss'); },
     });
     assert.equal(cached.enrichedCount, 1);
+  });
+});
+
+test('daily: enrichment backfill reports pending rows, enriches through seams, and skips cached rows on rerun', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [starRecord({ id: 77, fullName: 'a/backfill-link', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
+    await rebuildCanonicalIndex();
+    const db = await openDb(twitterBookmarksIndexPath());
+    try {
+      db.run('UPDATE canonical_bookmarks SET search_text = canonical_url || \' brief\'');
+      saveDb(db, twitterBookmarksIndexPath());
+    } finally {
+      db.close();
+    }
+
+    const dryRun = await enrichBackfill({ dryRun: true });
+    assert.deepEqual(dryRun, { eligible: 1, pending: 1, attempted: 0, ok: 0, failed: 0, skippedCached: 0 });
+    let fetchCalls = 0;
+    const first = await enrichBackfill({
+      fetch: async () => { fetchCalls += 1; return new Response('<title>Backfill</title><body>Useful source material</body>'); },
+      llm: async () => 'A durable summary-only search term.',
+    });
+    assert.equal(first.attempted, 1);
+    assert.equal(first.ok, 1);
+    assert.equal(fetchCalls, 1);
+
+    const rerun = await enrichBackfill({
+      fetch: async () => { throw new Error('cached row must not fetch'); },
+      llm: async () => { throw new Error('cached row must not summarize'); },
+    });
+    assert.deepEqual(rerun, { eligible: 1, pending: 0, attempted: 0, ok: 0, failed: 0, skippedCached: 1 });
   });
 });
 

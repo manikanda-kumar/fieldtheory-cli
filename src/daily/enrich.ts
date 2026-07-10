@@ -1,6 +1,6 @@
 import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import type { Database } from 'sql.js';
-import { openDb, saveDb } from '../db.js';
+import { acquireDbLock, openDb, releaseDbLock, saveDb } from '../db.js';
 import { twitterBookmarksIndexPath } from '../paths.js';
 import { createOpenCodeClient, openCodeApiKey } from '../llm/opencode-client.js';
 import { THIN_CONTENT_CHARS, contentLength } from './synthesize.js';
@@ -32,6 +32,21 @@ export interface EnrichThinItemsResult {
   summaries: Map<string, string>;
 }
 
+export interface EnrichmentBackfillResult {
+  eligible: number;
+  pending: number;
+  attempted: number;
+  ok: number;
+  failed: number;
+  skippedCached: number;
+}
+
+export interface EnrichBackfillOptions extends EnrichThinItemsOptions {
+  all?: boolean;
+  dryRun?: boolean;
+  onProgress?: (result: Pick<EnrichmentBackfillResult, 'attempted' | 'ok' | 'failed'>) => void;
+}
+
 /** Fetch/cache summaries for otherwise-thin daily items. This function never throws. */
 export async function enrichThinItems(items: CanonicalRecentItem[], options: EnrichThinItemsOptions = {}): Promise<EnrichThinItemsResult> {
   const eligible = items.filter((item) => isEligible(item));
@@ -44,29 +59,39 @@ export async function enrichThinItems(items: CanonicalRecentItem[], options: Enr
   try {
     const now = options.now ?? new Date();
     const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
-    const summaries = usableSummaries(eligible, cached);
-    const limit = parseLimit(options.limit);
-    const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
-    const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
-    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
-    const updates = await mapConcurrent(misses, 4, async (item): Promise<LinkEnrichmentEntry> => {
-      const url = item.canonicalUrl!;
-      try {
-        const material = await extractPageMaterial(url, fetchFn);
-        const summary = (await llm(buildEnrichmentPrompt(material))).trim();
-        if (!summary) throw new Error('empty enrichment completion');
-        return { url, summary, status: 'ok', enrichedAt: now.toISOString() };
-      } catch {
-        return { url, summary: null, status: 'failed', enrichedAt: now.toISOString() };
-      }
-    });
-    if (updates.length) await writeCache(updates);
-    for (const update of updates) if (update.status === 'ok' && update.summary) cached.set(update.url, update);
+    await enrichEligibleItems(eligible, cached, options, now, parseLimit(options.limit));
     const finalSummaries = usableSummaries(eligible, cached);
     return { enrichedCount: finalSummaries.size, summaries: finalSummaries };
   } catch {
     return { enrichedCount: 0, summaries: new Map() };
   }
+}
+
+/** Enrich every eligible canonical row, while retaining the daily flow's fetch/cache core. */
+export async function enrichBackfill(options: EnrichBackfillOptions = {}): Promise<EnrichmentBackfillResult> {
+  const items = await readCanonicalItems();
+  const eligible = items.filter(isEligible);
+  const now = options.now ?? new Date();
+  const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
+  const pending = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now));
+  const skippedCached = eligible.filter((item) => {
+    const entry = cached.get(item.canonicalUrl!);
+    return entry?.status === 'ok' && Boolean(entry.summary?.trim());
+  }).length;
+  const base = { eligible: eligible.length, pending: pending.length, attempted: 0, ok: 0, failed: 0, skippedCached };
+  if (options.dryRun || pending.length === 0) return base;
+  if (!options.llm && !openCodeApiKey()) {
+    options.onMissingKey?.();
+    return base;
+  }
+  const limit = options.all ? Number.POSITIVE_INFINITY : parseLimit(options.limit ?? 100);
+  const updates = await enrichEligibleItems(eligible, cached, options, now, limit, options.onProgress);
+  return {
+    ...base,
+    attempted: updates.length,
+    ok: updates.filter((entry) => entry.status === 'ok').length,
+    failed: updates.filter((entry) => entry.status === 'failed').length,
+  };
 }
 
 /** Append summaries to only the current collection's in-memory search text. */
@@ -77,7 +102,7 @@ export function mergeEnrichmentSummaries(items: CanonicalRecentItem[], summaries
   }
 }
 
-function isEligible(item: CanonicalRecentItem): boolean {
+export function isEnrichmentEligible(item: CanonicalRecentItem): boolean {
   if (contentLength(item.searchText) >= THIN_CONTENT_CHARS || !item.canonicalUrl) return false;
   try {
     const url = new URL(item.canonicalUrl);
@@ -86,6 +111,8 @@ function isEligible(item: CanonicalRecentItem): boolean {
     return false;
   }
 }
+
+const isEligible = isEnrichmentEligible;
 
 function isTweetStatusUrl(url: URL): boolean {
   return /(^|\.)((x|twitter)\.com)$/i.test(url.hostname) && /\/status\/\d+/i.test(url.pathname);
@@ -111,20 +138,97 @@ function usableSummaries(items: CanonicalRecentItem[], cache: Map<string, LinkEn
 }
 
 async function readCache(urls: string[]): Promise<Map<string, LinkEnrichmentEntry>> {
+  if (urls.length === 0) return new Map();
   const dbPath = twitterBookmarksIndexPath();
   const db = await openDb(dbPath);
   try {
-    initEnrichmentSchema(db);
-    const rows = db.exec(`SELECT url, summary, status, enriched_at FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
-    saveDb(db, dbPath);
+    let rows: unknown[][];
+    try {
+      rows = db.exec(`SELECT url, summary, status, enriched_at FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
+    } catch (error) {
+      if (!isMissingTableError(error)) throw error;
+      rows = [];
+    }
     return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? '') }]));
   } finally {
     db.close();
   }
 }
 
+function isMissingTableError(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)).toLowerCase().includes('no such table');
+}
+
+async function readCanonicalItems(): Promise<CanonicalRecentItem[]> {
+  const db = await openDb(twitterBookmarksIndexPath());
+  try {
+    const rows = db.exec(`SELECT id, canonical_url, display_title, search_text, sources_json,
+      first_saved_at, last_saved_at, primary_category, primary_domain FROM canonical_bookmarks`)[0]?.values ?? [];
+    return rows.map((row) => ({
+      id: String(row[0]), canonicalUrl: row[1] == null ? null : String(row[1]), displayTitle: row[2] == null ? null : String(row[2]),
+      searchText: String(row[3] ?? ''), sources: parseSources(row[4]), firstSavedAt: row[5] == null ? null : String(row[5]),
+      lastSavedAt: row[6] == null ? null : String(row[6]), primaryCategory: row[7] == null ? null : String(row[7]), primaryDomain: row[8] == null ? null : String(row[8]),
+    }));
+  } finally {
+    db.close();
+  }
+}
+
+async function enrichEligibleItems(
+  eligible: CanonicalRecentItem[],
+  cached: Map<string, LinkEnrichmentEntry>,
+  options: EnrichThinItemsOptions,
+  now: Date,
+  limit: number,
+  onProgress?: (result: { attempted: number; ok: number; failed: number }) => void,
+): Promise<LinkEnrichmentEntry[]> {
+  const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+  const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+  const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+  let attempted = 0;
+  let ok = 0;
+  let failed = 0;
+  const enrichOne = async (item: CanonicalRecentItem): Promise<LinkEnrichmentEntry> => {
+    const url = item.canonicalUrl!;
+    let update: LinkEnrichmentEntry;
+    try {
+      const material = await extractPageMaterial(url, fetchFn);
+      const summary = (await llm(buildEnrichmentPrompt(material))).trim();
+      if (!summary) throw new Error('empty enrichment completion');
+      update = { url, summary, status: 'ok', enrichedAt: now.toISOString() };
+    } catch {
+      update = { url, summary: null, status: 'failed', enrichedAt: now.toISOString() };
+    }
+    attempted += 1;
+    if (update.status === 'ok') ok += 1;
+    else failed += 1;
+    if (onProgress && attempted % 25 === 0) onProgress({ attempted, ok, failed });
+    return update;
+  };
+  const updates: LinkEnrichmentEntry[] = [];
+  for (let start = 0; start < misses.length; start += 50) {
+    const batch = await mapConcurrent(misses.slice(start, start + 50), 4, enrichOne);
+    await writeCache(batch);
+    updates.push(...batch);
+  }
+  for (const update of updates) if (update.status === 'ok' && update.summary) cached.set(update.url, update);
+  return updates;
+}
+
+function parseSources(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((source): source is string => typeof source === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
+  if (entries.length === 0) return;
   const dbPath = twitterBookmarksIndexPath();
+  const lock = await acquireDbLock(dbPath);
   const db = await openDb(dbPath);
   try {
     initEnrichmentSchema(db);
@@ -138,6 +242,7 @@ async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
     saveDb(db, dbPath);
   } finally {
     db.close();
+    releaseDbLock(lock);
   }
 }
 

@@ -139,6 +139,28 @@ test('rebuildCanonicalIndex dedupes X external link with raindrop bookmark URL',
   });
 });
 
+test('rebuildCanonicalIndex folds cached enrichment summaries into FTS and tolerates an absent cache table', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeGitHubStars(dir, [githubStarRecord({ id: 990, fullName: 'a/summary-index', htmlUrl: 'https://github.com/a/summary-index', description: 'brief' })]);
+    // The first rebuild runs against a database with no link_enrichment table.
+    await rebuildCanonicalIndex();
+    const db = await openDb(twitterBookmarksIndexPath());
+    try {
+      const url = 'https://github.com/a/summary-index';
+      db.run('UPDATE canonical_bookmarks SET search_text = canonical_url || \' brief\'');
+      db.run(`CREATE TABLE link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL)`);
+      db.run(`INSERT INTO link_enrichment VALUES (?, ?, 'ok', ?)`, [url, 'Zephyrquartz is a summary-only discovery term.', '2026-07-10T00:00:00.000Z']);
+      saveDb(db, twitterBookmarksIndexPath());
+    } finally {
+      db.close();
+    }
+    await rebuildCanonicalIndex();
+    const found = await searchCanonicalBookmarks({ query: 'Zephyrquartz' });
+    assert.equal(found.length, 1);
+    assert.match(found[0].searchText, /summary: Zephyrquartz/);
+  });
+});
+
 test('rebuildCanonicalIndex stores raindrop source rows with null target_url', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeRaindropBookmarks(dir, [{

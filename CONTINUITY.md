@@ -12,9 +12,9 @@ Done:
 - Requirements plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (ce-brainstorm).
 - T1–T3 implemented via Codex; new module src/daily/coverage.ts.
 Now:
-- Thin-link enrichment calibrated for live deepseek-v4-flash: client/enrichment default max tokens raised from 600 to 2000 so reasoning leaves room for `message.content`. Security review fixes retained. Focused tests 30/30 + build pass. Uncommitted.
+- Sql.js writer hardening complete: unique atomic save temp names; advisory lock (2m wait, 250ms poll, 10m stale takeover warning); canonical rebuild + enrichment cache writes lock the whole open→modify→save window; cache batches are 50. Requested tests/build pass. No commit.
 Next:
-- Optional: commit; x-list/following canonical ingest (dark sources); per-source watermark; ideation ideas #1–8 (audio briefing top pick).
+- Hand off worker report; user may review/commit then run the backfill.
 Open questions (UNCONFIRMED if needed):
 - None.
 Working set (files/ids/commands):

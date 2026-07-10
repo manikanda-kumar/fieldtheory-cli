@@ -47,7 +47,7 @@ import { syncGitHubStars } from './github-stars/sync.js';
 import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
 import { collectDaily } from './daily/collect.js';
 import { connectDailyItems } from './daily/connect.js';
-import { enrichThinItems, mergeEnrichmentSummaries } from './daily/enrich.js';
+import { enrichBackfill, enrichThinItems, mergeEnrichmentSummaries } from './daily/enrich.js';
 import { synthesizeDaily } from './daily/synthesize.js';
 import { writeInterests } from './daily/interests.js';
 import { dailyDigestPath } from './daily/paths.js';
@@ -1329,6 +1329,28 @@ export function buildCli() {
   // ── daily ─────────────────────────────────────────────────────────────
 
   program
+    .command('enrich-backfill')
+    .description('Enrich all eligible thin canonical links, resumably')
+    .option('--limit <n>', 'Maximum links to attempt', (v: string) => Number(v), 100)
+    .option('--dry-run', 'Print eligible and pending counts without enriching', false)
+    .option('--all', 'Attempt every pending eligible link', false)
+    .action(safe(async (options) => {
+      ensureDataDir();
+      const result = await enrichBackfill({
+        limit: typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : 100,
+        all: Boolean(options.all),
+        dryRun: Boolean(options.dryRun),
+        onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
+        onProgress: ({ attempted, ok, failed }) => console.log(`  progress: processed ${attempted} / ok ${ok} / failed ${failed}`),
+      });
+      if (options.dryRun) {
+        console.log(`eligible: ${result.eligible}; pending: ${result.pending}`);
+        return;
+      }
+      console.log(`eligible: ${result.eligible}; attempted: ${result.attempted}; ok: ${result.ok}; failed: ${result.failed}; skipped-cached: ${result.skippedCached}`);
+    }));
+
+  program
     .command('daily')
     .description('Collect what was saved today across all sources and connect it to older items')
     .option('--date <date>', 'Digest a specific UTC day (YYYY-MM-DD) instead of the rolling window')
@@ -1348,6 +1370,8 @@ export function buildCli() {
       const enrichment = await enrichThinItems(collection.items, {
         onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
       });
+      // This remains useful before a backfilled summary has been folded into the
+      // canonical index by the next rebuild.
       mergeEnrichmentSummaries(collection.items, enrichment.summaries);
       const connected = await connectDailyItems(collection);
 

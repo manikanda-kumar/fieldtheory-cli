@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import type { Database } from 'sql.js';
-import { openDb, saveDb } from './db.js';
+import { acquireDbLock, openDb, releaseDbLock, saveDb } from './db.js';
 import { pathExists, readJsonLines } from './fs.js';
 import { dataDir, twitterBookmarksCachePath, twitterBookmarksIndexPath } from './paths.js';
 import type { BookmarkRecord } from './types.js';
@@ -661,6 +661,7 @@ function mapListRow(row: unknown[]): CanonicalBookmarkListResult {
 
 export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = {}): Promise<CanonicalRebuildResult> {
   const dbPath = twitterBookmarksIndexPath();
+  const lock = await acquireDbLock(dbPath);
   const db = await openDb(dbPath);
 
   try {
@@ -705,6 +706,13 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
       groups.set(source.dedupeKey, existing);
     }
     const canonicalGroups = [...groups.entries()].map(([dedupeKey, sources]) => buildCanonicalGroup(dedupeKey, sources));
+    const enrichmentSummaries = readEnrichmentSummaries(db);
+    for (const group of canonicalGroups) {
+      const summary = group.canonicalUrl ? enrichmentSummaries.get(group.canonicalUrl) : undefined;
+      if (summary && !group.searchText.includes(` summary: ${summary}`)) {
+        group.searchText = `${group.searchText} summary: ${summary}`.trim();
+      }
+    }
 
     db.run('BEGIN TRANSACTION');
     try {
@@ -733,6 +741,20 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
     return { dbPath, sourceCount: sourceRows.length, canonicalCount: canonicalGroups.length };
   } finally {
     db.close();
+    releaseDbLock(lock);
+  }
+}
+
+/** The enrichment cache is deliberately optional so older/empty databases still rebuild. */
+function readEnrichmentSummaries(db: Database): Map<string, string> {
+  try {
+    const rows = db.exec(`SELECT url, summary FROM link_enrichment WHERE status = 'ok' AND summary IS NOT NULL`)[0]?.values ?? [];
+    return new Map(rows
+      .filter((row) => typeof row[0] === 'string' && typeof row[1] === 'string' && row[1].trim())
+      .map((row) => [row[0] as string, (row[1] as string).trim()]));
+  } catch (error) {
+    if (!isSchemaMissingError(error)) throw error;
+    return new Map();
   }
 }
 

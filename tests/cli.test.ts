@@ -86,6 +86,13 @@ test('ft search, stats, and status expose --json', () => {
   }
 });
 
+test('ft enrich-backfill exposes limit, dry-run, and all options', () => {
+  const command = buildCli().commands.find((c: any) => c.name() === 'enrich-backfill');
+  assert.ok(command, 'enrich-backfill command should be registered');
+  const opts = command.options.map((option: any) => option.long);
+  assert.deepEqual(opts, ['--limit', '--dry-run', '--all']);
+});
+
 test('ft paths, library, commands, app, and install command groups are registered', () => {
   const program = buildCli();
   for (const name of ['paths', 'library', 'commands', 'app', 'install']) {
