@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { collectDaily } from '../src/daily/collect.js';
 import { connectDailyItems } from '../src/daily/connect.js';
 import { collectDailyCoverage } from '../src/daily/coverage.js';
-import { enrichBackfill, enrichThinItems, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
+import { enrichBackfill, enrichThinItems, isEnrichmentEligible, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
 import { contentLength, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
@@ -599,7 +599,7 @@ test('daily: enrichment backfill reports pending rows, enriches through seams, a
     }
 
     const dryRun = await enrichBackfill({ dryRun: true });
-    assert.deepEqual(dryRun, { eligible: 1, pending: 1, attempted: 0, ok: 0, failed: 0, skippedCached: 0 });
+    assert.deepEqual(dryRun, { eligible: 1, pending: 1, attempted: 0, ok: 0, failed: 0, skippedCached: 0, errorKinds: [] });
     let fetchCalls = 0;
     const first = await enrichBackfill({
       fetch: async () => { fetchCalls += 1; return new Response('<title>Backfill</title><body>Useful source material</body>'); },
@@ -613,7 +613,7 @@ test('daily: enrichment backfill reports pending rows, enriches through seams, a
       fetch: async () => { throw new Error('cached row must not fetch'); },
       llm: async () => { throw new Error('cached row must not summarize'); },
     });
-    assert.deepEqual(rerun, { eligible: 1, pending: 0, attempted: 0, ok: 0, failed: 0, skippedCached: 1 });
+    assert.deepEqual(rerun, { eligible: 1, pending: 0, attempted: 0, ok: 0, failed: 0, skippedCached: 1, errorKinds: [] });
   });
 });
 
@@ -633,6 +633,50 @@ test('daily: empty enrichment completion is cached as failed and leaves the item
     const result = await synthesizeDaily(collection, [], { invoke: async () => { throw new Error('should not invoke'); } });
     assert.equal(result.thinSkipped, 1);
     assert.match(await readFileText(result.digestPath), /Also saved/);
+  });
+});
+
+test('daily: enrichment excludes X articles, YouTube, and PDFs', () => {
+  const item = (url: string): CanonicalRecentItem => ({ id: url, canonicalUrl: url, displayTitle: url, searchText: url, sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null });
+  assert.equal(isEnrichmentEligible(item('https://x.com/i/article/123')), false);
+  assert.equal(isEnrichmentEligible(item('https://www.youtube.com/watch?v=abc')), false);
+  assert.equal(isEnrichmentEligible(item('https://example.com/report.pdf')), false);
+});
+
+test('daily: retries a transient 429 fetch and records failure errors without retrying 404s', async () => {
+  await withIsolatedDataDir(async () => {
+    const item: CanonicalRecentItem = { id: 'retry', canonicalUrl: 'https://example.com/retry', displayTitle: 'retry', searchText: 'https://example.com/retry', sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null };
+    let calls = 0;
+    const recovered = await enrichThinItems([item], {
+      fetch: async () => ++calls === 1 ? new Response('', { status: 429 }) : new Response('<title>Recovered</title><body>source</body>'),
+      llm: async () => 'Recovered after a transient failure.',
+    });
+    assert.equal(recovered.enrichedCount, 1);
+    assert.equal(calls, 2);
+
+    const failed: CanonicalRecentItem = { ...item, id: 'no-retry', canonicalUrl: 'https://example.com/no-retry', searchText: 'https://example.com/no-retry' };
+    calls = 0;
+    await enrichThinItems([failed], { fetch: async () => { calls += 1; return new Response('', { status: 404 }); }, llm: async () => 'unused' });
+    assert.equal(calls, 1);
+    const db = await openDb(twitterBookmarksIndexPath());
+    try {
+      const row = db.exec(`SELECT error FROM link_enrichment WHERE url = ?`, [failed.canonicalUrl])[0]?.values[0]?.[0];
+      assert.match(String(row), /^fetch: HTTP 404/);
+    } finally { db.close(); }
+  });
+});
+
+test('daily: retry-failed immediately re-attempts transient cached failures', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [starRecord({ id: 78, fullName: 'a/retry-failed', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
+    await rebuildCanonicalIndex();
+    const db = await openDb(twitterBookmarksIndexPath());
+    try { db.run(`UPDATE canonical_bookmarks SET search_text = canonical_url || ' brief'`); saveDb(db, twitterBookmarksIndexPath()); } finally { db.close(); }
+    await enrichBackfill({ fetch: async () => new Response('', { status: 429 }), llm: async () => 'unused' });
+    let calls = 0;
+    const result = await enrichBackfill({ retryFailed: true, fetch: async () => { calls += 1; return new Response('<title>OK</title><body>source</body>'); }, llm: async () => 'Recovered.' });
+    assert.equal(result.ok, 1);
+    assert.equal(calls, 1);
   });
 });
 

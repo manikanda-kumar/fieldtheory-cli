@@ -12,7 +12,7 @@ Done:
 - Requirements plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (ce-brainstorm).
 - T1–T3 implemented via Codex; new module src/daily/coverage.ts.
 Now:
-- Sql.js writer hardening complete: unique atomic save temp names; advisory lock (2m wait, 250ms poll, 10m stale takeover warning); canonical rebuild + enrichment cache writes lock the whole open→modify→save window; cache batches are 50. Requested tests/build pass. No commit.
+- Link-enrichment backfill hardening complete (uncommitted): excludes X/Twitter, YouTube, PDFs; cache error migration and top errors; transient retries; default concurrency 2 + retry-failed; scoped process crash logging. Focused daily/CLI tests 66/66 and build pass.
 Next:
 - Hand off worker report; user may review/commit then run the backfill.
 Open questions (UNCONFIRMED if needed):

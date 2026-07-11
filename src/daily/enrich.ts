@@ -8,6 +8,8 @@ import { THIN_CONTENT_CHARS, contentLength } from './synthesize.js';
 const FAILED_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 const BODY_LIMIT_BYTES = 200_000;
 const DEFAULT_LIMIT = 25;
+const BACKFILL_DEFAULT_CONCURRENCY = 2;
+const DAILY_DEFAULT_CONCURRENCY = 4;
 
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -16,6 +18,7 @@ export interface LinkEnrichmentEntry {
   summary: string | null;
   status: 'ok' | 'failed';
   enrichedAt: string;
+  error: string | null;
 }
 
 export interface EnrichThinItemsOptions {
@@ -39,11 +42,14 @@ export interface EnrichmentBackfillResult {
   ok: number;
   failed: number;
   skippedCached: number;
+  errorKinds: Array<{ error: string; count: number }>;
 }
 
 export interface EnrichBackfillOptions extends EnrichThinItemsOptions {
   all?: boolean;
   dryRun?: boolean;
+  retryFailed?: boolean;
+  concurrency?: number;
   onProgress?: (result: Pick<EnrichmentBackfillResult, 'attempted' | 'ok' | 'failed'>) => void;
 }
 
@@ -58,8 +64,9 @@ export async function enrichThinItems(items: CanonicalRecentItem[], options: Enr
 
   try {
     const now = options.now ?? new Date();
+    await ensureEnrichmentSchema();
     const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
-    await enrichEligibleItems(eligible, cached, options, now, parseLimit(options.limit));
+    await enrichEligibleItems(eligible, cached, options, now, parseLimit(options.limit), undefined, DAILY_DEFAULT_CONCURRENCY);
     const finalSummaries = usableSummaries(eligible, cached);
     return { enrichedCount: finalSummaries.size, summaries: finalSummaries };
   } catch {
@@ -71,26 +78,29 @@ export async function enrichThinItems(items: CanonicalRecentItem[], options: Enr
 export async function enrichBackfill(options: EnrichBackfillOptions = {}): Promise<EnrichmentBackfillResult> {
   const items = await readCanonicalItems();
   const eligible = items.filter(isEligible);
+  await ensureEnrichmentSchema();
+  await removeNowIneligibleFailures(items);
   const now = options.now ?? new Date();
   const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
-  const pending = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now));
+  const pending = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, options.retryFailed));
   const skippedCached = eligible.filter((item) => {
     const entry = cached.get(item.canonicalUrl!);
     return entry?.status === 'ok' && Boolean(entry.summary?.trim());
   }).length;
-  const base = { eligible: eligible.length, pending: pending.length, attempted: 0, ok: 0, failed: 0, skippedCached };
+  const base = { eligible: eligible.length, pending: pending.length, attempted: 0, ok: 0, failed: 0, skippedCached, errorKinds: [] };
   if (options.dryRun || pending.length === 0) return base;
   if (!options.llm && !openCodeApiKey()) {
     options.onMissingKey?.();
     return base;
   }
   const limit = options.all ? Number.POSITIVE_INFINITY : parseLimit(options.limit ?? 100);
-  const updates = await enrichEligibleItems(eligible, cached, options, now, limit, options.onProgress);
+  const updates = await enrichEligibleItems(eligible, cached, options, now, limit, options.onProgress, options.concurrency ?? BACKFILL_DEFAULT_CONCURRENCY, options.retryFailed);
   return {
     ...base,
     attempted: updates.length,
     ok: updates.filter((entry) => entry.status === 'ok').length,
     failed: updates.filter((entry) => entry.status === 'failed').length,
+    errorKinds: topErrorKinds(updates),
   };
 }
 
@@ -106,7 +116,8 @@ export function isEnrichmentEligible(item: CanonicalRecentItem): boolean {
   if (contentLength(item.searchText) >= THIN_CONTENT_CHARS || !item.canonicalUrl) return false;
   try {
     const url = new URL(item.canonicalUrl);
-    return (url.protocol === 'http:' || url.protocol === 'https:') && !isTweetStatusUrl(url);
+    // Exclude auth-walled X/Twitter, video-only YouTube, PDFs, and existing non-web/long-content cases.
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !isExcludedEnrichmentUrl(url);
   } catch {
     return false;
   }
@@ -114,14 +125,15 @@ export function isEnrichmentEligible(item: CanonicalRecentItem): boolean {
 
 const isEligible = isEnrichmentEligible;
 
-function isTweetStatusUrl(url: URL): boolean {
-  return /(^|\.)((x|twitter)\.com)$/i.test(url.hostname) && /\/status\/\d+/i.test(url.pathname);
+function isExcludedEnrichmentUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return /(^|\.)(x|twitter)\.com$/.test(host) || /(^|\.)(youtube\.com|youtu\.be)$/.test(host) || /\.pdf$/i.test(url.pathname);
 }
 
-function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date): boolean {
+function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date, retryFailed = false): boolean {
   if (!cached) return true;
   if (cached.status === 'ok' && cached.summary?.trim()) return false;
-  return !Number.isFinite(Date.parse(cached.enrichedAt)) || Date.parse(cached.enrichedAt) <= now.getTime() - FAILED_RETRY_MS;
+  return (retryFailed && isTransientError(cached.error)) || !Number.isFinite(Date.parse(cached.enrichedAt)) || Date.parse(cached.enrichedAt) <= now.getTime() - FAILED_RETRY_MS;
 }
 
 function parseLimit(value: number | undefined): number {
@@ -144,12 +156,12 @@ async function readCache(urls: string[]): Promise<Map<string, LinkEnrichmentEntr
   try {
     let rows: unknown[][];
     try {
-      rows = db.exec(`SELECT url, summary, status, enriched_at FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
+      rows = db.exec(`SELECT url, summary, status, enriched_at, error FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
     } catch (error) {
       if (!isMissingTableError(error)) throw error;
       rows = [];
     }
-    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? '') }]));
+    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? ''), error: row[4] == null ? null : String(row[4]) }]));
   } finally {
     db.close();
   }
@@ -181,8 +193,10 @@ async function enrichEligibleItems(
   now: Date,
   limit: number,
   onProgress?: (result: { attempted: number; ok: number; failed: number }) => void,
+  concurrency = DAILY_DEFAULT_CONCURRENCY,
+  retryFailed = false,
 ): Promise<LinkEnrichmentEntry[]> {
-  const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+  const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, retryFailed)).slice(0, limit);
   const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
   const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
   let attempted = 0;
@@ -192,12 +206,16 @@ async function enrichEligibleItems(
     const url = item.canonicalUrl!;
     let update: LinkEnrichmentEntry;
     try {
-      const material = await extractPageMaterial(url, fetchFn);
-      const summary = (await llm(buildEnrichmentPrompt(material))).trim();
-      if (!summary) throw new Error('empty enrichment completion');
-      update = { url, summary, status: 'ok', enrichedAt: now.toISOString() };
-    } catch {
-      update = { url, summary: null, status: 'failed', enrichedAt: now.toISOString() };
+      const material = await retryTransient('fetch', () => extractPageMaterial(url, fetchFn));
+      await delay(250);
+      const summary = await retryTransient('llm', async () => {
+        const value = (await llm(buildEnrichmentPrompt(material))).trim();
+        if (!value) throw new Error('empty completion');
+        return value;
+      });
+      update = { url, summary, status: 'ok', enrichedAt: now.toISOString(), error: null };
+    } catch (error) {
+      update = { url, summary: null, status: 'failed', enrichedAt: now.toISOString(), error: formatFailure(error) };
     }
     attempted += 1;
     if (update.status === 'ok') ok += 1;
@@ -207,7 +225,7 @@ async function enrichEligibleItems(
   };
   const updates: LinkEnrichmentEntry[] = [];
   for (let start = 0; start < misses.length; start += 50) {
-    const batch = await mapConcurrent(misses.slice(start, start + 50), 4, enrichOne);
+    const batch = await mapConcurrent(misses.slice(start, start + 50), concurrency, enrichOne);
     await writeCache(batch);
     updates.push(...batch);
   }
@@ -232,10 +250,10 @@ async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
   const db = await openDb(dbPath);
   try {
     initEnrichmentSchema(db);
-    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at`);
+    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at, error) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at, error = excluded.error`);
     try {
-      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt]);
+      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt, entry.error]);
     } finally {
       statement.free();
     }
@@ -247,8 +265,75 @@ async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
 }
 
 function initEnrichmentSchema(db: Database): void {
-  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL)');
+  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL, error TEXT)');
+  try { db.run('ALTER TABLE link_enrichment ADD COLUMN error TEXT'); } catch (error) { if (!String(error).toLowerCase().includes('duplicate column')) throw error; }
 }
+
+async function ensureEnrichmentSchema(): Promise<void> {
+  const dbPath = twitterBookmarksIndexPath();
+  const lock = await acquireDbLock(dbPath);
+  const db = await openDb(dbPath);
+  try {
+    initEnrichmentSchema(db);
+    saveDb(db, dbPath);
+  } finally {
+    db.close();
+    releaseDbLock(lock);
+  }
+}
+
+async function removeNowIneligibleFailures(items: CanonicalRecentItem[]): Promise<void> {
+  const urls = items.filter((item) => item.canonicalUrl && !isEligible(item)).map((item) => item.canonicalUrl!);
+  if (!urls.length) return;
+  const dbPath = twitterBookmarksIndexPath();
+  const lock = await acquireDbLock(dbPath);
+  const db = await openDb(dbPath);
+  try {
+    initEnrichmentSchema(db);
+    for (let start = 0; start < urls.length; start += 500) {
+      const batch = urls.slice(start, start + 500);
+      db.run(`DELETE FROM link_enrichment WHERE status = 'failed' AND url IN (${batch.map(() => '?').join(',')})`, batch);
+    }
+    saveDb(db, dbPath);
+  } finally {
+    db.close();
+    releaseDbLock(lock);
+  }
+}
+
+function formatFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message === 'empty completion' || message.endsWith(': empty completion')) return 'empty completion';
+  const stage = message.startsWith('fetch:') || message.startsWith('llm:') ? '' : 'fetch: ';
+  return `${stage}${message}`.slice(0, 500);
+}
+
+async function retryTransient<T>(stage: 'fetch' | 'llm', operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try { return await operation(); } catch (error) {
+      lastError = error;
+      if (attempt === 2 || !isTransientError(error)) throw new Error(`${stage}: ${errorMessage(error)}`);
+      await delay((attempt === 0 ? 1_000 : 4_000) + Math.floor(Math.random() * 250));
+    }
+  }
+  throw lastError;
+}
+
+function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+
+function isTransientError(error: unknown): boolean {
+  const message = (typeof error === 'string' ? error : errorMessage(error)).toLowerCase();
+  return /\b429\b|\b5\d\d\b|econnreset|etimedout|eai_again|aborted|aborterror|network|fetch failed|timed out|empty completion/.test(message);
+}
+
+function topErrorKinds(entries: LinkEnrichmentEntry[]): Array<{ error: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const entry of entries) if (entry.status === 'failed' && entry.error) counts.set(entry.error, (counts.get(entry.error) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([error, count]) => ({ error, count }));
+}
+
+function delay(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 async function extractPageMaterial(url: string, fetchFn: FetchFn): Promise<string> {
   const controller = new AbortController();
