@@ -51,6 +51,7 @@ export interface CanonicalBookmarkListResult {
   primaryCategory: string | null;
   domains: string | null;
   primaryDomain: string | null;
+  authorHandle?: string;
 }
 
 export interface CanonicalSample {
@@ -70,6 +71,7 @@ export interface ListCanonicalBookmarksOptions {
   source?: string;
   category?: string;
   domain?: string;
+  author?: string;
   after?: string;
   before?: string;
   limit?: number;
@@ -756,6 +758,7 @@ function mapListRow(row: unknown[]): CanonicalBookmarkListResult {
     primaryCategory: (row[9] as string) ?? null,
     domains: (row[10] as string) ?? null,
     primaryDomain: (row[11] as string) ?? null,
+    authorHandle: (row[12] as string) ?? undefined,
   };
 }
 
@@ -1102,13 +1105,23 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
     conditions.push(`(c.primary_domain = ? COLLATE NOCASE OR c.domains LIKE ?)`);
     params.push(options.domain, `%${options.domain}%`);
   }
+  if (options.author) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM bookmark_sources s
+      WHERE s.canonical_id = c.id AND s.author_handle = ? COLLATE NOCASE
+    )`);
+    params.push(options.author);
+  }
 
   try {
     initCanonicalSchema(db);
 
     const select = `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count,
                            c.first_saved_at, c.last_saved_at, c.sources_json,
-                           c.categories, c.primary_category, c.domains, c.primary_domain
+                           c.categories, c.primary_category, c.domains, c.primary_domain,
+                           (SELECT s.author_handle FROM bookmark_sources s
+                            WHERE s.canonical_id = c.id AND s.author_handle IS NOT NULL AND s.author_handle != ''
+                            LIMIT 1) as author_handle
                     FROM canonical_bookmarks c
                     ${joinFts ? 'JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid' : ''}`;
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -1164,6 +1177,13 @@ export async function countCanonicalBookmarks(options: Omit<ListCanonicalBookmar
   if (options.domain) {
     conditions.push(`(c.primary_domain = ? COLLATE NOCASE OR c.domains LIKE ?)`);
     params.push(options.domain, `%${options.domain}%`);
+  }
+  if (options.author) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM bookmark_sources s
+      WHERE s.canonical_id = c.id AND s.author_handle = ? COLLATE NOCASE
+    )`);
+    params.push(options.author);
   }
 
   try {
@@ -1244,7 +1264,10 @@ export async function getCanonicalBookmarkById(id: string): Promise<CanonicalBoo
     const rows = db.exec(
       `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count,
               c.first_saved_at, c.last_saved_at, c.sources_json,
-              c.categories, c.primary_category, c.domains, c.primary_domain
+              c.categories, c.primary_category, c.domains, c.primary_domain,
+              (SELECT s.author_handle FROM bookmark_sources s
+               WHERE s.canonical_id = c.id AND s.author_handle IS NOT NULL AND s.author_handle != ''
+               LIMIT 1) as author_handle
        FROM canonical_bookmarks c
        WHERE c.id = ?
        LIMIT 1`,

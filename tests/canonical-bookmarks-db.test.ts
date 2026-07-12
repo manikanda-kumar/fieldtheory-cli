@@ -320,6 +320,55 @@ test('listCanonicalBookmarks filters by query, source, category, and domain', as
   });
 });
 
+test('listCanonicalBookmarks filters by author and populates authorHandle', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [
+      {
+        id: 'x-1',
+        tweetId: '101',
+        url: 'https://x.com/alice/status/101',
+        text: 'Great post about AI agents',
+        links: ['https://example.com/ai-post'],
+        authorHandle: 'alice',
+        syncedAt: '2026-05-10T00:00:00.000Z',
+      },
+      {
+        id: 'x-2',
+        tweetId: '102',
+        url: 'https://x.com/bob/status/102',
+        text: 'Post about databases',
+        links: ['https://example.com/db-post'],
+        authorHandle: 'bob',
+        syncedAt: '2026-05-11T00:00:00.000Z',
+      },
+    ]);
+
+    await rebuildCanonicalIndex();
+
+    // Filter by author=alice should return only alice's bookmark
+    const aliceRows = await listCanonicalBookmarks({ author: 'alice', limit: 10 });
+    assert.equal(aliceRows.length, 1);
+    assert.equal(aliceRows[0].authorHandle, 'alice');
+
+    // Filter by author=bob should return only bob's bookmark
+    const bobRows = await listCanonicalBookmarks({ author: 'bob', limit: 10 });
+    assert.equal(bobRows.length, 1);
+    assert.equal(bobRows[0].authorHandle, 'bob');
+
+    // No filter should return both
+    const allRows = await listCanonicalBookmarks({ limit: 10 });
+    assert.equal(allRows.length, 2);
+
+    // Case-insensitive matching
+    const upperRows = await listCanonicalBookmarks({ author: 'ALICE', limit: 10 });
+    assert.equal(upperRows.length, 1);
+
+    // Non-existent author returns empty
+    const none = await listCanonicalBookmarks({ author: 'nobody', limit: 10 });
+    assert.equal(none.length, 0);
+  });
+});
+
 test('rebuildCanonicalIndex dedupes GitHub star with raindrop bookmark URL', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeGitHubStars(dir, [githubStarRecord()]);

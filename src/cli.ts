@@ -2140,10 +2140,10 @@ export function buildCli() {
     .action(safe(async (options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
-        const unsupportedFilters = ['author', 'folder']
+        const unsupportedFilters = ['folder']
           .filter((name) => options[name] !== undefined);
         if (unsupportedFilters.length > 0) {
-          console.error(`  --unified list does not support filters yet: ${unsupportedFilters.map((name) => `--${name}`).join(', ')}`);
+          console.error(`  --unified list does not support: ${unsupportedFilters.map((name) => `--${name}`).join(', ')} (X-only filter)`);
           process.exitCode = 1;
           return;
         }
@@ -2152,6 +2152,7 @@ export function buildCli() {
           source: options.source ? String(options.source) : undefined,
           category: options.category ? String(options.category) : undefined,
           domain: options.domain ? String(options.domain) : undefined,
+          author: options.author ? String(options.author) : undefined,
           after: options.after ? String(options.after) : undefined,
           before: options.before ? String(options.before) : undefined,
           limit: Number(options.limit) || 30,

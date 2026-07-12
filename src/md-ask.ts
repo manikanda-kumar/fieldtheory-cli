@@ -14,10 +14,10 @@ import path from 'node:path';
 import { pathExists, writeMd, appendLine, listFiles, readMd } from './fs.js';
 import {
   mdIndexPath, mdLogPath, mdConceptsDir, mdCategoriesDir,
-  mdDomainsDir, mdEntitiesDir, mdDir,
+  mdDomainsDir, mdEntitiesDir, mdSourcesDir, mdTopicsDir, mdDir,
 } from './paths.js';
 import { searchBookmarks } from './bookmarks-db.js';
-import { searchCanonicalBookmarks } from './canonical-bookmarks-db.js';
+import { searchCanonicalBookmarks, listCanonicalBookmarks } from './canonical-bookmarks-db.js';
 import { resolveEngine, invokeEngineAsync } from './engine.js';
 import { buildAskPrompt, type MdBookmark } from './md-prompts.js';
 import { slug, logEntry } from './md.js';
@@ -64,12 +64,14 @@ async function selectRelevantPages(question: string): Promise<string[]> {
     scanDir(mdCategoriesDir(), 'categories'),
     scanDir(mdDomainsDir(), 'domains'),
     scanDir(mdEntitiesDir(), 'entities'),
+    scanDir(mdSourcesDir(), 'sources'),
+    scanDir(mdTopicsDir(), 'topics'),
   ]);
 
   try {
-    const ftsResults = await searchBookmarks({ query: question, limit: 50 });
+    const canonResults = await listCanonicalBookmarks({ query: question, limit: 50 });
     const ftsBoosts = new Set<string>();
-    for (const r of ftsResults) {
+    for (const r of canonResults) {
       if (r.authorHandle) ftsBoosts.add(`entities/${slug(r.authorHandle)}`);
     }
     for (const page of allPages) {
