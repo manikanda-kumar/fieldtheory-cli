@@ -829,7 +829,7 @@ function printIdeasRunReport(summary: import('./ideas.js').IdeasRunSummary): voi
 
 /** Per-invocation LLM engine override (bypasses saved default, fails fast). */
 export function engineOption(): Option {
-  return new Option('--engine <name>', 'Override the LLM engine for this run (claude, codex, droid)');
+  return new Option('--engine <name>', 'Override the LLM engine for this run (claude, codex, grok, droid)');
 }
 
 /** Wrap an async action with graceful error handling. */
@@ -1479,9 +1479,11 @@ export function buildCli() {
     .option('--window-hours <n>', 'Rolling window size in hours when no watermark exists', (v: string) => Number(v), 24)
     .option('--write', 'Synthesize the digest markdown and advance the watermark', false)
     .option('--force', 'Overwrite an existing digest for the same date', false)
-    .option('--engine <engine>', 'LLM engine for digest synthesis (claude, codex, droid)')
+    .option('--engine <engine>', 'LLM engine for digest synthesis (claude, codex, grok, droid)')
     .option('--model <model>', 'Model override for digest synthesis')
     .option('--effort <effort>', 'Effort override for digest synthesis')
+    .option('--ground', 'Allow web/X search for additional grounded notes (best with --engine grok)', false)
+    .option('--no-ground', 'Disable web/X grounding even if FT_DAILY_GROUND is set')
     .option('--json', 'JSON output')
     .action(safe(async (options) => {
       ensureDataDir();
@@ -1504,11 +1506,17 @@ export function buildCli() {
           console.log('  Re-run with --force to regenerate.');
           return;
         }
-        // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin a cheap
-        // engine without baking flags into the sync-all step list.
+        // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin engine
+        // without baking flags into the sync-all step list.
+        // --no-ground wins over env; otherwise --ground or FT_DAILY_GROUND=1.
+        const groundEnv = /^(1|true|yes)$/i.test(process.env.FT_DAILY_GROUND ?? '');
+        const groundExternal = options.ground === false
+          ? false
+          : Boolean(options.ground) || groundEnv;
         const result = await synthesizeDaily(collection, connected, {
           enrichedCount: enrichment.enrichedCount,
           enrichedItemIds: collection.items.filter((item) => item.canonicalUrl && enrichment.summaries.has(item.canonicalUrl)).map((item) => item.id),
+          groundExternal,
           profile: {
             engine: stringOption(options.engine) ?? stringOption(process.env.FT_DAILY_ENGINE),
             model: stringOption(options.model) ?? stringOption(process.env.FT_DAILY_MODEL),
@@ -1520,7 +1528,7 @@ export function buildCli() {
           return;
         }
         console.log(`  ✓ Digest written: ${result.digestPath}`);
-        console.log(`    themes: ${result.themes.length} (${result.usedLlm ? 'llm' : 'mechanical'})`);
+        console.log(`    themes: ${result.themes.length} (${result.usedLlm ? 'llm' : 'mechanical'})${groundExternal ? ' · grounded' : ''}`);
         if (result.enrichedCount > 0) console.log(`    enriched links available: ${result.enrichedCount}`);
         if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);
         const interests = await writeInterests();
@@ -1627,7 +1635,7 @@ export function buildCli() {
     .option('--limit <n>', 'Max videos to consider', (v: string) => Number(v))
     .option('--force', 'Reprocess videos even when state says they are unchanged', false)
     .option('--dry-run', 'Print videos that would be processed without fetching transcripts or calling LLMs', false)
-    .option('--engine <name>', 'LLM engine for notes/scripts: claude, codex, droid, or none for OpenRouter-only (default comes from ft model/autodetect; OpenRouter is fallback)')
+    .option('--engine <name>', 'LLM engine for notes/scripts: claude, codex, grok, droid, or none for OpenRouter-only (default comes from ft model/autodetect; OpenRouter is fallback)')
     .option('--model <model>', 'Override the local engine model; values containing / also override the OpenRouter fallback model')
     .option('--effort <effort>', 'Override local engine reasoning effort')
     .option('--cookies-from-browser <spec>', 'Pass browser cookies to yt-dlp (example: chrome or "chrome:Profile 1"; env: FT_YOUTUBE_COOKIES_FROM_BROWSER)')
@@ -2386,7 +2394,7 @@ export function buildCli() {
   program
     .command('model')
     .description('View or change the default LLM engine for classification')
-    .argument('[engine]', 'Set default engine directly (claude, codex, droid)')
+    .argument('[engine]', 'Set default engine directly (claude, codex, grok, droid)')
     .action(safe(async (engineArg?: string) => {
       const available = detectAvailableEngines();
       const prefs = loadPreferences();
@@ -2396,6 +2404,7 @@ export function buildCli() {
         console.log('  Install one of:');
         console.log('    - Claude Code: https://docs.anthropic.com/en/docs/claude-code');
         console.log('    - Codex CLI:   https://github.com/openai/codex');
+        console.log('    - Grok Build:  https://x.ai/cli (installs the `grok` binary)');
         console.log('  Or set OPENCODE_GO_API_KEY to use the droid engine (OpenCode Go cloud models).');
         return;
       }
@@ -3377,7 +3386,7 @@ export function buildCli() {
     .option('--repos <path...>', 'Multiple repo paths; produces one consideration per repo plus a batch summary')
     .option('--frame <id>', 'Frame id (overrides any frame pinned on the seed)')
     .option('--depth <depth>', 'Depth: quick | standard | deep (default: standard, or quick under --defaults)')
-    .option('--engine <name>', 'LLM engine for this run (claude | codex | droid; default comes from ft model/autodetect)')
+    .option('--engine <name>', 'LLM engine for this run (claude | codex | grok | droid; default comes from ft model/autodetect)')
     .option('--model <name>', 'Model alias/name passed to the engine (for example opus or gpt-5.5)')
     .option('--effort <level>', 'Reasoning effort passed to the engine (low | medium | high | xhigh | max)')
     .option('--weight <level>', 'Alias for --effort', undefined)
@@ -3539,7 +3548,7 @@ export function buildCli() {
     .option('--repos <path...>', 'Multiple repo paths')
     .option('--frame <id>', 'Frame id (defaults to seed-pinned frame or leverage-specificity)')
     .option('--depth <depth>', 'Depth: quick | standard | deep', 'quick')
-    .option('--engine <name>', 'LLM engine for this run (claude | codex | droid)')
+    .option('--engine <name>', 'LLM engine for this run (claude | codex | grok | droid)')
     .option('--model <name>', 'Model alias/name passed to the engine')
     .option('--effort <level>', 'Reasoning effort passed to the engine')
     .option('--weight <level>', 'Alias for --effort', undefined)

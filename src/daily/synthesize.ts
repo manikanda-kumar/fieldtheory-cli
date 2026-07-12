@@ -29,12 +29,22 @@ export function contentLength(text: string): number {
   return text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim().length;
 }
 
+export interface DailyExternalNote {
+  claim: string;
+  sourceUrl?: string;
+  sourceLabel?: string;
+  /** Short ids (i1/r1) this note grounds, when provided by the model. */
+  aboutIds: string[];
+}
+
 export interface DailyTheme {
   title: string;
   summary: string;
   itemIds: string[];
   relatedIds: string[];
   projects: string[];
+  /** Optional X/web-grounded notes that flesh out the theme (validated URLs). */
+  externalNotes: DailyExternalNote[];
 }
 
 export interface SynthesizeDailyOptions {
@@ -47,6 +57,12 @@ export interface SynthesizeDailyOptions {
   enrichedCount?: number;
   /** Enriched items join the LLM partition even if a concise summary is under the normal text threshold. */
   enrichedItemIds?: Iterable<string>;
+  /**
+   * Allow the engine to use web/X search and attach grounded external notes.
+   * Prefer with the grok engine (built-in search). Citation validation still
+   * drops invented library item ids; external notes are URL-validated only.
+   */
+  groundExternal?: boolean;
 }
 
 export interface SynthesizeDailyResult {
@@ -92,9 +108,15 @@ export function buildDailyAliases(collection: DailyCollection, connected: Connec
   return { items, related };
 }
 
-export function buildDailyPrompt(collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): string {
+export function buildDailyPrompt(
+  collection: DailyCollection,
+  connected: ConnectedItem[],
+  aliases: DailyAliases,
+  options: { groundExternal?: boolean } = {},
+): string {
   const itemAlias = new Map([...aliases.items.entries()].map(([alias, id]) => [id, alias]));
   const relatedAlias = new Map([...aliases.related.entries()].map(([alias, id]) => [id, alias]));
+  const groundExternal = Boolean(options.groundExternal);
 
   const lines: string[] = [];
   lines.push(`Date: ${collection.date}`);
@@ -116,11 +138,75 @@ export function buildDailyPrompt(collection: DailyCollection, connected: Connect
   }
   lines.push('');
   lines.push(`TASK: Group the new items into 3-${MAX_THEMES} themes. Respond with ONLY a JSON array:`);
-  lines.push('[{"title": "...", "summary": "2-4 sentences on what is new and why it matters together",');
-  lines.push('  "itemIds": ["<id like i1 from NEW ITEMS>"], "relatedIds": ["<id like r1 from related lines>"], "projects": ["<repo from PROJECT ACTIVITY>"]}]');
-  lines.push('Rules: cite only the short ids (i1, i2, r1, ...) and repo names that appear verbatim above. Mention a project only when a theme genuinely connects to that repo\'s activity. Do not invent items, ids, or repos.');
+  if (groundExternal) {
+    lines.push('[{"title": "...", "summary": "2-4 sentences on what is new and why it matters together",');
+    lines.push('  "itemIds": ["<id like i1 from NEW ITEMS>"], "relatedIds": ["<id like r1 from related lines>"], "projects": ["<repo from PROJECT ACTIVITY>"],');
+    lines.push('  "externalNotes": [{"claim": "one grounded fact that adds context", "sourceUrl": "https://...", "sourceLabel": "optional short source name", "aboutIds": ["i1"]}]}]');
+    lines.push('Rules: cite only the short ids (i1, i2, r1, ...) and repo names that appear verbatim above for itemIds/relatedIds/projects. Mention a project only when a theme genuinely connects to that repo\'s activity. Do not invent library items, ids, or repos.');
+    lines.push('External notes: you MAY use web and X search to ground additional context (author background, related announcement, clarifying fact). Prefer 0-3 externalNotes per theme. Every external note MUST include a real https sourceUrl you verified via search. aboutIds may only use short ids from this prompt. If search finds nothing useful, omit externalNotes or return []. Never fabricate URLs or claims.');
+  } else {
+    lines.push('[{"title": "...", "summary": "2-4 sentences on what is new and why it matters together",');
+    lines.push('  "itemIds": ["<id like i1 from NEW ITEMS>"], "relatedIds": ["<id like r1 from related lines>"], "projects": ["<repo from PROJECT ACTIVITY>"]}]');
+    lines.push('Rules: cite only the short ids (i1, i2, r1, ...) and repo names that appear verbatim above. Mention a project only when a theme genuinely connects to that repo\'s activity. Do not invent items, ids, or repos. Do not add external web claims.');
+  }
 
   return withSystemOverride('personal knowledge-synthesis engine that groups newly saved reading material into themes', lines.join('\n'));
+}
+
+const MAX_EXTERNAL_NOTES_PER_THEME = 3;
+
+/** Accept only absolute http(s) URLs for external notes — blocks invented paths. */
+export function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function mapAliases(value: unknown, aliasMap: Map<string, string>): { kept: string[]; removed: number } {
+  if (!Array.isArray(value)) return { kept: [], removed: 0 };
+  const kept: string[] = [];
+  let removed = 0;
+  for (const alias of value) {
+    const real = typeof alias === 'string' ? aliasMap.get(alias.trim()) : undefined;
+    if (real && !kept.includes(real)) kept.push(real);
+    else removed += 1;
+  }
+  return { kept, removed };
+}
+
+function parseExternalNotes(
+  value: unknown,
+  aliases: DailyAliases,
+): { notes: DailyExternalNote[]; dropped: number } {
+  if (!Array.isArray(value)) return { notes: [], dropped: 0 };
+  const notes: DailyExternalNote[] = [];
+  let dropped = 0;
+  for (const entry of value.slice(0, MAX_EXTERNAL_NOTES_PER_THEME)) {
+    if (!entry || typeof entry !== 'object') {
+      dropped += 1;
+      continue;
+    }
+    const candidate = entry as Record<string, unknown>;
+    const claim = typeof candidate.claim === 'string' ? candidate.claim.trim() : '';
+    const sourceUrl = typeof candidate.sourceUrl === 'string' ? candidate.sourceUrl.trim() : '';
+    const sourceLabel = typeof candidate.sourceLabel === 'string' ? candidate.sourceLabel.trim() : '';
+    if (!claim || !sourceUrl || !isHttpUrl(sourceUrl)) {
+      dropped += 1;
+      continue;
+    }
+    // aboutIds may reference item or related aliases; unknown aliases are dropped, not fatal.
+    const aboutAliases = mapAliases(candidate.aboutIds, new Map([...aliases.items, ...aliases.related]));
+    notes.push({
+      claim,
+      sourceUrl,
+      ...(sourceLabel ? { sourceLabel } : {}),
+      aboutIds: aboutAliases.kept,
+    });
+  }
+  return { notes, dropped };
 }
 
 export function validateThemes(raw: unknown, collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): { themes: DailyTheme[]; dropped: number } {
@@ -137,18 +223,6 @@ export function validateThemes(raw: unknown, collection: DailyCollection, connec
     const title = typeof candidate.title === 'string' ? candidate.title.trim() : '';
     const summary = typeof candidate.summary === 'string' ? candidate.summary.trim() : '';
     if (!title || !summary) continue;
-
-    const mapAliases = (value: unknown, aliasMap: Map<string, string>): { kept: string[]; removed: number } => {
-      if (!Array.isArray(value)) return { kept: [], removed: 0 };
-      const kept: string[] = [];
-      let removed = 0;
-      for (const alias of value) {
-        const real = typeof alias === 'string' ? aliasMap.get(alias.trim()) : undefined;
-        if (real && !kept.includes(real)) kept.push(real);
-        else removed += 1;
-      }
-      return { kept, removed };
-    };
 
     const keepRepos = (value: unknown): { kept: string[]; removed: number } => {
       if (!Array.isArray(value)) return { kept: [], removed: 0 };
@@ -169,13 +243,21 @@ export function validateThemes(raw: unknown, collection: DailyCollection, connec
     });
     const related = mapAliases(candidate.relatedIds, aliases.related);
     const projects = keepRepos(candidate.projects);
-    dropped += items.removed + related.removed + projects.removed;
+    const external = parseExternalNotes(candidate.externalNotes, aliases);
+    dropped += items.removed + related.removed + projects.removed + external.dropped;
 
     if (uniqueItems.length === 0) {
       continue;
     }
 
-    themes.push({ title, summary, itemIds: uniqueItems, relatedIds: related.kept, projects: projects.kept });
+    themes.push({
+      title,
+      summary,
+      itemIds: uniqueItems,
+      relatedIds: related.kept,
+      projects: projects.kept,
+      externalNotes: external.notes,
+    });
   }
 
   return { themes, dropped };
@@ -195,6 +277,7 @@ function mechanicalThemes(collection: DailyCollection): DailyTheme[] {
     itemIds: ids,
     relatedIds: [],
     projects: [],
+    externalNotes: [],
   }));
 }
 
@@ -304,6 +387,15 @@ export function renderDigestMarkdown(
         lines.push(`- ${ref.url ? `[${label}](${ref.url})` : label}${notesSuffix(ref.url)}`);
       }
     }
+    if (theme.externalNotes.length > 0) {
+      lines.push('');
+      lines.push('Additional context (web/X):');
+      for (const note of theme.externalNotes) {
+        const label = linkLabel(note.sourceLabel || note.sourceUrl || 'source');
+        const link = note.sourceUrl ? `[${label}](${note.sourceUrl})` : label;
+        lines.push(`- ${note.claim} — ${link}`);
+      }
+    }
     if (theme.projects.length > 0) {
       lines.push('');
       lines.push(`Active projects: ${theme.projects.map((repo) => `[[project:${repo}]]`).join(', ')}`);
@@ -358,6 +450,7 @@ export async function synthesizeDaily(
   ensureDailyDir();
   ensureDailyLibraryDir();
   const digestPath = dailyDigestPath(collection.date);
+  const groundExternal = Boolean(options.groundExternal);
 
   if (collection.items.length === 0 && collection.projectDeltas.length === 0) {
     return {
@@ -387,8 +480,13 @@ export async function synthesizeDaily(
     const promptConnected = connected.filter(({ item }) => promptItemIds.has(item.id));
     try {
       const aliases = buildDailyAliases(promptCollection, promptConnected);
-      const invoke = options.invoke ?? ((prompt: string) => defaultInvoke(options.profile ?? {}, prompt));
-      const raw = await invoke(buildDailyPrompt(promptCollection, promptConnected, aliases));
+      const profile: EngineRunProfile = {
+        ...(options.profile ?? {}),
+        // Grounded digests need the engine's web/X tools when available (grok).
+        ...(groundExternal ? { webSearch: true } : {}),
+      };
+      const invoke = options.invoke ?? ((prompt: string) => defaultInvoke(profile, prompt));
+      const raw = await invoke(buildDailyPrompt(promptCollection, promptConnected, aliases, { groundExternal }));
       const jsonText = extractJsonArray(raw);
       if (jsonText) {
         const validated = validateThemes(JSON.parse(jsonText), promptCollection, promptConnected, aliases);

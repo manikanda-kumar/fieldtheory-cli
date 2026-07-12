@@ -1,8 +1,9 @@
 /**
  * LLM engine detection, selection, and invocation.
  *
- * Knows how to call `claude` and `codex` out of the box.
- * Remembers the user's choice in the bookmark data directory's .preferences file.
+ * Knows how to call `claude`, `codex`, and `grok` (Grok Build CLI) out of the
+ * box, plus the cloud `droid` engine. Remembers the user's choice in the
+ * bookmark data directory's .preferences file.
  */
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -17,7 +18,7 @@ import { invokeDroid, isDroidAvailable } from './llm/droid-engine.js';
 /**
  * Wrap a task-specific prompt with an explicit system override.
  *
- * Local CLI engines (claude, codex) ship with a coding-assistant system
+ * Local CLI engines (claude, codex, grok) ship with a coding-assistant system
  * prompt that encourages explanation, helpfulness, and conversational tone.
  * This wrapper prepends a dominant system block that overrides that persona
  * so the model behaves as a strict data-processing engine for the task at
@@ -56,7 +57,7 @@ export function extractSystemPrompt(prompt: string): { system?: string; user: st
 
 export interface EngineConfig {
   bin: string;
-  args: (prompt: string, engine?: Pick<ResolvedEngine, 'model' | 'effort'>, systemPrompt?: string) => string[];
+  args: (prompt: string, engine?: Pick<ResolvedEngine, 'model' | 'effort' | 'webSearch'>, systemPrompt?: string) => string[];
 }
 
 const KNOWN_ENGINES: Record<string, EngineConfig> = {
@@ -86,6 +87,27 @@ const KNOWN_ENGINES: Record<string, EngineConfig> = {
       ];
     },
   },
+  grok: {
+    bin: 'grok',
+    // Headless single-turn completion via Grok Build CLI (`grok -p`).
+    // Disable agent extras so Field Theory tasks stay pure text I/O.
+    // Web search stays off by default; opt in with engine.webSearch for
+    // grounded digests (daily synthesis) that need X/web corroboration.
+    args: (p, engine, system) => [
+      '-p',
+      p,
+      '--output-format',
+      'plain',
+      '--permission-mode',
+      'dontAsk',
+      ...(engine?.webSearch ? [] : ['--disable-web-search']),
+      '--no-plan',
+      '--no-subagents',
+      ...(system ? ['--system-prompt-override', system] : []),
+      ...(engine?.model ? ['--model', engine.model] : []),
+      ...(engine?.effort ? ['--effort', engine.effort] : []),
+    ],
+  },
   droid: {
     bin: 'droid',
     args: () => [],
@@ -93,7 +115,7 @@ const KNOWN_ENGINES: Record<string, EngineConfig> = {
 };
 
 /** Order used when auto-detecting. */
-const PREFERENCE_ORDER = ['claude', 'codex', 'droid'];
+const PREFERENCE_ORDER = ['claude', 'codex', 'grok', 'droid'];
 
 // ── Detection ──────────────────────────────────────────────────────────
 
@@ -144,13 +166,13 @@ async function askYesNo(question: string): Promise<boolean> {
   const result = await promptText(question);
   if (result.kind === 'interrupt') {
     throw new PromptCancelledError(
-      'Cancelled — no engine selected. Pick one with `ft model <engine>`, or pass `--engine claude` / `--engine codex`.',
+      'Cancelled — no engine selected. Pick one with `ft model <engine>`, or pass `--engine claude` / `--engine codex` / `--engine grok`.',
       130,
     );
   }
   if (result.kind === 'close') {
     throw new PromptCancelledError(
-      'No engine selected. Pick one with `ft model <engine>`, or pass `--engine claude` / `--engine codex`.',
+      'No engine selected. Pick one with `ft model <engine>`, or pass `--engine claude` / `--engine codex` / `--engine grok`.',
       0,
     );
   }
@@ -164,6 +186,8 @@ export interface ResolvedEngine {
   config: EngineConfig;
   model?: string;
   effort?: string;
+  /** When true (grok only), allow the CLI's built-in web/X search tools. */
+  webSearch?: boolean;
   label: string;
 }
 
@@ -172,6 +196,8 @@ export interface EngineRunProfile {
   override?: string;
   model?: string;
   effort?: string;
+  /** Opt-in web/X search for engines that support it (currently grok). */
+  webSearch?: boolean;
 }
 
 function cleanOptional(value: string | undefined): string | undefined {
@@ -193,14 +219,33 @@ export function describeEngine(engine: Pick<ResolvedEngine, 'name' | 'model' | '
   return formatEngineLabel(engine);
 }
 
+/**
+ * Default model for the grok engine when neither --model nor FT_GROK_MODEL is set.
+ * Grok Build CLI product default is currently `grok-4.5` (see `grok models` /
+ * ~/.grok/config.toml). The historical alias `grok-build` is not always a valid
+ * model id on every account, so we default to the live default.
+ */
+const GROK_DEFAULT_MODEL = 'grok-4.5';
+
+function resolveGrokModel(profileModel: string | undefined): string | undefined {
+  return cleanOptional(profileModel)
+    ?? cleanOptional(process.env.FT_GROK_MODEL)
+    ?? GROK_DEFAULT_MODEL;
+}
+
 function resolve(name: string, profile: EngineRunProfile = {}): ResolvedEngine {
-  const model = cleanOptional(profile.model);
+  const model = name === 'grok'
+    ? resolveGrokModel(profile.model)
+    : cleanOptional(profile.model);
   const effort = cleanOptional(profile.effort);
+  // Web search is only meaningful for grok today; ignore the flag elsewhere.
+  const webSearch = name === 'grok' && Boolean(profile.webSearch);
   return {
     name,
     config: KNOWN_ENGINES[name],
     model,
     effort,
+    webSearch: webSearch || undefined,
     label: formatEngineLabel({ name, model, effort }),
   };
 }
@@ -257,6 +302,7 @@ export async function resolveEngine(profile: EngineRunProfile = {}): Promise<Res
       'Install one of the following and log in:\n' +
       '  - Claude Code: https://docs.anthropic.com/en/docs/claude-code\n' +
       '  - Codex CLI:   https://github.com/openai/codex\n' +
+      '  - Grok Build:  https://x.ai/cli (installs the `grok` binary)\n' +
       'Or set OPENCODE_GO_API_KEY to use the droid engine (OpenCode Go cloud models).'
     );
   }

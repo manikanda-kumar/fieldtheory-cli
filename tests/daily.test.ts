@@ -12,7 +12,7 @@ import { collectDailyCoverage } from '../src/daily/coverage.js';
 import { enrichBackfill, enrichThinItems, isEnrichmentEligible, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
-import { contentLength, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+import { buildDailyAliases, buildDailyPrompt, contentLength, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
 
 async function readFileText(filePath: string): Promise<string> {
@@ -790,6 +790,68 @@ test('daily: synthesize skips when the window is empty', async () => {
     const collection = await collectDaily({ date: '2026-07-06' });
     const result = await synthesizeDaily(collection, [], { invoke: async () => '[]' });
     assert.equal(result.skipped, true);
+  });
+});
+
+test('daily: external notes with valid https URLs render; invalid URLs drop', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/agent-runner', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent runner harness with detailed notes on orchestration, evaluation, implementation choices, failure recovery, and practical usage patterns for teams. '.repeat(2) }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+    const connected = await connectDailyItems(collection);
+
+    const fakeResponse = JSON.stringify([
+      {
+        title: 'Agent harnesses',
+        summary: 'New runner harness saved.',
+        itemIds: ['i1'],
+        relatedIds: [],
+        projects: [],
+        externalNotes: [
+          { claim: 'OpenAI published agent eval guidance', sourceUrl: 'https://openai.com/index/agents', sourceLabel: 'OpenAI', aboutIds: ['i1'] },
+          { claim: 'fabricated note without url', sourceUrl: 'not-a-url', aboutIds: [] },
+          { claim: 'missing claim url only', sourceUrl: '', aboutIds: [] },
+        ],
+      },
+    ]);
+
+    const result = await synthesizeDaily(collection, connected, {
+      invoke: async () => fakeResponse,
+      groundExternal: true,
+    });
+    assert.equal(result.themes.length, 1);
+    assert.equal(result.themes[0].externalNotes.length, 1);
+    assert.equal(result.themes[0].externalNotes[0].sourceUrl, 'https://openai.com/index/agents');
+    assert.ok(result.droppedCitations >= 2);
+
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /Additional context \(web\/X\)/);
+    assert.match(digest, /OpenAI published agent eval guidance/);
+    assert.match(digest, /openai\.com\/index\/agents/);
+    assert.ok(!digest.includes('fabricated note'));
+  });
+});
+
+test('daily: buildDailyPrompt includes externalNotes schema only when grounding is enabled', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/solo', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool with detailed commentary about architecture, deployment tradeoffs, operational considerations, and practical implementation guidance. '.repeat(2) }),
+    ]);
+    await rebuildCanonicalIndex();
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const connected = await connectDailyItems(collection);
+    const aliases = buildDailyAliases(collection, connected);
+
+    const plain = buildDailyPrompt(collection, connected, aliases);
+    assert.ok(!plain.includes('externalNotes'));
+    assert.match(plain, /Do not add external web claims/);
+
+    const grounded = buildDailyPrompt(collection, connected, aliases, { groundExternal: true });
+    assert.match(grounded, /externalNotes/);
+    assert.match(grounded, /web and X search/);
   });
 });
 
