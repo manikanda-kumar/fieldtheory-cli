@@ -1,3 +1,26 @@
+UNIFIED WIKI SESSION (2026-07-12) — agy engine + unified wiki build-out:
+- ENGINES: Wired agy (Antigravity CLI, Gemini 3.5 Flash High via subscription) as 5th LLM engine alongside claude/codex/grok/droid. resolveEngine() picks agy model via --model or FT_AGY_MODEL (default 'Gemini 3.5 Flash (High)'); PREFERENCE_ORDER updated; ft model + --engine help text consistent across all commands. Live-tested end-to-end (3-bookmark wiki page prompt → agy -p → clean markdown in ~20s, $0 on sub).
+- DEEPSEEK REASONING: FT_DEEPSEEK_NO_REASONING=1 injects thinking:{type:'disabled'} into OpenCode Go proxy requests (droid-engine.ts + opencode-client.ts). Verified empirically against the proxy: reasoning_effort:'none' annihilates the response (empty choices), but thinking:{type:'disabled'} cleanly returns message.content with no reasoning_content and zero reasoning_tokens. Default-off preserves existing behavior.
+- AMP REVIEW: Codex/amp review via use-harness on the agy wiring — 2 low-severity comments (wiki help text tied droid to PATH; bespoke --engine strings missing agy). Both fixed.
+- COMMITTED: 7a964e2 feat: wire agy engine + reasoning disable (5 files, 36/36 engine tests pass).
+- WIKI REBUILD (X-only, agy): Ran `ft wiki --full --engine agy` — 268 pages, 69.6 min wall-clock, 22 created + 126 updated + 120 skipped (state.json), $0 cost, 0 restarts. Monitor v2 (10-min checks + auto-restart) ran 7 checks, no stalls, no false positives. Output quality verified (entities/karpathy.md: proper frontmatter, themed sections, inline citations, wikilinks). CRITICAL CAVEAT: this was X-only — compileMd() still reads FROM bookmarks (X table), NOT canonical_bookmarks. Raindrop/GitHub/YouTube/projects invisible to the wiki = GAP-6 still open.
+- BROWSER → RAINDROP: Manual run of launchd script browser_bookmarks_to_raindrop_sync.sh — 261 new bookmarks created (Safari 13, Vivaldi 90, Chrome 158). Jul 11 failure was HTTP 429 (Raindrop rate limit on delta GET). Fixed: api_get retries 429 with Retry-After header + exponential backoff (6 retries, was 3); inter-page delay 1.0s (was 0.4s); 5xx retries explicit; raindrop_import_bookmarks.py retries bumped 3→5; launchd plist gains ThrottleInterval 600 (retry on fail). All 3 launchd jobs verified loaded.
+- ft sync-raindrop: 336 new, total 13,783 Raindrop bookmarks in canonical index.
+- ft sync-all --only youtube,github-stars --no-synthesis: 15 new GitHub stars (total 2,359), 1 new YouTube video + 7 skipped (total 389). Canonical index rebuilt: 22,170 unified items / 26,836 sources.
+- CANONICAL CLASSIFICATION (Step 3 of unified wiki plan): classifyCanonicalBookmarksWithLlm() added to canonical-bookmarks-db.ts — reuses buildCategoryPrompt/parseCategoryResponse from bookmark-classify-llm.ts, writes primary_category/categories/domains/primary_domain back in per-batch transactions with saveDb after each batch. ft classify --unified restriction lifted (was regex-only, now defaults to LLM + regex sweep). New test with fake engine (/bin/true) asserts graceful failure + state preservation. 18/18 canonical tests, 69/69 across engine+canonical+classify.
+- COMMITTED: 74c2759 feat: canonical LLM classification + unified classify CLI path (4 files).
+- STATE: 8015/22170 canonical rows have primary_category (14155 unclassified — the LLM pass that closes this gap is wired but not yet run).
+- REMAINING STEPS for the comprehensive wiki (per goal):
+  - Step 1: Rewrite compileMd() in src/md.ts to read FROM canonical_bookmarks instead of X-only bookmarks table (swap openBookmarksDb + 6 sampling functions).
+  - Step 2: Add canonical sampling functions (by category, domain, entity, source, FTS topic) to canonical-bookmarks-db.ts.
+  - Step 4: Run `ft classify --unified --engine agy` to classify the 14,155 unclassified rows (mostly Raindrop) — ~280 LLM batches, ~25 min on agy.
+  - Step 5: Ingest x-list + following into canonical_bookmarks (GAP-3).
+  - Step 6: Enrich YouTube FTS (GAP-5) — feed full chapter/key-point text into canonical search_text.
+  - Step 7: Add source-page + topic-page builders to compileMd (library/sources/<source>.md, library/topics/<topic>.md).
+  - Step 8: One `ft wiki --full --engine agy` unified rebuild (~600 pages, ~3h on agy).
+  - Step 9: Regenerate index.md as cross-source summary.
+- GOAL: Build the comprehensive Field Theory wiki — every source (X, Raindrop, GitHub stars, YouTube, projects, x-lists, following roster) synthesized into a unified cross-source markdown wiki. Active pi-goal id 1783877426994-c3dad93dcd9068.
+
 TALK-DECK SESSION (2026-07-11) — "Understanding is the Bottleneck" 15-slide tech talk:
 - Source talk: Geoffrey Litt (Notion), "Understanding is the new bottleneck", AI Engineer 2026-07-10, WkBPX-oDMnA, 19:33. Transcript captured scratchpad/talk-transcript.txt (not yet in youtube library).
 - User's angle: college-student ↔ engineer parallel (assessment certifies mastery w/o full coverage; teacher teaches = agent codes; semester has quizzes/seminars/viva, engineering merges + moves on; review agent should quiz the HUMAN before approving).
