@@ -139,7 +139,7 @@ test('scorePageName: hyphen-separated page names are split into words', () => {
 });
 
 // ── md-prompts: prompt structure ────────────────────────────────────────
-import { buildCategoryPagePrompt, buildDomainPagePrompt, buildEntityPagePrompt } from '../src/md-prompts.js';
+import { buildCategoryPagePrompt, buildDomainPagePrompt, buildEntityPagePrompt, buildSourcePagePrompt } from '../src/md-prompts.js';
 
 const SAMPLE_BOOKMARKS = [
   { id: '1', url: 'https://example.com', text: 'Some tool for developers', authorHandle: 'user1' },
@@ -181,6 +181,28 @@ test('buildEntityPagePrompt: includes author handle', () => {
 
 test('buildCategoryPagePrompt: does not reference Obsidian', () => {
   const p = buildCategoryPagePrompt('tool', SAMPLE_BOOKMARKS);
+  assert.ok(!p.toLowerCase().includes('obsidian'));
+});
+
+test('buildSourcePagePrompt: includes source name', () => {
+  const p = buildSourcePagePrompt('raindrop', SAMPLE_BOOKMARKS);
+  assert.ok(p.includes('"raindrop"'));
+  assert.ok(p.includes('tags: [ft/source]'));
+});
+
+test('buildSourcePagePrompt: includes source-specific description', () => {
+  const p = buildSourcePagePrompt('github-stars', SAMPLE_BOOKMARKS);
+  assert.ok(p.includes('GitHub repositories starred'));
+  assert.ok(p.includes('Cross-Source Connections'));
+});
+
+test('buildSourcePagePrompt: includes bookmark count', () => {
+  const p = buildSourcePagePrompt('youtube', SAMPLE_BOOKMARKS);
+  assert.ok(p.includes(`${SAMPLE_BOOKMARKS.length} bookmarks`));
+});
+
+test('buildSourcePagePrompt: does not reference Obsidian', () => {
+  const p = buildSourcePagePrompt('x', SAMPLE_BOOKMARKS);
   assert.ok(!p.toLowerCase().includes('obsidian'));
 });
 

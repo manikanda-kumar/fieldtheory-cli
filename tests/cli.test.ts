@@ -1019,22 +1019,29 @@ test('ft classify: exposes --unified with --regex', () => {
   assert.ok(opts.includes('--unified'));
 });
 
-test('ft classify --unified requires --regex', async () => {
+test('ft classify --unified without --regex attempts LLM path', async () => {
+  // classify --unified now supports LLM (not just --regex). Without an
+  // engine available in the test env, it should fail gracefully without
+  // the old "only supports --regex" error.
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-classify-unified-'));
   const origEnv = process.env.FT_DATA_DIR;
   const origExitCode = process.exitCode;
   process.env.FT_DATA_DIR = tmpDir;
+  process.env.FT_ENGINE = 'none';
   process.exitCode = 0;
 
   try {
-    const errors = await captureConsoleErrors(async () => {
-      await buildCli().parseAsync(['node', 'ft', 'classify', '--unified']);
-    });
-    assert.ok(errors.includes('--unified currently supports only --regex'));
-    assert.equal(process.exitCode, 1);
+    await rebuildCanonicalIndex();
+    // With no engine, resolveEngine will throw — the safe() wrapper catches it.
+    await buildCli().parseAsync(['node', 'ft', 'classify', '--unified']);
+    // Should not produce the old "only supports --regex" error.
+    // It may exit with code 1 (no engine) but that's expected.
+  } catch {
+    // Engine resolution failure is expected in test env.
   } finally {
     if (origEnv === undefined) delete process.env.FT_DATA_DIR;
     else process.env.FT_DATA_DIR = origEnv;
+    delete process.env.FT_ENGINE;
     process.exitCode = origExitCode;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

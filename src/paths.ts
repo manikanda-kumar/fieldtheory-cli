@@ -277,6 +277,14 @@ export function mdConceptsDir(): string {
   return path.join(mdDir(), 'concepts');
 }
 
+export function mdSourcesDir(): string {
+  return path.join(mdDir(), 'sources');
+}
+
+export function mdTopicsDir(): string {
+  return path.join(mdDir(), 'topics');
+}
+
 // ── Ideas markdown artifact paths ───────────────────────────────────────
 
 export function ideasMdDir(): string {

@@ -192,8 +192,3 @@ export function isDroidAvailable(): boolean {
   const key = process.env.OPENCODE_GO_API_KEY?.trim();
   return Boolean(key && key.length > 0);
 }
-
-/** Return the resolved model chain for display/logging. */
-export function getDroidModelChain(options?: DroidEngineOptions): string[] {
-  return resolveModelChain(options);
-}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { canonicalCommandsDir, canonicalDataDir, canonicalLibraryDir, dataDir, libraryDir, mdDir, commandsDir, mdSchemaPath, youtubeLibraryIndexHtmlPath, youtubeNotePath, youtubeSlidesDir } from '../src/paths.js';
+import { canonicalCommandsDir, canonicalDataDir, canonicalLibraryDir, dataDir, libraryDir, mdDir, commandsDir, mdSchemaPath, mdSourcesDir, mdTopicsDir, youtubeLibraryIndexHtmlPath, youtubeNotePath, youtubeSlidesDir } from '../src/paths.js';
 import { raindropBookmarksCachePath, raindropMetaPath } from '../src/raindrop/paths.js';
 
 function withEnv(env: Record<string, string | undefined>, fn: () => void): void {
@@ -49,6 +49,18 @@ test('paths: FT_DATA_DIR keeps the legacy md child unless FT_LIBRARY_DIR is set'
     assert.equal(dataDir(), '/tmp/ft-data');
     assert.equal(libraryDir(), '/tmp/ft-data/md');
     assert.equal(mdDir(), '/tmp/ft-data/md');
+  });
+});
+
+test('paths: markdown sources resolve under the library dir', () => {
+  withEnv({ FT_DATA_DIR: '/tmp/ft-data', FT_LIBRARY_DIR: undefined }, () => {
+    assert.equal(mdSourcesDir(), path.join('/tmp/ft-data', 'md', 'sources'));
+  });
+});
+
+test('paths: markdown topics resolve under the library dir', () => {
+  withEnv({ FT_DATA_DIR: '/tmp/ft-data', FT_LIBRARY_DIR: undefined }, () => {
+    assert.equal(mdTopicsDir(), path.join('/tmp/ft-data', 'md', 'topics'));
   });
 });
 

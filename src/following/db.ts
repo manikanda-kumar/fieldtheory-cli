@@ -281,9 +281,9 @@ export async function buildFollowingIndex(
           // Merge classification fields: prefer record's if set, else preserved
           const merged: FollowingRecord = {
             ...record,
-            domains: record.domains ?? parseJsonArray(preserved?.domains) ?? undefined,
+            domains: record.domains ?? parseJsonArray(preserved?.domains),
             primaryDomain: record.primaryDomain ?? preserved?.primaryDomain ?? undefined,
-            expertise: record.expertise ?? parseJsonArray(preserved?.expertise) ?? undefined,
+            expertise: record.expertise ?? parseJsonArray(preserved?.expertise),
             expertiseSummary: record.expertiseSummary ?? preserved?.expertiseSummary ?? undefined,
             bookmarkOverlap: overlap,
           };

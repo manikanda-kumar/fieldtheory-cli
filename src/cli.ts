@@ -2140,7 +2140,7 @@ export function buildCli() {
     .action(safe(async (options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
-        const unsupportedFilters = ['author', 'after', 'before', 'folder']
+        const unsupportedFilters = ['author', 'folder']
           .filter((name) => options[name] !== undefined);
         if (unsupportedFilters.length > 0) {
           console.error(`  --unified list does not support filters yet: ${unsupportedFilters.map((name) => `--${name}`).join(', ')}`);
@@ -2152,6 +2152,8 @@ export function buildCli() {
           source: options.source ? String(options.source) : undefined,
           category: options.category ? String(options.category) : undefined,
           domain: options.domain ? String(options.domain) : undefined,
+          after: options.after ? String(options.after) : undefined,
+          before: options.before ? String(options.before) : undefined,
           limit: Number(options.limit) || 30,
           offset: Number(options.offset) || 0,
         });
@@ -2478,11 +2480,16 @@ export function buildCli() {
   program
     .command('categories')
     .description('Show category distribution')
-    .action(safe(async () => {
+    .option('--json', 'JSON output')
+    .action(safe(async (options) => {
       if (!requireIndex()) return;
       const counts = await getCategoryCounts();
       if (Object.keys(counts).length === 0) {
         console.log('  No categories found. Run: ft classify');
+        return;
+      }
+      if (options.json) {
+        printJson({ categories: counts, total: Object.values(counts).reduce((a, b) => a + b, 0) });
         return;
       }
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -2497,11 +2504,16 @@ export function buildCli() {
   program
     .command('domains')
     .description('Show domain distribution')
-    .action(safe(async () => {
+    .option('--json', 'JSON output')
+    .action(safe(async (options) => {
       if (!requireIndex()) return;
       const counts = await getDomainCounts();
       if (Object.keys(counts).length === 0) {
         console.log('  No domains found. Run: ft classify-domains');
+        return;
+      }
+      if (options.json) {
+        printJson({ domains: counts, total: Object.values(counts).reduce((a, b) => a + b, 0) });
         return;
       }
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -2516,7 +2528,8 @@ export function buildCli() {
   program
     .command('folders')
     .description('Show X bookmark folder distribution (local counts)')
-    .action(safe(async () => {
+    .option('--json', 'JSON output')
+    .action(safe(async (options) => {
       if (!requireIndex()) return;
       const { counts, untagged } = await getFolderCounts();
       if (Object.keys(counts).length === 0) {
@@ -2525,6 +2538,10 @@ export function buildCli() {
       }
       const tagged = Object.values(counts).reduce((a, b) => a + b, 0);
       const total = tagged + untagged;
+      if (options.json) {
+        printJson({ folders: counts, untagged, total: tagged + untagged });
+        return;
+      }
       const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
       for (const [name, count] of sorted) {
         const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
@@ -3197,9 +3214,12 @@ export function buildCli() {
     .description('Compile Karpathy-style markdown wiki from bookmarks (requires an available LLM engine: claude, codex, grok, agy CLI on PATH, or droid via OpenCode Go auth)')
     .option('--full', 'Recompile all pages (ignore incremental cache)')
     .option('--clean', 'Strip leftover LLM code fences from existing wiki pages (no compile)')
+    .option('--unified', 'Compile from the unified canonical index (all sources: X, Raindrop, GitHub Stars, YouTube, Projects)')
+    .option('--json', 'Output JSON result instead of text')
     .addOption(engineOption())
     .action(safe(async (options) => {
-      if (!requireIndex()) return;
+      if (options.unified && !requireUnifiedIndex()) return;
+      if (!options.unified && !requireIndex()) return;
 
       if (options.clean) {
         const fence = await cleanWikiFences({ backup: true });
@@ -3226,6 +3246,7 @@ export function buildCli() {
       try {
         const result = await compileMd({
           full: options.full,
+          unified: Boolean(options.unified),
           engineOverride: options.engine ? String(options.engine) : undefined,
           onProgress: (s) => process.stderr.write(s + '\n'),
         });
@@ -3241,7 +3262,11 @@ export function buildCli() {
             console.log(`\n  ${result.pagesFailed} page(s) failed — re-run ft wiki to retry them.`);
           }
         }
-        console.log(`\n  Open in your markdown viewer:\n  ${mdDir()}`);
+        if (options.json) {
+          printJson(result);
+        } else {
+          console.log(`\n  Open in your markdown viewer:\n  ${mdDir()}`);
+        }
       } finally {
         process.removeListener('SIGINT', onSigint);
       }

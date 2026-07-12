@@ -53,11 +53,25 @@ export interface CanonicalBookmarkListResult {
   primaryDomain: string | null;
 }
 
+export interface CanonicalSample {
+  id: string;
+  url: string;
+  text: string;
+  authorHandle?: string;
+  categories: string;
+  domains: string;
+  sources: string[];
+  githubUrls?: string;
+  links?: string;
+}
+
 export interface ListCanonicalBookmarksOptions {
   query?: string;
   source?: string;
   category?: string;
   domain?: string;
+  after?: string;
+  before?: string;
   limit?: number;
   offset?: number;
 }
@@ -253,6 +267,85 @@ function parseSources(value: unknown): string[] {
   } catch {
     return [];
   }
+}
+
+function mapCanonicalSamples(rows: unknown[][]): CanonicalSample[] {
+  return rows.map((row) => ({
+    id: row[0] as string,
+    url: (row[1] as string | null) ?? '',
+    text: `${(row[2] as string | null) ?? ''}. ${(row[3] as string | null) ?? ''}`,
+    categories: (row[4] as string | null) ?? '',
+    domains: (row[5] as string | null) ?? '',
+    sources: parseSources(row[6]),
+  }));
+}
+
+export async function getCanonicalCategoryCounts(existingDb?: Database): Promise<Record<string, number>> {
+  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+  try {
+    initCanonicalSchema(db);
+    const rows = db.exec(`SELECT primary_category, COUNT(*) FROM canonical_bookmarks
+      WHERE primary_category IS NOT NULL AND primary_category != '' AND primary_category != 'unclassified'
+      GROUP BY primary_category`);
+    return Object.fromEntries((rows[0]?.values ?? []).map((row) => [row[0] as string, row[1] as number]));
+  } finally {
+    if (!existingDb) db.close();
+  }
+}
+
+export async function getCanonicalDomainCounts(existingDb?: Database): Promise<Record<string, number>> {
+  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+  try {
+    initCanonicalSchema(db);
+    const rows = db.exec(`SELECT primary_domain, COUNT(*) FROM canonical_bookmarks
+      WHERE primary_domain IS NOT NULL AND primary_domain != '' GROUP BY primary_domain`);
+    return Object.fromEntries((rows[0]?.values ?? []).map((row) => [row[0] as string, row[1] as number]));
+  } finally {
+    if (!existingDb) db.close();
+  }
+}
+
+export async function getCanonicalSourceCounts(existingDb?: Database): Promise<Record<string, number>> {
+  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+  try {
+    initCanonicalSchema(db);
+    const rows = db.exec('SELECT source, COUNT(DISTINCT canonical_id) FROM bookmark_sources GROUP BY source');
+    return Object.fromEntries((rows[0]?.values ?? []).map((row) => [row[0] as string, row[1] as number]));
+  } finally {
+    if (!existingDb) db.close();
+  }
+}
+
+async function sampleCanonical(
+  where: string,
+  params: Array<string | number>,
+  existingDb?: Database,
+): Promise<CanonicalSample[]> {
+  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+  try {
+    initCanonicalSchema(db);
+    const rows = db.exec(`SELECT c.id, c.canonical_url, c.display_title, c.search_text,
+      c.categories, c.domains, c.sources_json FROM canonical_bookmarks c ${where}`, params);
+    return mapCanonicalSamples(rows[0]?.values ?? []);
+  } finally {
+    if (!existingDb) db.close();
+  }
+}
+
+export function sampleCanonicalByCategory(category: string, limit: number, existingDb?: Database): Promise<CanonicalSample[]> {
+  return sampleCanonical(`WHERE c.primary_category = ? COLLATE NOCASE OR c.categories LIKE ?
+    ORDER BY RANDOM() LIMIT ?`, [category, `%${category}%`, limit], existingDb);
+}
+
+export function sampleCanonicalByDomain(domain: string, limit: number, existingDb?: Database): Promise<CanonicalSample[]> {
+  return sampleCanonical(`WHERE c.primary_domain = ? COLLATE NOCASE OR c.domains LIKE ?
+    ORDER BY RANDOM() LIMIT ?`, [domain, `%${domain}%`, limit], existingDb);
+}
+
+export function sampleCanonicalBySource(source: string, limit: number, existingDb?: Database): Promise<CanonicalSample[]> {
+  return sampleCanonical(`WHERE EXISTS (SELECT 1 FROM bookmark_sources s
+      WHERE s.canonical_id = c.id AND s.source = ?)
+    ORDER BY c.last_saved_at DESC LIMIT ?`, [source, limit], existingDb);
 }
 
 function parseJsonStringArray(value: unknown): string[] {
@@ -1022,9 +1115,25 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
     const order = `ORDER BY ${joinFts ? 'bm25(canonical_bookmarks_fts) ASC,' : ''} COALESCE(c.last_saved_at, c.first_saved_at, '') DESC, c.id ASC
                    LIMIT ?
                    OFFSET ?`;
-    const rows = db.exec(`${select} ${where} ${order}`, [...params, limit, offset]);
+    // after/before are applied in JS because first_saved_at mixes ISO and
+    // Twitter-format strings — SQL string comparison would silently drop rows.
+    const fetchLimit = (options.after || options.before) ? limit * 5 : limit;
+    const rows = db.exec(`${select} ${where} ${order}`, [...params, fetchLimit, offset]);
 
-    return (rows[0]?.values ?? []).map(mapListRow);
+    let values = rows[0]?.values ?? [];
+    if (options.after || options.before) {
+      const afterMs = options.after ? parseSavedAt(options.after) : null;
+      const beforeMs = options.before ? parseSavedAt(options.before) : null;
+      values = values.filter((row) => {
+        const savedAt = row[5] == null ? null : String(row[5]); // first_saved_at
+        const ms = parseSavedAt(savedAt);
+        if (ms == null) return false;
+        if (afterMs != null && ms <= afterMs) return false;
+        if (beforeMs != null && ms >= beforeMs) return false;
+        return true;
+      });
+    }
+    return values.slice(0, limit).map(mapListRow);
   } finally {
     db.close();
   }

@@ -236,3 +236,62 @@ ${question}
 
 Now answer the question.`;
 }
+
+const SOURCE_DESCRIPTIONS: Record<string, string> = {
+  x: 'X/Twitter bookmarks — tweets, threads, and shared links saved from X',
+  raindrop: 'Raindrop.io bookmarks — web bookmarks saved via the Raindrop browser extension or API',
+  'github-stars': 'GitHub repositories starred by the user',
+  youtube: 'YouTube videos with structured notes (transcript, chapters, key points)',
+  project: 'Local development projects scanned from the user\'s machine',
+};
+
+export function buildSourcePagePrompt(source: string, bookmarks: MdBookmark[]): string {
+  const description = SOURCE_DESCRIPTIONS[source] ?? `Bookmarks from the "${source}" source`;
+  return withSystemOverride(
+    'wiki page writer that outputs only raw markdown',
+    `Write a comprehensive summary page for the knowledge source "${source}".
+
+${description}
+
+${SECURITY_NOTE}
+
+The page MUST start with YAML frontmatter in this exact format:
+\`\`\`
+---
+tags: [ft/source]
+source: ${source}
+source_count: <number of bookmarks used>
+source_type: canonical
+last_updated: <today's date YYYY-MM-DD>
+---
+\`\`\`
+
+${WIKILINK_RULES}
+
+${CITATION_RULE}
+
+## Required Sections
+
+Write the page using these sections:
+
+### Overview
+What is this source? How does data arrive here? What kinds of content does it capture?
+
+### Top Content
+The most informative or representative bookmarks from this source. Highlight 8-15 notable items with brief notes and URLs.
+
+### Themes
+What recurring topics, tools, or patterns appear across this source's bookmarks? Identify 3-6 major themes.
+
+### Cross-Source Connections
+How does this source complement the others? Which categories and domains overlap most? Use [[wikilinks]] to reference related pages.
+
+---
+
+Here are ${bookmarks.length} bookmarks from the "${source}" source. Use them as your source data:
+
+${formatBookmarks(bookmarks)}
+
+Now write the wiki page. Output ONLY the markdown — no preamble, no explanation.`,
+  );
+}

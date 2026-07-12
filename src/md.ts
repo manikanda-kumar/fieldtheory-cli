@@ -18,14 +18,21 @@ import { ensureDir, pathExists, readJson, writeMd, appendLine, writeJson, listFi
 import {
   mdDir, mdIndexPath, mdLogPath, mdStatePath, mdSchemaPath,
   mdCategoriesDir, mdDomainsDir, mdEntitiesDir, mdConceptsDir,
+  mdSourcesDir,
 } from './paths.js';
 import {
   getCategoryCounts, getDomainCounts, sampleByCategory, sampleByDomain,
   sampleByAuthor, getTopAuthorHandles, openBookmarksDb, type CategorySample,
 } from './bookmarks-db.js';
+import {
+  getCanonicalCategoryCounts, getCanonicalDomainCounts, getCanonicalSourceCounts,
+  sampleCanonicalByCategory, sampleCanonicalByDomain, sampleCanonicalBySource,
+  type CanonicalSample,
+} from './canonical-bookmarks-db.js';
 import { resolveEngine, invokeEngineAsync, EngineInvocationError, type ResolvedEngine } from './engine.js';
 import {
   buildCategoryPagePrompt, buildDomainPagePrompt, buildEntityPagePrompt,
+  buildSourcePagePrompt,
   type MdBookmark,
 } from './md-prompts.js';
 import { stripLlmMarkdownFence } from './md-fence.js';
@@ -57,6 +64,7 @@ export interface CompileOptions {
   full?: boolean;
   only?: string[];
   engineOverride?: string;
+  unified?: boolean;
   onProgress?: (status: string) => void;
 }
 
@@ -106,6 +114,16 @@ function mapToMdBookmarks(samples: CategorySample[]): MdBookmark[] {
     authorHandle: s.authorHandle,
     categories: s.categories,
     githubUrls: s.githubUrls,
+  }));
+}
+
+function mapCanonicalToMdBookmarks(samples: CanonicalSample[]): MdBookmark[] {
+  return samples.map((s) => ({
+    id: s.id,
+    url: s.url,
+    text: s.text,
+    categories: s.categories,
+    domains: s.domains,
   }));
 }
 
@@ -179,6 +197,7 @@ When bookmarks in a group disagree, note it explicitly:
 }
 
 async function generateIndex(): Promise<string> {
+  const sourceFiles   = (await listFiles(mdSourcesDir())).filter(f => f.endsWith('.md')).sort();
   const categoryFiles = (await listFiles(mdCategoriesDir())).filter(f => f.endsWith('.md')).sort();
   const domainFiles   = (await listFiles(mdDomainsDir())).filter(f => f.endsWith('.md')).sort();
   const entityFiles   = (await listFiles(mdEntitiesDir())).filter(f => f.endsWith('.md')).sort();
@@ -196,6 +215,13 @@ async function generateIndex(): Promise<string> {
     `Auto-generated catalog. Edit individual pages, not this file.`,
     ``,
   ];
+
+  if (sourceFiles.length > 0) {
+    lines.push(`## Sources (${sourceFiles.length})`);
+    lines.push('');
+    for (const f of sourceFiles) lines.push(`- [[sources/${f.replace(/\.md$/, '')}]]`);
+    lines.push('');
+  }
 
   if (categoryFiles.length > 0) {
     lines.push(`## Categories (${categoryFiles.length})`);
@@ -304,6 +330,164 @@ export async function compileMd(options: CompileOptions = {}): Promise<CompileRe
   }
 }
 
+async function doCompileUnified(
+  options: CompileOptions,
+  progress: (s: string) => void,
+  startTime: number,
+  onlySet: Set<string> | null,
+  engine: ResolvedEngine,
+  state: MdState,
+  isFullCompile: boolean,
+): Promise<CompileResult> {
+  let pagesCreated = 0;
+  let pagesUpdated = 0;
+  let pagesSkipped = 0;
+  let pagesFailed = 0;
+  let aborted = false;
+
+  // ── Scan all groups from canonical tables ───────────────────────────
+  progress('Scanning canonical bookmarks...');
+  const categoryCounts = await getCanonicalCategoryCounts();
+  const domainCounts = await getCanonicalDomainCounts();
+  const sourceCounts = await getCanonicalSourceCounts();
+
+  interface UnifiedWorkItem {
+    key: string;
+    type: 'source' | 'category' | 'domain';
+    name: string;
+    count: number;
+  }
+  const toGenerate: UnifiedWorkItem[] = [];
+  let skipCount = 0;
+
+  // Source pages — one per source (x, raindrop, github-stars, youtube, project)
+  for (const [source, count] of Object.entries(sourceCounts)) {
+    if (count < 1) continue;
+    const key = `sources/${source}`;
+    if (onlySet && !onlySet.has(key)) continue;
+    if (!isFullCompile && !onlySet && !hasChanged(state, key, count)) { skipCount++; continue; }
+    toGenerate.push({ key, type: 'source', name: source, count });
+  }
+
+  for (const [category, count] of Object.entries(categoryCounts)) {
+    if (count < MIN_CATEGORY_COUNT) continue;
+    const key = `categories/${category}`;
+    if (onlySet && !onlySet.has(key)) continue;
+    if (!isFullCompile && !onlySet && !hasChanged(state, key, count)) { skipCount++; continue; }
+    toGenerate.push({ key, type: 'category', name: category, count });
+  }
+
+  for (const [domain, count] of Object.entries(domainCounts)) {
+    if (count < MIN_DOMAIN_COUNT) continue;
+    const key = `domains/${domain}`;
+    if (onlySet && !onlySet.has(key)) continue;
+    if (!isFullCompile && !onlySet && !hasChanged(state, key, count)) { skipCount++; continue; }
+    toGenerate.push({ key, type: 'domain', name: domain, count });
+  }
+
+  pagesSkipped = skipCount;
+
+  const logLine = async (msg: string): Promise<void> => {
+    progress(msg);
+    try { await appendLine(mdLogPath(), logEntry('compile', msg)); } catch { /* best effort */ }
+  };
+
+  if (toGenerate.length === 0) {
+    progress('Nothing to compile — all pages up to date.');
+  } else {
+    const est = toGenerate.length > 3 ? ` (~${toGenerate.length}–${toGenerate.length * 2} min)` : '';
+    progress(`\nGenerating ${toGenerate.length} unified pages with ${engine.name}${est}`);
+    if (skipCount > 0) progress(`  ${skipCount} pages unchanged, skipping`);
+    progress(`  Follow live: tail -f ${mdLogPath()}`);
+    progress('');
+    await appendLine(
+      mdLogPath(),
+      logEntry('compile', `start unified — ${toGenerate.length} pages, engine=${engine.name}`),
+    );
+  }
+
+  // ── Generate each page ───────────────────────────────────────────────
+  let consecutiveFailures = 0;
+  let firstFailureMsg = '';
+  for (let i = 0; i < toGenerate.length; i++) {
+    const item = toGenerate[i];
+    const tag = `[${i + 1}/${toGenerate.length}]`;
+
+    let samples: CanonicalSample[];
+    let prompt: string;
+    if (item.type === 'source') {
+      samples = await sampleCanonicalBySource(item.name, MAX_SAMPLE_SIZE);
+      prompt = buildSourcePagePrompt(item.name, mapCanonicalToMdBookmarks(samples));
+    } else if (item.type === 'category') {
+      samples = await sampleCanonicalByCategory(item.name, MAX_SAMPLE_SIZE);
+      prompt = buildCategoryPagePrompt(item.name, mapCanonicalToMdBookmarks(samples));
+    } else {
+      samples = await sampleCanonicalByDomain(item.name, MAX_SAMPLE_SIZE);
+      prompt = buildDomainPagePrompt(item.name, mapCanonicalToMdBookmarks(samples));
+    }
+
+    const opts = llmOpts(samples.length);
+    await logLine(`${tag} ${item.key} (${samples.length} sampled, ${Math.round(opts.timeout / 1000)}s timeout)...`);
+
+    let content: string;
+    try {
+      const raw = await invokeEngineAsync(engine, prompt, opts);
+      content = stripLlmMarkdownFence(raw);
+    } catch (err) {
+      const eie = err instanceof EngineInvocationError ? err : null;
+      const label = eie ? reasonLabel(eie.reason) : 'ERROR';
+      const detail = eie ? formatFailureDetail(eie) : (err as Error).message ?? String(err);
+      await logLine(`${tag} ${item.key} — ${label}: ${detail.slice(0, 200)}`);
+      pagesFailed++;
+      consecutiveFailures++;
+      if (!firstFailureMsg) firstFailureMsg = eie?.message ?? (err as Error).message ?? String(err);
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        aborted = true;
+        await logLine(
+          `Aborted after ${MAX_CONSECUTIVE_FAILURES} consecutive failures — first error: ${firstFailureMsg.slice(0, 300)}`,
+        );
+        await logLine(engineFailureHint(engine.name, eie));
+        break;
+      }
+      continue;
+    }
+
+    const dirFn = item.type === 'source' ? mdSourcesDir
+      : item.type === 'category' ? mdCategoriesDir : mdDomainsDir;
+    const filePath = path.join(dirFn(), `${slug(item.name)}.md`);
+    const relPath = `${item.type === 'source' ? 'sources' : item.type === 'category' ? 'categories' : 'domains'}/${slug(item.name)}.md`;
+    const outcome = await writePage(filePath, content, state, relPath);
+    state.groupCounts[item.key] = String(item.count);
+
+    if (outcome === 'created') pagesCreated++;
+    else if (outcome === 'updated') pagesUpdated++;
+    else pagesSkipped++;
+
+    await writeJson(mdStatePath(), state);
+    await logLine(`${tag} ${item.key} → ${outcome}`);
+    consecutiveFailures = 0;
+  }
+
+  // ── Index ─────────────────────────────────────────────────────────────
+  progress('Regenerating index.md...');
+  const indexContent = await generateIndex();
+  await writeMd(mdIndexPath(), indexContent);
+
+  // ── Log + state ───────────────────────────────────────────────────────
+  const elapsed = Math.round((Date.now() - startTime) / 1000);
+  const totalPages = pagesCreated + pagesUpdated;
+  await appendLine(
+    mdLogPath(),
+    logEntry('compile', `${aborted ? 'aborted ' : ''}unified engine=${engine.name} created=${pagesCreated} updated=${pagesUpdated} skipped=${pagesSkipped} failed=${pagesFailed} elapsed=${elapsed}s`),
+  );
+
+  state.lastCompileAt = new Date().toISOString();
+  state.totalCompiles = (state.totalCompiles ?? 0) + 1;
+  await writeJson(mdStatePath(), state);
+
+  return { engine: engine.name, pagesCreated, pagesUpdated, pagesSkipped, pagesFailed, totalPages, elapsed, aborted };
+}
+
 async function doCompile(
   options: CompileOptions,
   progress: (s: string) => void,
@@ -319,11 +503,16 @@ async function doCompile(
   await ensureDir(mdDomainsDir());
   await ensureDir(mdEntitiesDir());
   await ensureDir(mdConceptsDir());
+  await ensureDir(mdSourcesDir());
 
   await generateSchemaIfMissing();
 
   const state = await loadMdState();
   const isFullCompile = Boolean(options.full);
+
+  if (options.unified) {
+    return await doCompileUnified(options, progress, startTime, onlySet, engine, state, isFullCompile);
+  }
 
   let pagesCreated = 0;
   let pagesUpdated = 0;
