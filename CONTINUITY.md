@@ -566,3 +566,22 @@ UPSTREAM INTEGRATION (2026-07-12):
 - Now: primary `main` was fast-forwarded to reviewed integration tip `c3f8cd6`; its pre-existing dirty/untracked files remain untouched. `origin/main` remains at `e8d04ee` until pushed.
 - Next: commit/push the dashboard harness fix if approved; optionally remove the temporary integration worktree/branch afterward.
 - Open questions: none.
+
+CODEX ENGINE RESUME SESSION (2026-07-12):
+- User requested switching remaining classify/wiki work from agy (quota exhausted) to codex with model `gpt-5.6-luna` and `medium` reasoning effort.
+- BLOCKER FIXED: `ft classify` and `ft wiki` did not expose `--model`/`--effort` CLI options, so the user could not pass model/effort through to the engine.
+  - Added `--model <model>` and `--effort <effort>` options to `ft classify`, `ft classify-domains`, and `ft wiki` commands.
+  - Extended `CompileOptions` in `src/md.ts` with `modelOverride`/`effortOverride`, threaded to `resolveEngine`.
+  - All `resolveEngine` calls in classify/classify-domains now pass `model`/`effort` from CLI options.
+  - Added 3 CLI tests asserting `--model`/`--effort` are registered on all three commands.
+  - Committed `1612a52 feat: thread --model and --effort through classify and wiki commands`; pushed to origin/main.
+  - Build passes; 905/905 tests pass (was 902, +3 new).
+- RESUMED BACKGROUND JOBS with codex/gpt-5.6-luna/medium:
+  - classify: `nohup npm run -s dev -- classify --unified --engine codex --model gpt-5.6-luna --effort medium > /tmp/ft-classify-codex.log 2>&1 &`
+    - Starting state: 9365/22170 classified, 12805 unclassified.
+    - First batch of 50 completed in ~65s. Progressing.
+  - wiki: `nohup npm run -s dev -- wiki --unified --engine codex --model gpt-5.6-luna --effort medium > /tmp/ft-wiki-codex.log 2>&1 &`
+    - 74 pages unchanged (skipped), generating 136 pages. Page 1/136 started.
+    - Existing pages on disk: 36 categories, 109 domains, 5 sources, 193 entities.
+  - Monitor: `tail -f /tmp/ft-classify-codex.log`, `tail -f /tmp/ft-wiki-codex.log`, `tail -f ~/.fieldtheory/library/log.md`
+  - DB check: `sqlite3 ~/.fieldtheory/bookmarks/bookmarks.db "SELECT COUNT(*) as total, SUM(CASE WHEN primary_category IS NOT NULL AND primary_category != 'unclassified' AND primary_category != '' THEN 1 ELSE 0 END) as classified FROM canonical_bookmarks"`
