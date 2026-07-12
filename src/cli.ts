@@ -23,6 +23,7 @@ import {
 } from './bookmarks-db.js';
 import {
   classifyCanonicalBookmarks,
+  classifyCanonicalBookmarksWithLlm,
   formatCanonicalSearchResults,
   getCanonicalBookmarkById,
   listCanonicalBookmarks,
@@ -2315,19 +2316,35 @@ export function buildCli() {
     .command('classify')
     .description('Classify bookmarks by category and domain using LLM (requires claude or codex CLI)')
     .option('--regex', 'Use simple regex classification instead of LLM')
-    .option('--unified', 'Classify unified canonical bookmarks (currently supports --regex only)')
+    .option('--unified', 'Classify unified canonical bookmarks (LLM by default, or --regex)')
     .addOption(engineOption())
     .action(safe(async (options) => {
       if (options.unified) {
-        if (!options.regex) {
-          console.error('  Error: --unified currently supports only --regex.');
-          process.exitCode = 1;
+        if (!requireUnifiedIndex()) return;
+        if (options.regex) {
+          process.stderr.write('Classifying unified bookmarks (regex)...\n');
+          const result = await classifyCanonicalBookmarks();
+          console.log(`Unified bookmarks: ${result.classified}/${result.total} classified`);
           return;
         }
-        if (!requireUnifiedIndex()) return;
-        process.stderr.write('Classifying unified bookmarks (regex)...\n');
-        const result = await classifyCanonicalBookmarks();
-        console.log(`Unified bookmarks: ${result.classified}/${result.total} classified`);
+        // LLM path: classify canonical rows the regex pass left unclassified.
+        const engine = await resolveEngine({ override: options.engine ? String(options.engine) : undefined });
+        const start = Date.now();
+        process.stderr.write('Classifying unified bookmarks with LLM (batches of 50)...\n');
+        const result = await classifyCanonicalBookmarksWithLlm({
+          engine,
+          onBatch: (done: number, total: number) => {
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            const elapsed = Math.round((Date.now() - start) / 1000);
+            process.stderr.write(`  Unified: ${done}/${total} (${pct}%) \u2502 ${elapsed}s elapsed\n`);
+          },
+        });
+        console.log(`\nEngine: ${result.engine}`);
+        console.log(`Unified: ${result.classified}/${result.totalUnclassified} classified (${result.failed} failed)`);
+        // After LLM classify, run the regex pass too — picks up any rows the LLM missed
+        process.stderr.write('Running regex pass over remaining rows...\n');
+        const regexResult = await classifyCanonicalBookmarks();
+        console.log(`Regex sweep: ${regexResult.classified}/${regexResult.total} classified`);
         return;
       }
       if (!requireData()) return;

@@ -11,7 +11,7 @@ import { twitterBookmarksIndexPath } from './paths.js';
 import type { ResolvedEngine } from './engine.js';
 import { invokeEngineAsync, withSystemOverride } from './engine.js';
 
-const BATCH_SIZE = 50;
+export const BATCH_SIZE = 50;
 
 interface UnclassifiedBookmark {
   id: string;
@@ -28,7 +28,7 @@ interface LlmClassification {
 
 // ── Text sanitization ───────────────────────────────────────────────────
 
-function sanitizeBookmarkText(text: string): string {
+export function sanitizeBookmarkText(text: string): string {
   return text
     .replace(/ignore\s+(previous|above|all)\s+instructions?/gi, '[filtered]')
     .replace(/you\s+are\s+now\s+/gi, '[filtered]')
@@ -39,10 +39,17 @@ function sanitizeBookmarkText(text: string): string {
 
 // ── Prompt construction ─────────────────────────────────────────────────
 
-function buildPrompt(bookmarks: UnclassifiedBookmark[]): string {
+export interface CategoryPromptItem {
+  id: string;
+  text: string;
+  authorHandle: string | null;
+  links: string | null;
+}
+
+export function buildCategoryPrompt(bookmarks: CategoryPromptItem[]): string {
   const items = bookmarks.map((b, i) => {
     const links = b.links ? ` | Links: ${b.links}` : '';
-    return `[${i}] id=${b.id} @${b.authorHandle ?? 'unknown'}: <tweet_text>${sanitizeBookmarkText(b.text)}</tweet_text>${links}`;
+    return `[${i}] id=${b.id} @${b.authorHandle ?? 'unknown'}: <content>${sanitizeBookmarkText(b.text)}</content>${links}`;
   }).join('\n');
 
   return withSystemOverride(
@@ -136,7 +143,7 @@ export function extractJsonArray(raw: string): string | null {
   return null;
 }
 
-function parseResponse(raw: string, batchIds: Set<string>): LlmClassification[] {
+export function parseCategoryResponse(raw: string, batchIds: Set<string>): LlmClassification[] {
   // Extract JSON array from response (model might add markdown fences or commentary)
   const jsonArray = extractJsonArray(raw);
   if (!jsonArray) throw new Error('No JSON array found in response');
@@ -214,9 +221,9 @@ export async function classifyWithLlm(
       options.onBatch?.(i, totalUnclassified);
 
       try {
-        const prompt = buildPrompt(batch);
+        const prompt = buildCategoryPrompt(batch);
         const raw = await invokeEngineAsync(engine, prompt);
-        const results = parseResponse(raw, batchIds);
+        const results = parseCategoryResponse(raw, batchIds);
 
         // Update SQLite
         const stmt = db.prepare(
@@ -338,7 +345,7 @@ export async function classifyDomainsWithLlm(
         const prompt = buildDomainPrompt(batch);
         const raw = await invokeEngineAsync(engine, prompt);
         // Reuse the same parse logic — structure is identical
-        const results = parseResponse(raw, batchIds);
+        const results = parseCategoryResponse(raw, batchIds);
 
         const stmt = db.prepare(
           `UPDATE bookmarks SET domains = ?, primary_domain = ? WHERE id = ?`

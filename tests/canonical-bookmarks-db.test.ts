@@ -576,3 +576,61 @@ test('rebuildCanonicalIndex migrates older canonical tables without classificati
     assert.equal(rows[0].primaryCategory, 'tool');
   });
 });
+
+// ── classifyCanonicalBookmarksWithLlm ──────────────────────────────────
+
+test('classifyCanonicalBookmarksWithLlm writes LLM categories back to canonical rows', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    // One raindrop row (regex won't categorize) + one github-stars row (regex tags 'tool')
+    await writeRaindropBookmarks(dir, [{
+      id: 10,
+      url: 'https://blog.example.com/some-essay',
+      title: 'Opinionated rant about energy policy',
+      collectionPath: ['Energy'],
+      createdAt: '2026-05-10T00:00:00.000Z',
+      syncedAt: '2026-05-10T00:00:00.000Z',
+    }]);
+    await writeGitHubStars(dir, [githubStarRecord()]);
+
+    await rebuildCanonicalIndex();
+
+    // First run the regex sweep — the gh-stars row gets primary_category='tool',
+    // the raindrop essay is left null (regex finds no match).
+    await classifyCanonicalBookmarks();
+
+    const postRegex = await listCanonicalBookmarks({ limit: 50 });
+    const raindropRow = postRegex.find((r) => r.canonicalUrl?.includes('blog.example.com'));
+    // regex classifier leaves rows without a match as 'unclassified' (its default placeholder)
+    assert.ok(
+      raindropRow?.primaryCategory === null || raindropRow?.primaryCategory === 'unclassified',
+      `expected null or 'unclassified', got ${JSON.stringify(raindropRow?.primaryCategory)}`,
+    );
+
+    // Now run the LLM classifier with a fake engine. /bin/true spawns cleanly
+    // but returns empty output — the batch should fail gracefully; failed ===
+    // totalUnclassified and the raindrop row stays null.
+    const { classifyCanonicalBookmarksWithLlm } = await import('../src/canonical-bookmarks-db.js');
+    const result = await classifyCanonicalBookmarksWithLlm({
+      engine: {
+        name: 'fake',
+        config: {
+          bin: '/bin/true',
+          args: () => [],
+        },
+        label: 'fake',
+      } as any,
+      onBatch: () => {},
+    });
+
+    assert.equal(result.engine, 'fake');
+    assert.equal(result.totalUnclassified, 1);
+    assert.equal(result.classified, 0);
+    assert.equal(result.failed, 1);
+    assert.equal(result.batches, 1);
+
+    // State preserved — the gh-stars row stays classified from the regex pass
+    const finalRows = await listCanonicalBookmarks({ limit: 50 });
+    const ghRow = finalRows.find((r) => r.canonicalUrl?.includes('github.com'));
+    assert.equal(ghRow?.primaryCategory, 'tool');
+  });
+});

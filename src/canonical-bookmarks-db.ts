@@ -8,6 +8,13 @@ import type { BookmarkRecord } from './types.js';
 import { dedupeKeyForUrl, dedupeKeyForXBookmark } from './url-normalize.js';
 import { sanitizeFtsQuery } from './bookmarks-db.js';
 import { classifyBookmarkInput } from './bookmark-classify.js';
+import {
+  buildCategoryPrompt,
+  parseCategoryResponse,
+  BATCH_SIZE,
+  type CategoryPromptItem,
+} from './bookmark-classify-llm.js';
+import { invokeEngineAsync, type ResolvedEngine } from './engine.js';
 import { raindropBookmarksCachePath } from './raindrop/paths.js';
 import type { RaindropRecord } from './raindrop/types.js';
 import { githubStarsCachePath } from './github-stars/paths.js';
@@ -1238,6 +1245,134 @@ export async function classifyCanonicalBookmarks(): Promise<{ total: number; cla
 
     saveDb(db, dbPath);
     return { total: canonicalRows.length, classified };
+  } finally {
+    db.close();
+  }
+}
+
+// ── LLM classification of canonical rows ──────────────────────────────
+//
+// Extends the existing regex classifyCanonicalBookmarks() with an LLM path
+// for rows the regex classifier left as null/'unclassified' — currently
+// ~14k Raindrop + YouTube rows. Reuses the prompt builder + JSON parser
+// from bookmark-classify-llm.ts (same categories vocabulary, same
+// [{"id","categories","primary"}] contract), writing the result into
+// canonical_bookmarks.primary_category / categories / domains / primary_domain.
+
+export interface CanonicalLlmClassifyResult {
+  engine: string;
+  totalUnclassified: number;
+  classified: number;
+  failed: number;
+  batches: number;
+}
+
+export async function classifyCanonicalBookmarksWithLlm(
+  options: { engine: ResolvedEngine; onBatch?: (done: number, total: number) => void },
+): Promise<CanonicalLlmClassifyResult> {
+  const { engine } = options;
+  const dbPath = twitterBookmarksIndexPath();
+  const db = await openDb(dbPath);
+
+  try {
+    initCanonicalSchema(db);
+
+    // Rows where regex classifier returned nothing. display_title is the
+    // headline; search_text is the union of all source text. We feed both
+    // so the model has richer signal than the X-only classify path.
+    const rows = db.exec(
+      `SELECT id, canonical_url, display_title, coalesce(search_text, display_title)
+       FROM canonical_bookmarks
+       WHERE primary_category IS NULL OR primary_category = 'unclassified'
+       ORDER BY RANDOM()`,
+    )[0]?.values ?? [];
+
+    const totalUnclassified = rows.length;
+    if (totalUnclassified === 0) {
+      return { engine: engine.name, totalUnclassified: 0, classified: 0, failed: 0, batches: 0 };
+    }
+
+    // Pre-build per-id URL→domain map so LLM output (which may pick new
+    // categories) is consistent with what we write back to canonical.
+    const items: CategoryPromptItem[] = rows.map((r) => {
+      const id = r[0] as string;
+      const canonicalUrl = (r[1] as string | null) ?? null;
+      const title = (r[2] as string | null) ?? '';
+      const searchText = (r[3] as string | null) ?? '';
+      // Use display_title as headline; fall back to search_text for body
+      const text = title ? `${title}. ${searchText}` : searchText;
+      return {
+        id,
+        text,
+        authorHandle: null, // parity with classifyWithLlm which always supplies a handle
+        links: canonicalUrl,
+      };
+    });
+
+    let classified = 0;
+    let failed = 0;
+    let batchCount = 0;
+
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
+      const batchIds = new Set(batch.map((b) => b.id));
+      batchCount++;
+
+      options.onBatch?.(i, totalUnclassified);
+
+      try {
+        const prompt = buildCategoryPrompt(batch);
+        const raw = await invokeEngineAsync(engine, prompt);
+        const results = parseCategoryResponse(raw, batchIds);
+
+        db.run('BEGIN TRANSACTION');
+        try {
+          const stmt = db.prepare(
+            `UPDATE canonical_bookmarks
+             SET categories = ?, primary_category = ?, domains = ?, primary_domain = ?
+             WHERE id = ?`,
+          );
+          try {
+            for (const r of results) {
+              const canonicalUrlForDomain = rows.find((row) => row[0] === r.id)?.[1] as string | null;
+              const newDomains = canonicalUrlForDomain ? hostnameForUrl(canonicalUrlForDomain) : null;
+              // Preserve any existing domain (regex may have set one); only add the LLM-derived new category
+              const existingDomainRow = db.exec(
+                `SELECT primary_domain FROM canonical_bookmarks WHERE id = ?`,
+                [r.id],
+              )[0]?.values[0]?.[0] as string | null;
+              const finalDomains = existingDomainRow ?? newDomains;
+              stmt.run([
+                r.categories.length ? r.categories.join(',') : null,
+                r.primary,
+                finalDomains ? String(finalDomains) : null,
+                finalDomains ? String(finalDomains) : null,
+                r.id,
+              ]);
+            }
+          } finally {
+            stmt.free();
+          }
+          db.run('COMMIT');
+        } catch (err) {
+          db.run('ROLLBACK');
+          throw err;
+        }
+
+        classified += results.length;
+        failed += batch.length - results.length;
+
+        // Persist after every batch — a crash + restart picks up where we left off.
+        saveDb(db, dbPath);
+      } catch (err) {
+        failed += batch.length;
+        process.stderr.write(
+          `  Canonical classify batch ${batchCount} failed: ${(err as Error).message}\n`,
+        );
+      }
+    }
+
+    return { engine: engine.name, totalUnclassified, classified, failed, batches: batchCount };
   } finally {
     db.close();
   }
