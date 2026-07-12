@@ -507,7 +507,8 @@ UPSTREAM INTEGRATION (2026-07-12):
 - Done: added/fetched `upstream`; merged `upstream/main` (19 upstream-only commits) into local main lineage (59 local-only commits); resolved conflicts in README.md, src/{cli,skill}.ts, tests/{cli,paths,skill}.test.ts; committed as `3551d33`. Merged new local-main commit `e8d04ee` into the integration branch as `9831342`.
 - Decisions: retained both local research/daily command surfaces and upstream current-document/navigation/workflow-state surfaces; README retains local models/pricing plus upstream repo-boundary docs.
 - Review finding/fix: `FT_DAILY_GROUND=1` was ignored because Commander represents both omitted `--ground` and explicit `--no-ground` as false. Fixed by checking `getOptionValueSource('ground')`; committed as `c3f8cd6`.
-- Verification: `npm run build` passes. Daily+engine targeted tests pass; combined targeted run is 106/107 solely because `tests/cli.test.ts` retains the known file-level harness failure. Previous full suite: 870/871 with the same dashboard/stdout/exit-code harness issue.
+- Dashboard harness fix: root cause was `captureStdout` globally replacing `process.stdout.write`, swallowing Node test-runner protocol events and producing an incomplete file-level result. Replaced it with `AsyncLocalStorage`-scoped capture and removed permissive leading-JSON parsing.
+- Verification: `npm run build` passes; CLI repro 50/50; full suite 885/885.
 - Now: primary `main` was fast-forwarded to reviewed integration tip `c3f8cd6`; its pre-existing dirty/untracked files remain untouched. `origin/main` remains at `e8d04ee` until pushed.
-- Next: decide whether to fix/waive the dashboard harness test, then push `main` if approved; optionally remove the temporary integration worktree/branch afterward.
-- Open questions: whether to require 871/871 before promoting the integration branch.
+- Next: commit/push the dashboard harness fix if approved; optionally remove the temporary integration worktree/branch afterward.
+- Open questions: none.

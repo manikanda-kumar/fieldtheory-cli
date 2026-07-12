@@ -3,34 +3,27 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { compareVersions, runWithSpinner, buildCli, parseCookieOption, shouldDownloadSyncMedia, shouldInferStdinFromStats } from '../src/cli.js';
 import { dataDir } from '../src/paths.js';
 import { skillWithFrontmatter } from '../src/skill.js';
 import { rebuildCanonicalIndex } from '../src/canonical-bookmarks-db.js';
 
+const stdoutCapture = new AsyncLocalStorage<string[]>();
+const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+process.stdout.write = ((chunk: any, encodingOrCb?: any, cb?: any) => {
+  const chunks = stdoutCapture.getStore();
+  if (!chunks) return originalStdoutWrite(chunk, encodingOrCb, cb);
+  chunks.push(Buffer.isBuffer(chunk) ? chunk.toString('utf-8') : String(chunk));
+  if (typeof encodingOrCb === 'function') encodingOrCb();
+  if (typeof cb === 'function') cb();
+  return true;
+}) as typeof process.stdout.write;
+
 async function captureStdout(fn: () => Promise<void>): Promise<string> {
   const chunks: string[] = [];
-  const origWrite = process.stdout.write;
-  process.stdout.write = ((chunk: any, encodingOrCb?: any, cb?: any) => {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk.toString('utf-8') : String(chunk));
-    if (typeof encodingOrCb === 'function') encodingOrCb();
-    if (typeof cb === 'function') cb();
-    return true;
-  }) as typeof process.stdout.write;
-
-  try {
-    await fn();
-  } finally {
-    process.stdout.write = origWrite;
-  }
-
+  await stdoutCapture.run(chunks, fn);
   return chunks.join('');
-}
-
-function parseLeadingJson(output: string): any {
-  const end = output.indexOf('\n}');
-  assert.notEqual(end, -1, 'expected leading pretty-printed JSON object');
-  return JSON.parse(output.slice(0, end + 2));
 }
 
 async function captureConsoleErrors(fn: () => Promise<void>): Promise<string> {
@@ -460,7 +453,7 @@ test('ft current includes document content in model-facing JSON by default', asy
     const summaryOutput = await captureStdout(async () => {
       await buildCli().parseAsync(['node', 'ft', 'current', '--manifest', manifestPath, '--json']);
     });
-    const summary = parseLeadingJson(summaryOutput);
+    const summary = JSON.parse(summaryOutput);
     assert.equal(summaryOutput.trimStart().startsWith('{\n  "title"'), true);
     assert.equal(summary.title, 'Current Body');
     assert.equal(summary.sourcePath, sourcePath);
@@ -484,7 +477,7 @@ test('ft current includes document content in model-facing JSON by default', asy
     const debugOutput = await captureStdout(async () => {
       await buildCli().parseAsync(['node', 'ft', 'current', '--manifest', manifestPath, '--json', '--debug-paths']);
     });
-    assert.equal(parseLeadingJson(debugOutput).activeDocument.path, sourcePath);
+    assert.equal(JSON.parse(debugOutput).activeDocument.path, sourcePath);
 
     const contentOutput = await captureStdout(async () => {
       await buildCli().parseAsync(['node', 'ft', 'current', '--manifest', manifestPath, '--content-only']);
@@ -588,7 +581,7 @@ test('ft current update edits the active Library document without passing its pa
     const readOutput = await captureStdout(async () => {
       await buildCli().parseAsync(['node', 'ft', 'current', '--manifest', manifestPath, '--json']);
     });
-    const current = parseLeadingJson(readOutput);
+    const current = JSON.parse(readOutput);
     assert.equal(current.content, initialContent);
     assert.equal(current.version.sha256.length, 64);
 
@@ -671,7 +664,7 @@ test('ft current update edits an active Field Theory markdown source outside the
     const readOutput = await captureStdout(async () => {
       await buildCli().parseAsync(['node', 'ft', 'current', '--manifest', manifestPath, '--json']);
     });
-    const current = parseLeadingJson(readOutput);
+    const current = JSON.parse(readOutput);
     assert.equal(current.content, '- [ ] artifact task\n');
     assert.equal(current.version.sha256.length, 64);
 
