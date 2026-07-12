@@ -1,3 +1,25 @@
+GAP FIX SESSION (2026-07-12) — remaining second-brain gaps closed:
+- Reviewed CONTINUITY.md gap list (10 gaps from 2026-06-21 audit). Assessed each against current code:
+  - GAP-1 (ft list --unified filters): WAS partially fixed in 2a33260 (--query/--category/--domain/--after/--before already wired). COMPLETED: added --author support via bookmark_sources.author_handle subquery; authorHandle now populated in CanonicalBookmarkListResult + getCanonicalBookmarkById. Only --folder remains unsupported (X-only concept, no canonical equivalent).
+  - GAP-2 (ft ask X-only grounding): WAS partially fixed in earlier work (searchRawGrounding uses searchCanonicalBookmarks first). COMPLETED: selectRelevantPages now scans sources/ and topics/ directories from unified wiki; entity boosting uses listCanonicalBookmarks (all sources) instead of X-only searchBookmarks.
+  - GAP-3 (X-list digests not in canonical): DEFERRED — standalone JSON files, lower priority.
+  - GAP-4 (ft categories/domains/folders --json): FIXED in 2a33260.
+  - GAP-5 (YouTube chapter text not in canonical FTS): ALREADY FIXED — youtubeSourceFromVideo includes chapter.label + chapter.summary in search_text.
+  - GAP-6 (unified wiki pages): FIXED in 2a33260 (ft wiki --unified).
+  - GAP-7 (ft wiki --json): FIXED in 2a33260.
+  - GAP-8 (ft search --unified --limit doc): NON-ISSUE — --limit is a top-level option that applies to both modes.
+  - GAP-9 (ft research command): ALREADY IMPLEMENTED — ft research <topic> combines canonical search, library markdown, X-list digest, experts.
+  - GAP-10 (direct sqlite3 doc): NOTED — no code change needed, documented in skill.ts.
+- CHANGES: src/canonical-bookmarks-db.ts (+author to ListCanonicalBookmarksOptions, SQL filter in listCanonicalBookmarks + countCanonicalBookmarks, author_handle subquery in SELECT + mapListRow + getCanonicalBookmarkById, authorHandle field in CanonicalBookmarkListResult), src/md-ask.ts (scan sources/topics dirs, canonical entity boosting), src/cli.ts (remove author from unsupported unified filters, pass author through), tests/canonical-bookmarks-db.test.ts (+1 test for author filter + authorHandle population).
+- VERIFIED: npm run build passes; npm test 902/902 pass.
+- COMMITTED + PUSHED: 15f3427 on origin/main.
+
+BACKGROUND JOBS (running concurrently with agy/Gemini 3.5 Flash):
+- Classify: ft classify --unified --engine agy — ~8665/22170 canonical bookmarks classified, progressing at ~50-100/min when not contending with wiki.
+- Unified wiki: ft wiki --unified --engine agy — ~20/203 pages generated (5 source pages, 36 category pages, 48 domain pages so far). Log at /tmp/ft-wiki-unified.log and ~/.fieldtheory/library/log.md.
+- Note: killed duplicate wiki process (PID 72699 with --json) that was running alongside the intended process (PID 72903/72939). Both were writing to the same library; the --json one was an earlier accidental launch.
+- Both jobs share agy and may slow each other; monitor and consider pausing one if progress stalls.
+
 UNIFIED WIKI SESSION (2026-07-12) — agy engine + unified wiki build-out:
 - ENGINES: Wired agy (Antigravity CLI, Gemini 3.5 Flash High via subscription) as 5th LLM engine alongside claude/codex/grok/droid. resolveEngine() picks agy model via --model or FT_AGY_MODEL (default 'Gemini 3.5 Flash (High)'); PREFERENCE_ORDER updated; ft model + --engine help text consistent across all commands. Live-tested end-to-end (3-bookmark wiki page prompt → agy -p → clean markdown in ~20s, $0 on sub).
 - DEEPSEEK REASONING: FT_DEEPSEEK_NO_REASONING=1 injects thinking:{type:'disabled'} into OpenCode Go proxy requests (droid-engine.ts + opencode-client.ts). Verified empirically against the proxy: reasoning_effort:'none' annihilates the response (empty choices), but thinking:{type:'disabled'} cleanly returns message.content with no reasoning_content and zero reasoning_tokens. Default-off preserves existing behavior.

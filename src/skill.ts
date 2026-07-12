@@ -97,6 +97,11 @@ Use this shape:
 ft seeds search "<bookmark topic>" --days 180 --limit 8 --frame impact-effort --create
 ft possible run --seed <seed-id> --repos <repo-a> <repo-b> <repo-c> --frame impact-effort --nodes 7 --model opus --effort medium
 ft possible grid latest          # latest run or batch
+
+# Direct SQLite access (most powerful query surface):
+sqlite3 ~/.fieldtheory/bookmarks/bookmarks.db   "SELECT display_title, canonical_url FROM canonical_bookmarks
+   WHERE canonical_bookmarks_fts MATCH 'agents'
+   ORDER BY last_saved_at DESC LIMIT 20"
 ft possible grid latest-batch    # latest multi-repo batch
 ft possible dots latest
 ft possible prompt <node-id>
@@ -139,6 +144,9 @@ ft search <query>              # Full-text BM25 search ("exact phrase", AND, OR,
 ft search --unified <query>    # Search X, Raindrop, GitHub Stars, and YouTube canonical rows
 ft list --category <cat>       # tool, technique, research, opinion, launch, security, commerce
 ft list --unified --source github-stars
+ft list --unified --category <cat>  # Filter canonical by category
+ft list --unified --domain <dom>    # Filter canonical by domain
+ft list --unified --author @handle  # Filter canonical by author (all sources)
 ft list --domain <dom>         # ai, web-dev, startups, finance, design, devops, marketing, etc.
 ft list --author @handle       # By author
 ft list --after/--before DATE  # Date range (YYYY-MM-DD)
