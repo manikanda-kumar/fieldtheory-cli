@@ -1485,7 +1485,7 @@ export function buildCli() {
     .option('--ground', 'Allow web/X search for additional grounded notes (best with --engine grok)', false)
     .option('--no-ground', 'Disable web/X grounding even if FT_DAILY_GROUND is set')
     .option('--json', 'JSON output')
-    .action(safe(async (options) => {
+    .action(safe(async (options, command) => {
       ensureDataDir();
       const collection = await collectDaily({
         date: stringOption(options.date),
@@ -1508,11 +1508,13 @@ export function buildCli() {
         }
         // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin engine
         // without baking flags into the sync-all step list.
-        // --no-ground wins over env; otherwise --ground or FT_DAILY_GROUND=1.
+        // An explicit CLI flag wins; omission falls back to FT_DAILY_GROUND.
+        // Commander represents both an omitted --ground and --no-ground as
+        // false, so the value source is required to distinguish them.
         const groundEnv = /^(1|true|yes)$/i.test(process.env.FT_DAILY_GROUND ?? '');
-        const groundExternal = options.ground === false
-          ? false
-          : Boolean(options.ground) || groundEnv;
+        const groundExternal = command.getOptionValueSource('ground') === 'cli'
+          ? Boolean(options.ground)
+          : groundEnv;
         const result = await synthesizeDaily(collection, connected, {
           enrichedCount: enrichment.enrichedCount,
           enrichedItemIds: collection.items.filter((item) => item.canonicalUrl && enrichment.summaries.has(item.canonicalUrl)).map((item) => item.id),
