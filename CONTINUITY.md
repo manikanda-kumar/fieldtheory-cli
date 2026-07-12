@@ -1,3 +1,13 @@
+TALK-DECK SESSION (2026-07-11) — "Understanding is the Bottleneck" 15-slide tech talk:
+- Source talk: Geoffrey Litt (Notion), "Understanding is the new bottleneck", AI Engineer 2026-07-10, WkBPX-oDMnA, 19:33. Transcript captured scratchpad/talk-transcript.txt (not yet in youtube library).
+- User's angle: college-student ↔ engineer parallel (assessment certifies mastery w/o full coverage; teacher teaches = agent codes; semester has quizzes/seminars/viva, engineering merges + moves on; review agent should quiz the HUMAN before approving).
+- Second-brain recall hits: Litt explain-diff gist + Notion plugin + quiz tweet (2014466748989206569) + "books don't work" tweet all bookmarked; Hak "Is this the only skill left?" (7zCsfe57tpU, Naur theory-building, junior pipeline); cubic.dev comprehension-debt blog (raindrop); Harness Engineering Lopopolo (am_oeAoUhew); Angie Jones autonomous org (whue9_YquGA); Atlantic CS piece.
+- DECK BUILT: docs/talks/2026-07-11-understanding-bottleneck-deck.html — 15 slides, exam-book design (paper/ink/registrar-blue light + chalkboard dark), keyboard nav (arrows/space), N = presenter notes, hash routing (#n), viva slide 13 w/ stamp. Self-tested via playwright (fixed: navzone button default UA styling covered edges; stamp flex-stretched). Artifact: https://claude.ai/code/artifact/8deedf1c-7a87-4782-b3c2-6774a4c9f695 (favicon 🎓).
+- CLAUDE.AI/DESIGN: project "Understanding Bottleneck Deck" (0df2aad0-812a-4091-a690-5e6e5c057b94) — per-slide cards + tokens card uploaded via DesignSync (bundle scratchpad/deck-ds/, split script regenerates from deck html). Design pane = review surface, not auto-polish; iterate here then re-split + re-upload.
+- V2 (2026-07-12): NOW 16 SLIDES. New sources woven in: Alex Volkov "Z/L Continuum" (ZpK5PWX2YRM, AI Engineer 2026-07-10, transcript scratchpad/zl-transcript.txt, NOT in youtube library) — new slide 14 (Zechner↔Lopopolo axis, routing table, "what proof does this change need"), Faros stats on slide 3 (+31% unreviewed merges, +242% incidents/PR, 6x bugs), Anthropic RSI "human code review has become a new bottleneck" slide 7, Volkov builder≠grader exam quote slide 13, Karpathy quote slide 15, Volkov closer slide 16. Dex Horthy "green text ain't gonna cut it" slide 10 (both his talks in youtube library 2026-03). vaibcode order-n planning tweet in slide-13 notes. Artifact + 16 design cards refreshed.
+- youtube-notetaker DONE: ~/video-deepdives/WkBPX-oDMnA.md (30 curated slides + notes + 624-line transcript, media in _media/). Verified: serve.py :8000 all endpoints 200 + playwright screenshot renders. View: `python3 <skill>/scripts/serve.py --dir ~/video-deepdives --port 8000` then http://127.0.0.1:8000/#/WkBPX-oDMnA. NOTE: separate from ~/.fieldtheory youtube library — talk NOT yet in ft canonical index.
+- Learnings: system sqlite3 lacks fts5 module → use `node dist/cli.js research/search` from repo instead. notetaker scripts need `uv run --with pillow --with pyyaml` (system python3 is PEP-668 managed, no pip install). Scene detect 0.3 missed composite slide+cam sections → 0.15 + fixed-interval gap sampling. browser-automation skill setupComplete=false (needs npm link + ANTHROPIC_API_KEY) → npx playwright screenshot works as fallback.
+
 Goal (incl. success criteria): Daily digest "no-item-left-behind" hardening (plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md) — every collected item renders exactly once, overflow carries over, digests report coverage truthfully. Success: reconciliation invariant collected = themed + also-saved; 822/822 suite green.
 Constraints/Assumptions:
 - Orchestration: Codex gpt-5.6-terra medium via use-harness router; per task implement → review → fix → close. Orchestrator verifies independently (diff + full suite), never trusts worker self-report.
@@ -12,9 +22,10 @@ Done:
 - Requirements plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (ce-brainstorm).
 - T1–T3 implemented via Codex; new module src/daily/coverage.ts.
 Now:
-- Link-enrichment backfill hardening complete (uncommitted): excludes X/Twitter, YouTube, PDFs; cache error migration and top errors; transient retries; default concurrency 2 + retry-failed; scoped process crash logging. Focused daily/CLI tests 66/66 and build pass.
+- ALL WORK COMMITTED + PUSHED: 6b7a247 (T1–T3 hardening), 558e06a (T4 thin filter + T5 enrichment), 02d5ef8 (T7 backfill hardening: eligibility exclusions, error column, retries, crash guards). ee6db43 = user's x-list video/link-preview work.
+- BACKFILL COMPLETE (2026-07-11): 2,809 eligible → ok 2,133 / failed 718 in cache (89% success this run; first run pre-hardening was 21%). Top errors: 87× HTTP 403, 47× LLM 30s timeout, 38× HTTP 404. `ft index` rebuilt: 2,271 canonical rows carry 'summary:' in search_text — FTS/search/research/connect now see enriched content. Failed rows retry after 7d via nightly ft daily.
 Next:
-- Hand off worker report; user may review/commit then run the backfill.
+- Optional: x-list/following canonical ingest (dark sources), per-source watermark, ideation ideas #1–8 (audio briefing top pick), commit-graph cleanup (rm -rf .git/objects/info/commit-graphs + unset core.commitgraph — dcg needs manual run).
 Open questions (UNCONFIRMED if needed):
 - None.
 Working set (files/ids/commands):
@@ -490,3 +501,13 @@ Working set (files/ids/commands):
 - Smoke test verified: `npm run dev -- sync-raindrop --dry-run --limit 100` → 100 bookmarks / 7 collections.
 - Remote: `origin https://github.com/manikanda-kumar/fieldtheory-cli`.
 - Useful commands: `npm run build`, `npm run test`, `npm run dev -- sync-raindrop --help`, `npm run dev -- search --unified <query>`.
+UPSTREAM INTEGRATION (2026-07-12):
+- Goal: integrate `afar1/fieldtheory-cli` upstream `main` without disturbing the dirty primary worktree.
+- Worktree/branch: `/tmp/fieldtheory-upstream-merge`, `integration/upstream-2026-07-12`.
+- Done: added/fetched `upstream`; merged `upstream/main` (19 upstream-only commits) into local main lineage (59 local-only commits); resolved conflicts in README.md, src/{cli,skill}.ts, tests/{cli,paths,skill}.test.ts; committed as `3551d33`. Merged new local-main commit `e8d04ee` into the integration branch as `9831342`.
+- Decisions: retained both local research/daily command surfaces and upstream current-document/navigation/workflow-state surfaces; README retains local models/pricing plus upstream repo-boundary docs.
+- Review finding/fix: `FT_DAILY_GROUND=1` was ignored because Commander represents both omitted `--ground` and explicit `--no-ground` as false. Fixed by checking `getOptionValueSource('ground')`; committed as `c3f8cd6`.
+- Verification: `npm run build` passes. Daily+engine targeted tests pass; combined targeted run is 106/107 solely because `tests/cli.test.ts` retains the known file-level harness failure. Previous full suite: 870/871 with the same dashboard/stdout/exit-code harness issue.
+- Now: primary `main` was fast-forwarded to reviewed integration tip `c3f8cd6`; its pre-existing dirty/untracked files remain untouched. `origin/main` remains at `e8d04ee` until pushed.
+- Next: decide whether to fix/waive the dashboard harness test, then push `main` if approved; optionally remove the temporary integration worktree/branch afterward.
+- Open questions: whether to require 871/871 before promoting the integration branch.
