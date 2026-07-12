@@ -133,12 +133,13 @@ What it does:
 
 LLM and TTS configuration:
 
-- Notes and overview scripts use the same engine design as the rest of Field Theory: `ft model` / autodetect picks `claude`, `codex`, or `droid` (OpenRouter cloud models), with OpenRouter as the fallback when the primary engine fails.
-- `--engine <claude|codex|droid>` overrides the engine for one YouTube sync.
+- Notes and overview scripts use the same engine design as the rest of Field Theory: `ft model` / autodetect picks `claude`, `codex`, `grok`, or `droid` (OpenCode Go cloud models), with OpenRouter as the fallback when the primary engine fails.
+- `--engine <claude|codex|grok|droid>` overrides the engine for one YouTube sync.
 - `--model <model>` is passed through to the selected engine. If the value contains `/`, it is also used as the primary OpenRouter fallback model ID.
 - `--effort <level>` is passed through to the selected engine. Field Theory accepts `low`, `medium`, `high`, `xhigh`, and `max`; the installed engine may reject values it does not support.
 - Audio/video overview TTS uses TTS engines directly. `OPENAI_API_KEY` is the supported high-quality path; `--tts say` and `--tts piper` are local fallback options when those commands are installed. OpenRouter does not provide TTS endpoints.
 - The `droid` engine requires `OPENCODE_GO_API_KEY` (or OpenCode auth on disk) and uses fast, low-cost OpenCode Go models by default. Override the default model with `FT_DROID_MODEL`.
+- The `grok` engine requires the Grok Build CLI (`grok` on PATH, from https://x.ai/cli) and defaults to the `grok-4.5` model. Override with `--model` or `FT_GROK_MODEL`.
 
 YouTube 429 mitigation:
 
@@ -153,6 +154,7 @@ Recommended YouTube model profiles:
 |--------|--------------|----------------|-------|
 | `claude` | `--engine claude --model sonnet --effort medium` | `--engine claude --model opus --effort high` | Claude Code accepts aliases such as `sonnet` and `opus`, plus full model names such as `claude-sonnet-4-6`. Current Claude Code help lists effort levels `low`, `medium`, `high`, `xhigh`, and `max`. |
 | `codex` | `--engine codex --model gpt-5.4-mini --effort medium` | `--engine codex --model gpt-5.4 --effort high` | Codex model names depend on the installed Codex CLI and account access. Field Theory passes effort as `model_reasoning_effort`; if your Codex build rejects `xhigh` or `max`, use `low`, `medium`, or `high`. |
+| `grok` | `--engine grok` | `--engine grok --model grok-4.5 --effort high` | Uses the Grok Build CLI (`grok` binary from https://x.ai/cli). Default model is `grok-4.5`. Override with `--model` or `FT_GROK_MODEL`. Available model IDs depend on your Grok login (`grok models`). |
 | `droid` | `--engine droid` | `--engine droid --model deepseek-v4-pro` | Uses OpenCode Go API. Default chain: `deepseek-v4-flash` → `mimo-v2.5` → `deepseek-v4-pro`. Set `OPENCODE_GO_API_KEY` and optionally `FT_DROID_MODEL`. |
 | OpenRouter fallback | `--model openai/gpt-4o-mini` | `--model openai/gpt-4o` or another provider model ID | Used automatically as fallback. A slash-style `--model` value is treated as an OpenRouter model ID. |
 
@@ -161,6 +163,8 @@ Examples:
 ```bash
 ft sync-youtube --playlist PL... --engine claude --model sonnet --effort medium
 ft sync-youtube --playlist PL... --engine codex --model gpt-5.4-mini --effort medium
+ft sync-youtube --playlist PL... --engine grok
+ft sync-youtube --playlist PL... --engine grok --model grok-4.5 --effort medium
 ft sync-youtube --playlist PL... --engine droid
 ft sync-youtube --playlist PL... --engine droid --model deepseek-v4-pro
 ft sync-youtube --playlist PL... --model openai/gpt-4o-mini
@@ -371,13 +375,25 @@ To remove bookmark and Library data: `rm -rf ~/.fieldtheory/bookmarks ~/.fieldth
 
 ## Models and pricing
 
-Field Theory supports three engine types:
+Field Theory supports four engine types:
 
 | Engine | Type | Requirements | Cost |
 |--------|------|--------------|------|
 | `claude` | Local CLI | Claude Code installed and logged in | Included with Claude Pro/Max subscription |
 | `codex` | Local CLI | Codex CLI installed and logged in | Included with OpenAI Codex subscription |
+| `grok` | Local CLI | Grok Build CLI (`grok`) installed and logged in | Included with SuperGrok / Grok subscription |
 | `droid` | Cloud API | `OPENCODE_GO_API_KEY` env var | Pay-per-use via OpenCode Go |
+
+### Grok Build models (grok engine defaults)
+
+The `grok` engine shells out to the Grok Build CLI (`grok -p`) for headless single-turn completions. Default model is `grok-4.5`; override with `--model` or `FT_GROK_MODEL`. Run `grok models` to list IDs available for your login.
+
+```bash
+export FT_GROK_MODEL=grok-4.5
+ft classify --engine grok
+# or:
+ft classify --engine grok --model grok-4.5 --effort medium
+```
 
 ### OpenCode Go models (droid engine defaults)
 

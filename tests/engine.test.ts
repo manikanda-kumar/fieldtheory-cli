@@ -74,7 +74,7 @@ test('detectAvailableEngines: returns array of available engines', async () => {
 
   // Each entry should be a known engine name
   for (const name of available) {
-    assert.ok(['claude', 'codex', 'droid'].includes(name), `unexpected engine: ${name}`);
+    assert.ok(['claude', 'codex', 'grok', 'droid'].includes(name), `unexpected engine: ${name}`);
   }
 });
 
@@ -153,7 +153,11 @@ test('resolveEngine: carries explicit model and effort into engine args', async 
       // Droid has no CLI args to verify; skip this test.
       return;
     }
-    const model = engineName === 'codex' ? 'gpt-5.5' : 'opus';
+    const model = engineName === 'codex'
+      ? 'gpt-5.5'
+      : engineName === 'grok'
+        ? 'grok-4.5'
+        : 'opus';
     const resolved = await resolveEngine({ engine: engineName, model, effort: 'medium' });
 
     assert.equal(resolved.name, engineName);
@@ -166,6 +170,14 @@ test('resolveEngine: carries explicit model and effort into engine args', async 
       assert.deepEqual(args.slice(-5), ['--output-format', 'text', '--model', 'opus', '--effort', 'medium', 'PROMPT'].slice(-5));
       assert.ok(args.includes('--model'));
       assert.ok(args.includes('--effort'));
+    } else if (engineName === 'grok') {
+      assert.ok(args.includes('-p'));
+      assert.ok(args.includes('--output-format'));
+      assert.ok(args.includes('plain'));
+      assert.ok(args.includes('--model'));
+      assert.ok(args.includes('grok-4.5'));
+      assert.ok(args.includes('--effort'));
+      assert.ok(args.includes('medium'));
     } else {
       assert.ok(args.includes('--model'));
       assert.ok(args.includes('gpt-5.5'));
@@ -313,6 +325,86 @@ test('resolveEngine: claude args include --system-prompt when system prompt prov
     assert.equal(args[args.length - 1], 'hello');
   } finally {
     process.env.PATH = origPath;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('resolveEngine: grok defaults to grok-4.5 model and builds headless args', async () => {
+  if (process.platform === 'win32') return;
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-engine-grok-args-'));
+  const fakeBin = path.join(tmpDir, 'grok');
+  const origPath = process.env.PATH;
+  const origGrokModel = process.env.FT_GROK_MODEL;
+  process.env.PATH = tmpDir;
+  delete process.env.FT_GROK_MODEL;
+
+  try {
+    fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeBin, 0o755);
+
+    const { resolveEngine } = await import('../src/engine.js');
+    const resolved = await resolveEngine({ override: 'grok', effort: 'low' });
+    assert.equal(resolved.name, 'grok');
+    assert.equal(resolved.model, 'grok-4.5');
+    assert.equal(resolved.effort, 'low');
+    assert.equal(resolved.label, 'grok/grok-4.5/effort=low');
+
+    const args = resolved.config.args('hello', resolved, 'You are a test engine.');
+    assert.equal(args[0], '-p');
+    assert.equal(args[1], 'hello');
+    assert.ok(args.includes('--output-format'));
+    assert.ok(args.includes('plain'));
+    assert.ok(args.includes('--permission-mode'));
+    assert.ok(args.includes('dontAsk'));
+    assert.ok(args.includes('--disable-web-search'));
+    assert.ok(args.includes('--no-plan'));
+    assert.ok(args.includes('--no-subagents'));
+    assert.ok(args.includes('--system-prompt-override'));
+    assert.ok(args.includes('You are a test engine.'));
+    assert.ok(args.includes('--model'));
+    assert.ok(args.includes('grok-4.5'));
+    assert.ok(args.includes('--effort'));
+    assert.ok(args.includes('low'));
+
+    const withSearch = await resolveEngine({ override: 'grok', webSearch: true });
+    assert.equal(withSearch.webSearch, true);
+    const searchArgs = withSearch.config.args('hi', withSearch);
+    assert.ok(!searchArgs.includes('--disable-web-search'));
+  } finally {
+    process.env.PATH = origPath;
+    if (origGrokModel !== undefined) process.env.FT_GROK_MODEL = origGrokModel;
+    else delete process.env.FT_GROK_MODEL;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('resolveEngine: grok respects explicit --model and FT_GROK_MODEL', async () => {
+  if (process.platform === 'win32') return;
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-engine-grok-model-'));
+  const fakeBin = path.join(tmpDir, 'grok');
+  const origPath = process.env.PATH;
+  const origGrokModel = process.env.FT_GROK_MODEL;
+  process.env.PATH = tmpDir;
+
+  try {
+    fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeBin, 0o755);
+
+    const { resolveEngine } = await import('../src/engine.js');
+
+    process.env.FT_GROK_MODEL = 'grok-from-env';
+    const fromEnv = await resolveEngine({ override: 'grok' });
+    assert.equal(fromEnv.model, 'grok-from-env');
+
+    const fromFlag = await resolveEngine({ override: 'grok', model: 'grok-4.5' });
+    assert.equal(fromFlag.model, 'grok-4.5');
+    assert.ok(fromFlag.config.args('hi', fromFlag).includes('grok-4.5'));
+  } finally {
+    process.env.PATH = origPath;
+    if (origGrokModel !== undefined) process.env.FT_GROK_MODEL = origGrokModel;
+    else delete process.env.FT_GROK_MODEL;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
