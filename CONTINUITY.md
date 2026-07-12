@@ -14,11 +14,20 @@ GAP FIX SESSION (2026-07-12) — remaining second-brain gaps closed:
 - VERIFIED: npm run build passes; npm test 902/902 pass.
 - COMMITTED + PUSHED: 15f3427 on origin/main.
 
-BACKGROUND JOBS (running concurrently with agy/Gemini 3.5 Flash):
-- Classify: ft classify --unified --engine agy — ~8665/22170 canonical bookmarks classified, progressing at ~50-100/min when not contending with wiki.
-- Unified wiki: ft wiki --unified --engine agy — ~20/203 pages generated (5 source pages, 36 category pages, 48 domain pages so far). Log at /tmp/ft-wiki-unified.log and ~/.fieldtheory/library/log.md.
-- Note: killed duplicate wiki process (PID 72699 with --json) that was running alongside the intended process (PID 72903/72939). Both were writing to the same library; the --json one was an earlier accidental launch.
-- Both jobs share agy and may slow each other; monitor and consider pausing one if progress stalls.
+BACKGROUND JOBS — PAUSED (agy quota hit at ~00:19, resets in ~3h13m → ~03:32):
+- Both jobs killed at 00:19 to avoid wasted agy quota-burn cycles (each failed page still takes ~130s timeout).
+- Lock file cleaned: ~/.fieldtheory/library/.lock removed.
+- Classify FINAL: 9365/22170 canonical bookmarks classified (42.3%). Up ~1350 from session start (8015→9365).
+- Unified wiki FINAL: 77/203 pages successfully generated before quota hit (pages 78-81 errored). 5 source pages, 36 category pages, 109 domain pages on disk.
+  - Remaining: ~126 pages (mostly domain pages + some category/entity pages).
+  - The wiki job resumes from where it left off — existing pages are skipped if unchanged.
+- Resume commands after quota resets (~03:32 AM):
+    cd /Users/manik/Github/fieldtheory-cli && nohup npm run -s dev -- classify --unified --engine agy > /tmp/ft-classify.log 2>&1 &
+    rm -f ~/.fieldtheory/library/.lock && cd /Users/manik/Github/fieldtheory-cli && nohup npm run -s dev -- wiki --unified --engine agy > /tmp/ft-wiki-unified.log 2>&1 &
+  - Run classify FIRST, then wiki ~10 min later to avoid early contention.
+  - Or run them sequentially: classify first (fully), then wiki.
+- Logs: /tmp/ft-wiki-unified.log, ~/.fieldtheory/library/log.md
+- Progress tracking via: sqlite3 ~/.fieldtheory/bookmarks/bookmarks.db "SELECT COUNT(*) as total, SUM(CASE WHEN primary_category IS NOT NULL AND primary_category != 'unclassified' AND primary_category != '' THEN 1 ELSE 0 END) as classified FROM canonical_bookmarks"
 
 UNIFIED WIKI SESSION (2026-07-12) — agy engine + unified wiki build-out:
 - ENGINES: Wired agy (Antigravity CLI, Gemini 3.5 Flash High via subscription) as 5th LLM engine alongside claude/codex/grok/droid. resolveEngine() picks agy model via --model or FT_AGY_MODEL (default 'Gemini 3.5 Flash (High)'); PREFERENCE_ORDER updated; ft model + --engine help text consistent across all commands. Live-tested end-to-end (3-bookmark wiki page prompt → agy -p → clean markdown in ~20s, $0 on sub).
