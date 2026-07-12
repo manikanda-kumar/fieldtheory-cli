@@ -94,6 +94,33 @@ test('ft wiki: --engine option is registered', () => {
   assert.ok(opts.includes('--engine'), `expected --engine among ${opts.join(', ')}`);
 });
 
+test('ft wiki: exposes --model and --effort options', () => {
+  const program = buildCli();
+  const wikiCmd = program.commands.find((c: any) => c.name() === 'wiki');
+  assert.ok(wikiCmd, 'wiki command should be registered');
+  const opts = wikiCmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--model'), `expected --model among ${opts.join(', ')}`);
+  assert.ok(opts.includes('--effort'), `expected --effort among ${opts.join(', ')}`);
+});
+
+test('ft classify: exposes --model and --effort options', () => {
+  const program = buildCli();
+  const classifyCmd = program.commands.find((c: any) => c.name() === 'classify');
+  assert.ok(classifyCmd, 'classify command should be registered');
+  const opts = classifyCmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--model'), `expected --model among ${opts.join(', ')}`);
+  assert.ok(opts.includes('--effort'), `expected --effort among ${opts.join(', ')}`);
+});
+
+test('ft classify-domains: exposes --model and --effort options', () => {
+  const program = buildCli();
+  const cmd = program.commands.find((c: any) => c.name() === 'classify-domains');
+  assert.ok(cmd, 'classify-domains command should be registered');
+  const opts = cmd.options.map((o: any) => o.long);
+  assert.ok(opts.includes('--model'), `expected --model among ${opts.join(', ')}`);
+  assert.ok(opts.includes('--effort'), `expected --effort among ${opts.join(', ')}`);
+});
+
 test('ft search, stats, and status expose --json', () => {
   const program = buildCli();
   for (const name of ['search', 'stats', 'status']) {

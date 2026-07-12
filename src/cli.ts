@@ -2321,6 +2321,8 @@ export function buildCli() {
     .option('--regex', 'Use simple regex classification instead of LLM')
     .option('--unified', 'Classify unified canonical bookmarks (LLM by default, or --regex)')
     .addOption(engineOption())
+    .option('--model <model>', 'Model override passed to the engine (e.g. gpt-5.6-luna)')
+    .option('--effort <effort>', 'Reasoning effort passed to the engine (low | medium | high | xhigh | max)')
     .action(safe(async (options) => {
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
@@ -2331,7 +2333,11 @@ export function buildCli() {
           return;
         }
         // LLM path: classify canonical rows the regex pass left unclassified.
-        const engine = await resolveEngine({ override: options.engine ? String(options.engine) : undefined });
+        const engine = await resolveEngine({
+          override: options.engine ? String(options.engine) : undefined,
+          model: options.model ? String(options.model) : undefined,
+          effort: options.effort ? String(options.effort) : undefined,
+        });
         const start = Date.now();
         process.stderr.write('Classifying unified bookmarks with LLM (batches of 50)...\n');
         const result = await classifyCanonicalBookmarksWithLlm({
@@ -2357,7 +2363,11 @@ export function buildCli() {
         console.log(`Indexed ${result.recordCount} bookmarks \u2192 ${result.dbPath}`);
         console.log(formatClassificationSummary(result.summary));
       } else {
-        const engine = await resolveEngine({ override: options.engine ? String(options.engine) : undefined });
+        const engine = await resolveEngine({
+          override: options.engine ? String(options.engine) : undefined,
+          model: options.model ? String(options.model) : undefined,
+          effort: options.effort ? String(options.effort) : undefined,
+        });
 
         let catStart = Date.now();
         process.stderr.write('Classifying categories with LLM (batches of 50, ~2 min per batch)...\n');
@@ -2394,9 +2404,15 @@ export function buildCli() {
     .description('Classify bookmarks by subject domain using LLM (ai, finance, etc.)')
     .option('--all', 'Re-classify all bookmarks, not just missing')
     .addOption(engineOption())
+    .option('--model <model>', 'Model override passed to the engine (e.g. gpt-5.6-luna)')
+    .option('--effort <effort>', 'Reasoning effort passed to the engine (low | medium | high | xhigh | max)')
     .action(safe(async (options) => {
       if (!requireData()) return;
-      const engine = await resolveEngine({ override: options.engine ? String(options.engine) : undefined });
+      const engine = await resolveEngine({
+        override: options.engine ? String(options.engine) : undefined,
+        model: options.model ? String(options.model) : undefined,
+        effort: options.effort ? String(options.effort) : undefined,
+      });
       const start = Date.now();
       process.stderr.write('Classifying bookmark domains with LLM (batches of 50, ~2 min per batch)...\n');
       const result = await classifyDomainsWithLlm({
@@ -3218,6 +3234,8 @@ export function buildCli() {
     .option('--unified', 'Compile from the unified canonical index (all sources: X, Raindrop, GitHub Stars, YouTube, Projects)')
     .option('--json', 'Output JSON result instead of text')
     .addOption(engineOption())
+    .option('--model <model>', 'Model override passed to the engine (e.g. gpt-5.6-luna)')
+    .option('--effort <effort>', 'Reasoning effort passed to the engine (low | medium | high | xhigh | max)')
     .action(safe(async (options) => {
       if (options.unified && !requireUnifiedIndex()) return;
       if (!options.unified && !requireIndex()) return;
@@ -3249,6 +3267,8 @@ export function buildCli() {
           full: options.full,
           unified: Boolean(options.unified),
           engineOverride: options.engine ? String(options.engine) : undefined,
+          modelOverride: options.model ? String(options.model) : undefined,
+          effortOverride: options.effort ? String(options.effort) : undefined,
           onProgress: (s) => process.stderr.write(s + '\n'),
         });
         const elapsed = ((Date.now() - start) / 1000).toFixed(1);

@@ -66,6 +66,8 @@ export interface CompileOptions {
   engineOverride?: string;
   unified?: boolean;
   onProgress?: (status: string) => void;
+  modelOverride?: string;
+  effortOverride?: string;
 }
 
 export interface CompileResult {
@@ -494,7 +496,11 @@ async function doCompile(
   startTime: number,
   onlySet: Set<string> | null,
 ): Promise<CompileResult> {
-  const engine = await resolveEngine({ override: options.engineOverride });
+  const engine = await resolveEngine({
+    override: options.engineOverride,
+    model: options.modelOverride,
+    effort: options.effortOverride,
+  });
   progress(`Using ${engine.name}`);
 
   progress('Initializing md directories...');
