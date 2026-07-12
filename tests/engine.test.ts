@@ -74,7 +74,7 @@ test('detectAvailableEngines: returns array of available engines', async () => {
 
   // Each entry should be a known engine name
   for (const name of available) {
-    assert.ok(['claude', 'codex', 'grok', 'droid'].includes(name), `unexpected engine: ${name}`);
+    assert.ok(['claude', 'codex', 'grok', 'droid', 'agy'].includes(name), `unexpected engine: ${name}`);
   }
 });
 
@@ -149,8 +149,8 @@ test('resolveEngine: carries explicit model and effort into engine args', async 
     if (available.length === 0) return;
 
     const engineName = available[0];
-    if (engineName === 'droid') {
-      // Droid has no CLI args to verify; skip this test.
+    if (engineName === 'droid' || engineName === 'agy') {
+      // Droid has no CLI args; agy has no effort flag.
       return;
     }
     const model = engineName === 'codex'
@@ -375,6 +375,73 @@ test('resolveEngine: grok defaults to grok-4.5 model and builds headless args', 
     process.env.PATH = origPath;
     if (origGrokModel !== undefined) process.env.FT_GROK_MODEL = origGrokModel;
     else delete process.env.FT_GROK_MODEL;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('resolveEngine: agy defaults to Gemini 3.5 Flash (High) model and builds headless args', async () => {
+  if (process.platform === 'win32') return;
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-engine-agy-args-'));
+  const fakeBin = path.join(tmpDir, 'agy');
+  const origPath = process.env.PATH;
+  const origAgyModel = process.env.FT_AGY_MODEL;
+  process.env.PATH = tmpDir;
+  delete process.env.FT_AGY_MODEL;
+
+  try {
+    fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeBin, 0o755);
+
+    const { resolveEngine } = await import('../src/engine.js');
+    const resolved = await resolveEngine({ override: 'agy' });
+    assert.equal(resolved.name, 'agy');
+    assert.equal(resolved.model, 'Gemini 3.5 Flash (High)');
+    assert.equal(resolved.label, 'agy/Gemini 3.5 Flash (High)');
+
+    const args = resolved.config.args('hello', resolved, 'You are a test engine.');
+    assert.equal(args[0], '-p');
+    // System block is folded into the user prompt (no --system-prompt flag on agy).
+    assert.ok(args[1].startsWith('You are a test engine.'));
+    assert.ok(args[1].includes('---'));
+    assert.ok(args[1].endsWith('hello'));
+    assert.ok(args.includes('--print-timeout'));
+    assert.ok(args.includes('600s'));
+    assert.ok(args.includes('--model'));
+    assert.ok(args.includes('Gemini 3.5 Flash (High)'));
+  } finally {
+    process.env.PATH = origPath;
+    if (origAgyModel !== undefined) process.env.FT_AGY_MODEL = origAgyModel;
+    else delete process.env.FT_AGY_MODEL;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('resolveEngine: agy respects FT_AGY_MODEL override', async () => {
+  if (process.platform === 'win32') return;
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-engine-agy-model-'));
+  const fakeBin = path.join(tmpDir, 'agy');
+  const origPath = process.env.PATH;
+  const origAgyModel = process.env.FT_AGY_MODEL;
+  process.env.PATH = tmpDir;
+
+  try {
+    fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeBin, 0o755);
+
+    const { resolveEngine } = await import('../src/engine.js');
+    process.env.FT_AGY_MODEL = 'Gemini 3.1 Pro (High)';
+    const fromEnv = await resolveEngine({ override: 'agy' });
+    assert.equal(fromEnv.model, 'Gemini 3.1 Pro (High)');
+    assert.ok(fromEnv.config.args('hi', fromEnv).includes('Gemini 3.1 Pro (High)'));
+
+    const fromFlag = await resolveEngine({ override: 'agy', model: 'Claude Sonnet 4.6 (Thinking)' });
+    assert.equal(fromFlag.model, 'Claude Sonnet 4.6 (Thinking)');
+  } finally {
+    process.env.PATH = origPath;
+    if (origAgyModel !== undefined) process.env.FT_AGY_MODEL = origAgyModel;
+    else delete process.env.FT_AGY_MODEL;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

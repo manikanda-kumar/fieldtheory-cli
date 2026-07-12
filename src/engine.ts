@@ -112,10 +112,28 @@ const KNOWN_ENGINES: Record<string, EngineConfig> = {
     bin: 'droid',
     args: () => [],
   },
+  agy: {
+    bin: 'agy',
+    // Headless single-turn completion via Antigravity CLI (`agy -p`).
+    // Antigravity uses Google/Gemini subscription auth (separate from the
+    // Gemini API meter), so model choice is bounded by `agy models` labels.
+    // `--print-timeout` is an inside-engine kill switch; our spawn timeout
+    // still owns the actual deadline, but a generous 10m ceiling lets a
+    // stuck run exit cleanly instead of orphaning child processes.
+    args: (p, engine, system) => {
+      const prompt = system ? `${system}\n\n---\n\n${p}` : p;
+      return [
+        '-p',
+        prompt,
+        '--print-timeout', '600s',
+        ...(engine?.model ? ['--model', engine.model] : []),
+      ];
+    },
+  },
 };
 
 /** Order used when auto-detecting. */
-const PREFERENCE_ORDER = ['claude', 'codex', 'grok', 'droid'];
+const PREFERENCE_ORDER = ['claude', 'codex', 'grok', 'droid', 'agy'];
 
 // ── Detection ──────────────────────────────────────────────────────────
 
@@ -233,10 +251,25 @@ function resolveGrokModel(profileModel: string | undefined): string | undefined 
     ?? GROK_DEFAULT_MODEL;
 }
 
+/**
+ * Default model for the agy engine when neither --model nor FT_AGY_MODEL is
+ * set. The label shipped by Antigravity on this Mac is `Gemini 3.5 Flash (High)`
+ * (`agy models`); cheap, fast, and well-suited to batch wiki synthesis.
+ */
+const AGY_DEFAULT_MODEL = 'Gemini 3.5 Flash (High)';
+
+function resolveAgyModel(profileModel: string | undefined): string | undefined {
+  return cleanOptional(profileModel)
+    ?? cleanOptional(process.env.FT_AGY_MODEL)
+    ?? AGY_DEFAULT_MODEL;
+}
+
 function resolve(name: string, profile: EngineRunProfile = {}): ResolvedEngine {
   const model = name === 'grok'
     ? resolveGrokModel(profile.model)
-    : cleanOptional(profile.model);
+    : name === 'agy'
+      ? resolveAgyModel(profile.model)
+      : cleanOptional(profile.model);
   const effort = cleanOptional(profile.effort);
   // Web search is only meaningful for grok today; ignore the flag elsewhere.
   const webSearch = name === 'grok' && Boolean(profile.webSearch);
@@ -286,7 +319,9 @@ export async function resolveEngine(profile: EngineRunProfile = {}): Promise<Res
         : '';
       const fix = requestedEngine === 'droid'
         ? 'Set OPENCODE_GO_API_KEY, or pick a different engine.'
-        : 'Install it and log in, or pick a different engine.';
+        : requestedEngine === 'agy'
+          ? 'Install Antigravity (`brew install --cask antigravity`) and log in via `agy`, or pick a different engine.'
+          : 'Install it and log in, or pick a different engine.';
       throw new Error(
         `Engine "${requestedEngine}" is not available.${hint}\n${fix}`
       );
@@ -303,6 +338,7 @@ export async function resolveEngine(profile: EngineRunProfile = {}): Promise<Res
       '  - Claude Code: https://docs.anthropic.com/en/docs/claude-code\n' +
       '  - Codex CLI:   https://github.com/openai/codex\n' +
       '  - Grok Build:  https://x.ai/cli (installs the `grok` binary)\n' +
+      '  - Antigravity: https://antigravity.google (installs the `agy` binary, Gemini/Claude via subscription)\n' +
       'Or set OPENCODE_GO_API_KEY to use the droid engine (OpenCode Go cloud models).'
     );
   }

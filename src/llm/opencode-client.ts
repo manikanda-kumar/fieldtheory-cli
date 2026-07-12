@@ -2,6 +2,20 @@ const OPENCODE_URL = 'https://opencode.ai/zen/go/v1/chat/completions';
 const DEFAULT_MODEL = 'deepseek-v4-flash';
 const DEFAULT_MAX_TOKENS = 2000;
 
+/**
+ * True when the user has opted into disabling the reasoning model's thinking
+ * stage via `FT_DEEPSEEK_NO_REASONING=1`. Verified against the OpenCode Go
+ * proxy: passing `thinking: { type: 'disabled' }` returns plain text with no
+ * `reasoning_content` and no billed `reasoning_tokens`. Faster + cheaper at a
+ * small synthesis-quality cost.
+ */
+function thinkingDisabled(): boolean {
+  const v = process.env.FT_DEEPSEEK_NO_REASONING?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
+const THINKING_DISABLED_BODY = { thinking: { type: 'disabled' } };
+
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export interface OpenCodeClientOptions {
@@ -63,6 +77,7 @@ export function createOpenCodeClient(options: OpenCodeClientOptions = {}): OpenC
           messages: [{ role: 'user', content: chatOptions.prompt }],
           max_tokens: Math.max(600, chatOptions.maxTokens ?? DEFAULT_MAX_TOKENS),
           ...(chatOptions.temperature === undefined ? {} : { temperature: chatOptions.temperature }),
+          ...(thinkingDisabled() ? THINKING_DISABLED_BODY : {}),
         }),
       });
       const res = await raceWithTimeout(request, controller, timeoutMs);

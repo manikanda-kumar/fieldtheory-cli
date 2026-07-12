@@ -29,6 +29,24 @@ const DROID_DEFAULT_CHAIN = [
   'deepseek-v4-pro',
 ];
 
+/**
+ * True when the user has opted into disabling reasoning models' thinking
+ * stage (verified empirically against the OpenCode Go proxy: passing
+ * `thinking: { type: 'disabled' }` returns plain `message.content` with no
+ * `reasoning_content` and zero `reasoning_tokens`). This is faster and
+ * cheaper for batch synthesis (wiki pages, nightly digests, link enrichment)
+ * at modest synthesis-quality cost.
+ *
+ * Gated by env var `FT_DEEPSEEK_NO_REASONING=1` so current behaviour is the
+ * default. Set it when running a one-time `ft wiki --full` rebuild.
+ */
+function thinkingDisabled(): boolean {
+  const v = process.env.FT_DEEPSEEK_NO_REASONING?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
+const THINKING_DISABLED_BODY = { thinking: { type: 'disabled' } };
+
 export interface DroidEngineOptions {
   apiKey?: string;
   primaryModel?: string;
@@ -103,6 +121,7 @@ async function requestModel(
     body: JSON.stringify({
       model,
       messages,
+      ...(thinkingDisabled() ? THINKING_DISABLED_BODY : {}),
     }),
   });
 
