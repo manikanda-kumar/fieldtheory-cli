@@ -249,6 +249,10 @@ export function mdIndexPath(): string {
   return path.join(mdDir(), 'index.md');
 }
 
+export function mdHtmlPath(): string {
+  return path.join(mdDir(), 'index.html');
+}
+
 export function mdLogPath(): string {
   return path.join(mdDir(), 'log.md');
 }

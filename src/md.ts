@@ -19,6 +19,7 @@ import {
   mdDir, mdIndexPath, mdLogPath, mdStatePath, mdSchemaPath,
   mdCategoriesDir, mdDomainsDir, mdEntitiesDir, mdConceptsDir,
   mdSourcesDir,
+  mdHtmlPath,
 } from './paths.js';
 import {
   getCategoryCounts, getDomainCounts, sampleByCategory, sampleByDomain,
@@ -256,6 +257,55 @@ async function generateIndex(): Promise<string> {
   return lines.join('\n');
 }
 
+/** Generate a simple static HTML index with links to all wiki pages. */
+async function generateHtmlIndex(): Promise<string> {
+  const sourceFiles   = (await listFiles(mdSourcesDir())).filter(f => f.endsWith('.md')).sort();
+  const categoryFiles = (await listFiles(mdCategoriesDir())).filter(f => f.endsWith('.md')).sort();
+  const domainFiles   = (await listFiles(mdDomainsDir())).filter(f => f.endsWith('.md')).sort();
+  const entityFiles   = (await listFiles(mdEntitiesDir())).filter(f => f.endsWith('.md')).sort();
+  const conceptFiles  = (await listFiles(mdConceptsDir())).filter(f => f.endsWith('.md')).sort();
+  const now = new Date().toISOString().slice(0, 10);
+
+  function section(title: string, files: string[], subdir: string): string {
+    if (files.length === 0) return '';
+    const links = files.map(f => {
+      const name = f.replace(/\.md$/, '');
+      const label = name.replace(/-/g, ' ');
+      return `      <li><a href="${subdir}/${name}.md">${escapeHtml(label)}</a></li>`;
+    }).join('\n');
+    return `  <section>\n    <h2>${escapeHtml(title)} (${files.length})</h2>\n    <ul>\n${links}\n    </ul>\n  </section>\n`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FT Knowledge Base</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a1a1a; background: #fafafa; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+    .updated { color: #888; font-size: 0.85rem; margin-bottom: 2rem; }
+    h2 { font-size: 1.2rem; margin-top: 2rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.3rem; }
+    ul { list-style: none; padding: 0; columns: 2; column-gap: 2rem; }
+    li { padding: 0.15rem 0; break-inside: avoid; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    section { margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>FT Knowledge Base</h1>
+  <p class="updated">Last updated: ${now}</p>
+${section('Sources', sourceFiles, 'sources')}${section('Categories', categoryFiles, 'categories')}${section('Domains', domainFiles, 'domains')}${section('Entities', entityFiles, 'entities')}${section('Concepts', conceptFiles, 'concepts')}</body>
+</html>
+`;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 /** Grep-friendly log entry: `## [YYYY-MM-DD] type | detail` */
 export function logEntry(type: string, detail: string): string {
   const ts = new Date().toISOString().slice(0, 10);
@@ -475,6 +525,10 @@ async function doCompileUnified(
   const indexContent = await generateIndex();
   await writeMd(mdIndexPath(), indexContent);
 
+  progress('Generating index.html...');
+  const htmlContent = await generateHtmlIndex();
+  await writeMd(mdHtmlPath(), htmlContent);
+
   // ── Log + state ───────────────────────────────────────────────────────
   const elapsed = Math.round((Date.now() - startTime) / 1000);
   const totalPages = pagesCreated + pagesUpdated;
@@ -669,6 +723,10 @@ async function doCompile(
   progress('Regenerating index.md...');
   const indexContent = await generateIndex();
   await writeMd(mdIndexPath(), indexContent);
+
+  progress('Generating index.html...');
+  const htmlContent = await generateHtmlIndex();
+  await writeMd(mdHtmlPath(), htmlContent);
 
   // ── Log entry ───────────────────────────────────────────────────────────
   const elapsed = Math.round((Date.now() - startTime) / 1000);
