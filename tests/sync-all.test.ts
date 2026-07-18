@@ -16,6 +16,9 @@ test('buildSyncAllPlan supports dry-run planning with optional context sources',
     'canonical-index',
   ]);
   assert.deepEqual(plan.find((step) => step.id === 'youtube')?.command, ['sync-youtube', '--playlist', 'PL1', '--limit', '3']);
+  // Plain incremental sync: --continue resumes a saved deep cursor, which on a
+  // nightly schedule can pin the sync at the timeline tail and miss new saves.
+  assert.deepEqual(plan.find((step) => step.id === 'x')?.command, ['sync']);
   assert.equal(plan.find((step) => step.id === 'canonical-md')?.enabled, false);
   assert.equal(plan.find((step) => step.id === 'daily')?.enabled, false);
 });

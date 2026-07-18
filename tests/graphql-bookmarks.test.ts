@@ -917,6 +917,52 @@ test('syncBookmarksGraphQL: continue scans stop when old pages add no local reco
   }, existing);
 });
 
+test('syncBookmarksGraphQL: resumed sync that goes stale at the tail clears the saved cursor', async () => {
+  const existing = [
+    makeRecord({
+      id: '1234567890',
+      tweetId: '1234567890',
+      text: 'Existing bookmark',
+      postedAt: 'Tue Mar 10 12:00:00 +0000 2026',
+    }),
+  ];
+
+  await withIsolatedGapFillDataDir(async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      // Cursor-bearing empty pages: the tail of the bookmarks timeline.
+      return new Response(JSON.stringify(makeGraphQLResponse([], `cursor-${fetchCalls}`)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await syncBookmarksGraphQL({
+        incremental: false,
+        resumeCursor: 'deep-tail-cursor',
+        csrfToken: 'ct0',
+        cookieHeader: 'ct0=ct0; auth_token=auth',
+        delayMs: 0,
+        stalePageLimit: 2,
+      });
+
+      assert.equal(fetchCalls, 2);
+      assert.equal(result.added, 0);
+      assert.equal(result.stopReason, 'no new bookmarks (stale)');
+
+      const state = JSON.parse(await readFile(path.join(process.env.FT_DATA_DIR!, 'bookmarks-backfill-state.json'), 'utf8'));
+      assert.equal(state.stopReason, 'no new bookmarks (stale)');
+      // Re-saving the tail cursor would deadlock every later --continue run.
+      assert.equal(state.lastCursor, undefined);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }, existing);
+});
+
 test('syncBookmarksGraphQL: large incremental sync stops after reaching newest stored bookmark', async () => {
   const newestStored = makeTweetResult({
     rest_id: '1234567890',

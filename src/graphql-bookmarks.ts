@@ -814,9 +814,13 @@ export async function syncBookmarksGraphQL(
     lastIncrementalSyncAt: incremental ? syncedAt : previousMeta?.lastIncrementalSyncAt,
     totalBookmarks: existing.length,
   } satisfies BookmarkCacheMeta);
-  // Save cursor for resumption if sync stopped before reaching the end
+  // Save cursor for resumption if sync stopped before reaching the end.
+  // A resumed sync that goes stale has reached the tail of the timeline;
+  // keeping its cursor would make every later --continue resume at the tail
+  // and never see new bookmarks at the head.
   const terminalReasons = new Set(['end of bookmarks', 'caught up to newest stored bookmark']);
-  const savedCursor = terminalReasons.has(stopReason) ? undefined : cursor;
+  const tailStale = stopReason === 'no new bookmarks (stale)' && Boolean(options.resumeCursor);
+  const savedCursor = terminalReasons.has(stopReason) || tailStale ? undefined : cursor;
 
   await writeJson(statePath, updateState(prevState, {
     added: totalAdded,

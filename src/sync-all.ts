@@ -76,7 +76,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       id: 'x',
       label: 'Sync X bookmarks',
       source: 'x',
-      command: ['sync', '--continue'],
+      command: ['sync'],
       enabled: enabled('x'),
     },
     {
