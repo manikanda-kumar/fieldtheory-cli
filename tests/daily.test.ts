@@ -848,9 +848,19 @@ test('daily: interests classifies rising/steady/fading topics and finds active t
 
     assert.ok(markdown.split('\n').length <= 80);
     assert.match(markdown, /# Current Interests/);
-    // Threads: "agents" + "framework" appear in both saves and prompts.
-    assert.ok(data.threads.some((thread) => thread.term === 'agents' || thread.term === 'framework'),
-      `expected agents/framework thread, got ${JSON.stringify(data.threads)}`);
+    // Threads: "framework" appears in both saves and prompts; the generic
+    // "agents" unigram is stop-filtered but survives inside bigrams.
+    assert.ok(data.threads.some((thread) => thread.term === 'framework' || thread.term === 'agents framework'),
+      `expected framework thread, got ${JSON.stringify(data.threads)}`);
+    assert.ok(!data.threads.some((thread) => thread.term === 'agents'),
+      `generic unigram "agents" should be stop-filtered, got ${JSON.stringify(data.threads)}`);
+    // Bigrams sort ahead of unigrams.
+    const firstUnigram = data.threads.findIndex((thread) => !thread.term.includes(' '));
+    const lastBigram = data.threads.map((thread) => thread.term.includes(' ')).lastIndexOf(true);
+    if (firstUnigram !== -1 && lastBigram !== -1) {
+      assert.ok(lastBigram < firstUnigram,
+        `bigrams should precede unigrams, got ${JSON.stringify(data.threads.map((t) => t.term))}`);
+    }
   });
 });
 

@@ -8,7 +8,6 @@ import path from 'node:path';
 import { openDb } from '../db.js';
 import { pathExists, readJsonLines, writeMd } from '../fs.js';
 import { libraryDir, twitterBookmarksIndexPath } from '../paths.js';
-import { relatedSeedTerms } from '../canonical-bookmarks-db.js';
 import { followingCachePath } from '../following/paths.js';
 import { isFollowingSnapshotComplete } from '../following/db.js';
 import { projectsCachePath } from '../projects/paths.js';
@@ -17,6 +16,70 @@ import type { ProjectRecord } from '../projects/types.js';
 const RECENT_DAYS = 7;
 const BASELINE_DAYS = 30;
 const MAX_LINES = 80;
+
+/**
+ * Generic dev/agent vocabulary: present in most prompts and titles, so even
+ * high counts carry no interest signal. Filters standalone thread terms;
+ * bigrams keep one stop side ("claude code") but never both ("writing code").
+ */
+const THREAD_STOPTERMS = new Set([
+  'agent', 'agents', 'assistant', 'assistants', 'code', 'codes', 'coding', 'coder',
+  'writing', 'write', 'writes', 'written', 'thing', 'things', 'process', 'processes',
+  'engine', 'engines', 'using', 'used', 'uses', 'make', 'makes', 'making', 'made',
+  'need', 'needs', 'needed', 'want', 'wants', 'wanted', 'work', 'works', 'working',
+  'build', 'builds', 'building', 'built', 'run', 'runs', 'running', 'question',
+  'questions', 'help', 'file', 'files', 'folder', 'project', 'projects', 'task',
+  'tasks', 'test', 'tests', 'testing', 'error', 'errors', 'issue', 'issues',
+  'good', 'better', 'best', 'right', 'sure', 'look', 'looks', 'looking', 'check',
+  'checks', 'checked', 'update', 'updates', 'updated', 'change', 'changes', 'changed',
+  'time', 'times', 'data', 'line', 'lines', 'page', 'pages', 'item', 'items',
+  'list', 'lists', 'name', 'names', 'user', 'users', 'thanks', 'please', 'also',
+  'model', 'models', 'output', 'outputs', 'input', 'inputs', 'below', 'above',
+  'explain', 'explains', 'explained', 'result', 'results', 'response', 'responses',
+  'prompt', 'prompts', 'summary', 'example', 'examples', 'detail', 'details',
+  'section', 'sections', 'version', 'versions', 'option', 'options', 'long', 'short',
+  'exactly', 'asked', 'asking', 'said', 'tell', 'tells', 'telling', 'told',
+  'give', 'gives', 'giving', 'given', 'show', 'shows', 'showing', 'shown',
+  'find', 'finds', 'finding', 'found', 'know', 'knows', 'knowing', 'known',
+  'keep', 'keeps', 'keeping', 'kept', 'start', 'starts', 'starting', 'started',
+]);
+
+/** Function words never useful in any position, including inside bigrams. */
+const BIGRAM_STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'this', 'that', 'these', 'those', 'have',
+  'has', 'had', 'was', 'were', 'are', 'is', 'be', 'been', 'being', 'will', 'would',
+  'could', 'should', 'can', 'may', 'might', 'must', 'not', 'but', 'you', 'your',
+  'our', 'their', 'its', 'his', 'her', 'them', 'they', 'what', 'when', 'where',
+  'which', 'who', 'why', 'how', 'about', 'into', 'over', 'under', 'than', 'then',
+  'there', 'here', 'some', 'more', 'most', 'very', 'just', 'like', 'only', 'all',
+  'any', 'each', 'other', 'out', 'now', 'new', 'one', 'two', 'get', 'got', 'does',
+  'doing', 'done', 'dont', 'cant', 'lets', 'http', 'https', 'www', 'com',
+  'nothing', 'something', 'anything', 'everything', 'nobody', 'somebody',
+  'anybody', 'everybody', 'none', 'else', 'every', 'always', 'never', 'still',
+  'already', 'again', 'though', 'maybe', 'actually', 'really', 'probably',
+  'currently', 'instead', 'because', 'before', 'after', 'while', 'without',
+]);
+
+/**
+ * Thread terms for one text: specificity-filtered unigrams plus adjacent-word
+ * bigrams. Bigrams survive one generic side ("claude code") but not two.
+ */
+export function interestThreadTerms(text: string): string[] {
+  const tokens = text.toLowerCase().split(/[^a-z0-9_]+/)
+    .filter((token) => token.length >= 3 && !/^\d+$/.test(token) && !BIGRAM_STOPWORDS.has(token));
+  const terms: string[] = [];
+  for (const token of tokens) {
+    if (token.length < 4 || THREAD_STOPTERMS.has(token)) continue;
+    if (!terms.includes(token)) terms.push(token);
+    if (terms.length >= 20) break;
+  }
+  for (let i = 0; i + 1 < tokens.length && terms.length < 40; i += 1) {
+    if (THREAD_STOPTERMS.has(tokens[i]) && THREAD_STOPTERMS.has(tokens[i + 1])) continue;
+    const bigram = `${tokens[i]} ${tokens[i + 1]}`;
+    if (!terms.includes(bigram)) terms.push(bigram);
+  }
+  return terms;
+}
 
 export interface TopicVelocity {
   topic: string;
@@ -90,7 +153,7 @@ async function recentItemTerms(sinceIso: string): Promise<Map<string, number>> {
     );
     for (const row of rows[0]?.values ?? []) {
       if (!inWindowMs(row[2], sinceMs, Number.POSITIVE_INFINITY)) continue;
-      const terms = relatedSeedTerms(`${row[0] ?? ''} ${row[1] ?? ''}`, 20);
+      const terms = interestThreadTerms(`${row[0] ?? ''} ${row[1] ?? ''}`);
       for (const term of terms) counts.set(term, (counts.get(term) ?? 0) + 1);
     }
   } catch {
@@ -101,23 +164,29 @@ async function recentItemTerms(sinceIso: string): Promise<Map<string, number>> {
   return counts;
 }
 
-async function promptTerms(sinceIso: string): Promise<Map<string, number>> {
+async function promptTerms(sinceIso: string): Promise<{ counts: Map<string, number>; totalPrompts: number }> {
   const counts = new Map<string, number>();
   const cachePath = projectsCachePath();
-  if (!(await pathExists(cachePath))) return counts;
+  if (!(await pathExists(cachePath))) return { counts, totalPrompts: 0 };
 
   const sinceMs = Date.parse(sinceIso);
   const records = await readJsonLines<ProjectRecord>(cachePath);
+  // Repeated identical prompts (agent loops, resumed sessions) would otherwise
+  // multiply their terms into fake "asked 50×" threads.
+  const seenPrompts = new Set<string>();
   for (const record of records) {
     for (const prompt of record.recentPrompts ?? []) {
       const ms = Date.parse(prompt.timestamp);
       if (!Number.isFinite(ms) || ms < sinceMs) continue;
-      for (const term of relatedSeedTerms(prompt.text, 20)) {
+      const normalized = prompt.text.replace(/\s+/g, ' ').trim().toLowerCase();
+      if (seenPrompts.has(normalized)) continue;
+      seenPrompts.add(normalized);
+      for (const term of interestThreadTerms(prompt.text)) {
         counts.set(term, (counts.get(term) ?? 0) + 1);
       }
     }
   }
-  return counts;
+  return { counts, totalPrompts: seenPrompts.size };
 }
 
 export async function computeInterests(now: Date = new Date()): Promise<InterestsData> {
@@ -146,11 +215,18 @@ export async function computeInterests(now: Date = new Date()): Promise<Interest
   fading.sort((a, b) => b.baselineWeekly - a.baselineWeekly);
 
   const consumption = await recentItemTerms(recentSince);
-  const prompts = await promptTerms(recentSince);
+  const { counts: prompts, totalPrompts } = await promptTerms(recentSince);
+  // Bigrams outrank unigrams: "context engineering" is a thread, "context" is noise.
+  const isBigram = (term: string): number => (term.includes(' ') ? 1 : 0);
+  // A unigram in over a quarter of all prompts is prompt boilerplate, not an
+  // interest; specific bigrams are exempt.
+  const boilerplateCap = totalPrompts >= 8 ? Math.max(2, Math.ceil(totalPrompts * 0.25)) : Number.POSITIVE_INFINITY;
   const threads = [...prompts.entries()]
     .filter(([term, count]) => count >= 2 && (consumption.get(term) ?? 0) >= 2)
+    .filter(([term, count]) => isBigram(term) === 1 || count <= boilerplateCap)
     .map(([term, promptCount]) => ({ term, consumptionCount: consumption.get(term) ?? 0, promptCount }))
-    .sort((a, b) => (b.consumptionCount + b.promptCount) - (a.consumptionCount + a.promptCount))
+    .sort((a, b) => (isBigram(b.term) - isBigram(a.term))
+      || (b.consumptionCount + b.promptCount) - (a.consumptionCount + a.promptCount))
     .slice(0, 8);
 
   const experts: InterestsData['experts'] = [];
