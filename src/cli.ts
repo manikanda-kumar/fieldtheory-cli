@@ -1541,7 +1541,8 @@ export function buildCli() {
           return;
         }
         console.log(`  ✓ Digest written: ${result.digestPath}`);
-        console.log(`    themes: ${result.themes.length} (${result.usedLlm ? 'llm' : 'mechanical'})${groundExternal ? ' · grounded' : ''}`);
+        console.log(`    themes: ${result.themes.length} (${result.usedLlm ? `llm via ${result.llmEngine ?? 'default'}` : 'mechanical'})${groundExternal ? ' · grounded' : ''}`);
+        if (!result.usedLlm && result.llmError) console.log(`    llm failed: ${result.llmError}`);
         console.log(`    reviews: ${result.reviewsDue} due · ${result.reviewsQueued} queued for tomorrow`);
         if (result.enrichedCount > 0) console.log(`    enriched links available: ${result.enrichedCount}`);
         if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);

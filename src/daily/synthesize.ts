@@ -72,6 +72,10 @@ export interface SynthesizeDailyResult {
   digestPath: string;
   themes: DailyTheme[];
   usedLlm: boolean;
+  /** Engine label that produced the themes (e.g. "grok", "agy (fallback)"). */
+  llmEngine?: string;
+  /** Why every LLM attempt failed, when synthesis fell back to mechanical. */
+  llmError?: string;
   droppedCitations: number;
   themedCount: number;
   alsoSavedCount: number;
@@ -334,6 +338,7 @@ export function renderDigestMarkdown(
   coverage: DailyCoverage,
   dueReviews: ReviewCard[] = [],
   reviewsQueued = 0,
+  llmMeta: { engine?: string; error?: string } = {},
 ): string {
   const notesSuffix = (url: string | null | undefined): string => {
     const videoId = extractYoutubeVideoId(url);
@@ -374,6 +379,8 @@ export function renderDigestMarkdown(
   lines.push(`sources: [${sources.join(', ')}]`);
   lines.push(`themes: ${themes.length}`);
   lines.push(`synthesis: ${usedLlm ? 'llm' : 'mechanical'}`);
+  if (usedLlm && llmMeta.engine) lines.push(`synthesis_engine: "${llmMeta.engine.replace(/"/g, "'")}"`);
+  if (!usedLlm && llmMeta.error) lines.push(`synthesis_error: "${llmMeta.error.replace(/"/g, "'")}"`);
   lines.push(`collected: ${coverage.counts.collected}`);
   lines.push(`themed: ${coverage.counts.themed}`);
   lines.push(`also_saved: ${coverage.counts.alsoSaved}`);
@@ -545,7 +552,8 @@ export async function synthesizeDaily(
   let themes: DailyTheme[] = [];
   let usedLlm = false;
   let droppedCitations = 0;
-  let llmFailed = false;
+  let llmEngine: string | undefined;
+  let llmError: string | undefined;
   const enrichedItemIds = new Set(options.enrichedItemIds ?? []);
   const promptItems = collection.items.filter((item) => contentLength(item.searchText) >= THIN_CONTENT_CHARS || enrichedItemIds.has(item.id));
   const thinSkipped = collection.items.length - promptItems.length;
@@ -554,6 +562,7 @@ export async function synthesizeDaily(
     const promptItemIds = new Set(promptItems.map((item) => item.id));
     const promptCollection: DailyCollection = { ...collection, items: promptItems };
     const promptConnected = connected.filter(({ item }) => promptItemIds.has(item.id));
+    const errors: string[] = [];
     try {
       const aliases = buildDailyAliases(promptCollection, promptConnected);
       const profile: EngineRunProfile = {
@@ -561,22 +570,55 @@ export async function synthesizeDaily(
         // Grounded digests need the engine's web/X tools when available (grok).
         ...(groundExternal ? { webSearch: true } : {}),
       };
-      const invoke = options.invoke ?? ((prompt: string) => defaultInvoke(profile, prompt));
-      const raw = await invoke(buildDailyPrompt(promptCollection, promptConnected, aliases, { groundExternal }));
-      const jsonText = extractJsonArray(raw);
-      if (jsonText) {
-        const validated = validateThemes(JSON.parse(jsonText), promptCollection, promptConnected, aliases);
-        themes = validated.themes;
-        droppedCitations = validated.dropped;
-        usedLlm = themes.length > 0;
-      } else llmFailed = true;
-    } catch {
-      // LLM unavailable or invalid output — fall back to mechanical grouping.
-      llmFailed = true;
+      const prompt = buildDailyPrompt(promptCollection, promptConnected, aliases, { groundExternal });
+      // Unattended runs hit transient engine flakiness: retry the primary
+      // engine once, then try the fallback engine before going mechanical.
+      const primaryLabel = profile.engine ?? 'default';
+      const fallbackEngine = (process.env.FT_DAILY_FALLBACK_ENGINE ?? 'agy').trim();
+      const attempts: Array<{ label: string; invoke: (prompt: string) => Promise<string> }> = options.invoke
+        ? [{ label: primaryLabel, invoke: options.invoke }]
+        : [
+            { label: primaryLabel, invoke: (p) => defaultInvoke(profile, p) },
+            { label: `${primaryLabel} (retry)`, invoke: (p) => defaultInvoke(profile, p) },
+            ...(fallbackEngine && fallbackEngine !== 'none' && fallbackEngine !== primaryLabel
+              ? [{
+                  label: `${fallbackEngine} (fallback)`,
+                  // Fresh profile: the primary's model/effort don't transfer across engines.
+                  invoke: (p: string) => defaultInvoke({ engine: fallbackEngine, ...(groundExternal ? { webSearch: true } : {}) }, p),
+                }]
+              : []),
+          ];
+      for (const attempt of attempts) {
+        try {
+          const raw = await attempt.invoke(prompt);
+          const jsonText = extractJsonArray(raw);
+          if (!jsonText) {
+            errors.push(`${attempt.label}: no JSON theme array in output`);
+            continue;
+          }
+          const validated = validateThemes(JSON.parse(jsonText), promptCollection, promptConnected, aliases);
+          if (validated.themes.length === 0) {
+            errors.push(`${attempt.label}: no theme survived citation validation`);
+            continue;
+          }
+          themes = validated.themes;
+          droppedCitations = validated.dropped;
+          usedLlm = true;
+          llmEngine = attempt.label;
+          break;
+        } catch (error) {
+          errors.push(`${attempt.label}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    } catch (error) {
+      errors.push(`prompt build: ${error instanceof Error ? error.message : String(error)}`);
     }
     // On an LLM failure the fallback intentionally covers all items, including
     // thin links: it is a mechanical availability fallback, not synthesis.
-    if (llmFailed) themes = mechanicalThemes(collection);
+    if (!usedLlm) {
+      llmError = errors.join(' | ').replace(/\s+/g, ' ').slice(0, 400) || 'unknown';
+      themes = mechanicalThemes(collection);
+    }
   }
 
   const themedIds = new Set(themes.flatMap((theme) => theme.itemIds));
@@ -619,6 +661,7 @@ export async function synthesizeDaily(
     : await queueReviewCards(collection.items, now);
   await writeMd(digestPath, renderDigestMarkdown(
     collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, relatedReviewQueue.added + reviewQueue.added,
+    { engine: llmEngine, error: llmError },
   ));
   if (!collection.isExplicitDate) {
     const meta = await readDailyMeta();
@@ -637,6 +680,8 @@ export async function synthesizeDaily(
     digestPath,
     themes,
     usedLlm,
+    llmEngine,
+    llmError,
     droppedCitations,
     themedCount: themedIds.size,
     alsoSavedCount: alsoSavedIds.length,

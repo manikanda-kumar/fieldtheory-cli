@@ -325,10 +325,38 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
     assert.equal(result.usedLlm, false);
     assert.equal(result.themes.length, 1);
     assert.match(result.themes[0].title, /github-stars/);
+    assert.match(result.llmError ?? '', /engine down/);
     const digest = await readFileText(result.digestPath);
     assert.match(digest, /synthesis: mechanical/);
+    assert.match(digest, /synthesis_error: ".*engine down.*"/);
     assert.match(digest, /## System details/);
     assert.match(digest, /- raindrop: never synced/);
+  });
+});
+
+test('daily: successful synthesis records the engine label in result and frontmatter', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/labeled-tool', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool with detailed commentary about architecture, deployment tradeoffs, operational considerations, and practical implementation guidance. '.repeat(2) }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const connected = await connectDailyItems(collection);
+    const alias = 'i1';
+    const result = await synthesizeDaily(collection, connected, {
+      profile: { engine: 'grok' },
+      invoke: async () => JSON.stringify([
+        { title: 'Labeled theme', summary: 'One tool.', itemIds: [alias] },
+      ]),
+    });
+
+    assert.equal(result.usedLlm, true);
+    assert.equal(result.llmEngine, 'grok');
+    assert.equal(result.llmError, undefined);
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /synthesis: llm/);
+    assert.match(digest, /synthesis_engine: "grok"/);
   });
 });
 
