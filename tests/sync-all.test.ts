@@ -3,6 +3,25 @@ import assert from 'node:assert/strict';
 import { buildSyncAllPlan, formatSyncAllResult, runSyncAll } from '../src/sync-all.js';
 
 test('buildSyncAllPlan supports dry-run planning with optional context sources', () => {
+  const savedKey = process.env.TWEETSMASH_API_KEY;
+  delete process.env.TWEETSMASH_API_KEY;
+  try {
+    const withKeyPlan = (() => {
+      process.env.TWEETSMASH_API_KEY = 'k';
+      const plan = buildSyncAllPlan({ dryRun: true, noSynthesis: true });
+      delete process.env.TWEETSMASH_API_KEY;
+      return plan;
+    })();
+    assert.equal(withKeyPlan.find((step) => step.id === 'tweetsmash')?.enabled, true);
+    assert.deepEqual(withKeyPlan.find((step) => step.id === 'tweetsmash')?.command, ['sync-tweetsmash', '--no-index']);
+    runPlanAssertions();
+  } finally {
+    if (savedKey !== undefined) process.env.TWEETSMASH_API_KEY = savedKey;
+    else delete process.env.TWEETSMASH_API_KEY;
+  }
+});
+
+function runPlanAssertions(): void {
   const plan = buildSyncAllPlan({ dryRun: true, xList: '123', playlist: 'PL1', youtubeLimit: 3, noSynthesis: true });
 
   assert.deepEqual(plan.filter((step) => step.enabled).map((step) => step.id), [
@@ -21,7 +40,7 @@ test('buildSyncAllPlan supports dry-run planning with optional context sources',
   assert.deepEqual(plan.find((step) => step.id === 'x')?.command, ['sync']);
   assert.equal(plan.find((step) => step.id === 'canonical-md')?.enabled, false);
   assert.equal(plan.find((step) => step.id === 'daily')?.enabled, false);
-});
+}
 
 test('buildSyncAllPlan runs the daily digest step in the synthesis tail', () => {
   const plan = buildSyncAllPlan({});

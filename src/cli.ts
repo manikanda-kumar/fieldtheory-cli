@@ -42,6 +42,7 @@ import { askMd } from './md-ask.js';
 import { lintMd, fixLintIssues } from './md-lint.js';
 import { exportBookmarks, exportCanonicalBookmarks } from './md-export.js';
 import { renderViz } from './bookmarks-viz.js';
+import { applyTweetsmashEnrichment, formatTweetsmashResult, syncTweetsmash } from './tweetsmash.js';
 import { syncRaindropBookmarks } from './raindrop/sync.js';
 import type { SyncRaindropOptions } from './raindrop/sync.js';
 import { syncGitHubStars } from './github-stars/sync.js';
@@ -1342,6 +1343,35 @@ export function buildCli() {
     }));
 
   // ── sync-raindrop ──────────────────────────────────────────────────────
+
+  program
+    .command('sync-tweetsmash')
+    .description('Enrich X bookmarks with Tweetsmash data: bookmark dates, labels, read state (needs TWEETSMASH_API_KEY)')
+    .option('--max-pages <n>', 'Max API pages this run (100 posts/page, 100 req/hour limit)', (v: string) => Number(v))
+    .option('--rebuild', 'Refetch the full Tweetsmash archive instead of stopping at known posts')
+    .option('--no-index', 'Skip search index rebuild after enrichment')
+    .option('--json', 'JSON output')
+    .action(safe(async (options) => {
+      ensureDataDir();
+      const sync = await syncTweetsmash({
+        maxPages: Number.isFinite(options.maxPages) ? Number(options.maxPages) : undefined,
+        rebuild: Boolean(options.rebuild),
+      });
+      const apply = await applyTweetsmashEnrichment();
+      let indexed = false;
+      if (options.index !== false && (apply.datesSet > 0 || apply.tagsMerged > 0 || apply.flagged > 0)) {
+        await buildIndex({ force: true });
+        await rebuildCanonicalIndex();
+        indexed = true;
+      }
+      if (options.json) {
+        printJson({ schemaVersion: 1, sync, apply, indexed });
+        return;
+      }
+      console.log(formatTweetsmashResult(sync, apply));
+      if (!sync.complete) console.log('  Rate limited mid-crawl — rerun later to resume (cursor saved).');
+      if (indexed) console.log('  ✓ Search + canonical indexes rebuilt');
+    }));
 
   program
     .command('sync-raindrop')

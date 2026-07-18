@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-export type SyncAllSource = 'following' | 'x' | 'x-list' | 'raindrop' | 'github-stars' | 'projects' | 'youtube';
+export type SyncAllSource = 'following' | 'x' | 'tweetsmash' | 'x-list' | 'raindrop' | 'github-stars' | 'projects' | 'youtube';
 
 export interface SyncAllOptions {
   dryRun?: boolean;
@@ -39,7 +39,7 @@ export interface SyncAllRunner {
   run(command: string[]): Promise<{ exitCode: number | null }>;
 }
 
-const ALL_SOURCES: SyncAllSource[] = ['following', 'x', 'x-list', 'raindrop', 'github-stars', 'projects', 'youtube'];
+const ALL_SOURCES: SyncAllSource[] = ['following', 'x', 'tweetsmash', 'x-list', 'raindrop', 'github-stars', 'projects', 'youtube'];
 
 export function parseSyncAllSources(value: string | undefined): Set<SyncAllSource> | null {
   if (!value?.trim()) return null;
@@ -78,6 +78,15 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       source: 'x',
       command: ['sync'],
       enabled: enabled('x'),
+    },
+    {
+      id: 'tweetsmash',
+      label: 'Enrich X bookmarks via Tweetsmash',
+      source: 'tweetsmash',
+      // Index rebuild runs later in the pipeline; skip the per-step rebuild.
+      command: ['sync-tweetsmash', '--no-index'],
+      enabled: enabled('tweetsmash') && Boolean(process.env.TWEETSMASH_API_KEY),
+      reason: process.env.TWEETSMASH_API_KEY ? undefined : 'set TWEETSMASH_API_KEY to include',
     },
     {
       id: 'x-list',
