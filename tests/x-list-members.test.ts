@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -123,6 +123,22 @@ test('syncXListMembers writes diagnostics but only publishes complete stable sna
     assert.equal(await readFile(partial.latestPath, 'utf8'), beforeLatest);
     const diagnostic = await readFile(partial.jsonPath, 'utf8');
     assert.doesNotThrow(() => JSON.parse(diagnostic));
+  });
+});
+
+test('syncXListMembers does not call a legacy latest pointer complete', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const listsDir = path.join(dir, 'x-lists');
+    await mkdir(listsDir, { recursive: true });
+    await writeFile(path.join(listsDir, '123-members-latest.json'), JSON.stringify({
+      listId: '123', members: [{ userId: '1', handle: 'alice' }],
+      stats: { count: 1, pagesFetched: 1, stopReason: 'end of members' },
+    }));
+    const result = await syncXListMembers({
+      ...session, listId: '123', delayMs: 0, now: () => '2026-07-18T10:00:04.000Z',
+      fetchImpl: async () => new Response('rate limited', { status: 429 }),
+    });
+    assert.equal(result.latestStatus, 'unavailable');
   });
 });
 

@@ -332,8 +332,18 @@ export async function writeListMembersDigest(digest: XListMembersDigest): Promis
   return {
     jsonPath,
     latestPath: paths.latest,
-    latestStatus: (await pathExists(paths.latest)) ? 'preserved' : 'unavailable',
+    latestStatus: await hasCompleteLatestSnapshot(paths.latest) ? 'preserved' : 'unavailable',
   };
+}
+
+async function hasCompleteLatestSnapshot(latestPath: string): Promise<boolean> {
+  if (!(await pathExists(latestPath))) return false;
+  try {
+    const latest = await readJson<XListMembersDigest>(latestPath);
+    return latest.stats?.snapshotComplete === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function syncXListMembers(
