@@ -47,6 +47,11 @@ export function mergeFollowingRecords(
   return { merged, added };
 }
 
+/** Keep only accounts observed during the named crawl, preserving their merged classification. */
+export function pruneToFollowingCrawl(records: FollowingRecord[], crawlStartedAt: string): FollowingRecord[] {
+  return records.filter((record) => record.seenInCrawlAt === crawlStartedAt);
+}
+
 export async function syncFollowing(options: FollowingSyncOptions = {}): Promise<FollowingSyncResult> {
   ensureFollowingDir();
   const cachePath = followingCachePath();
@@ -61,9 +66,25 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
     previousMeta = await readJson<FollowingMeta>(metaPath);
   }
 
-  // Cursor: a full re-crawl ignores it; otherwise resume from the saved cursor
-  // (an interrupted run's bottom cursor; `--continue` and default are the same resume).
-  const cursor = options.rebuild ? undefined : previousMeta?.cursor;
+  // Imported list members and old pre-snapshot caches cannot be distinguished
+  // from actual follows. Require one explicit authoritative crawl before any
+  // dependent consumer is allowed to treat this roster as Following.
+  const isLegacyCache = existing.length > 0 && previousMeta?.snapshotComplete === undefined;
+  if (isLegacyCache && !options.rebuild) {
+    throw new Error(
+      'Following roster predates authoritative snapshots. Run `ft sync-following --rebuild` once to establish a complete roster.'
+    );
+  }
+
+  const nowFn = options.now ?? (() => new Date());
+  const canResume = !options.rebuild
+    && previousMeta?.snapshotComplete === false
+    && Boolean(previousMeta.cursor)
+    && Boolean(previousMeta.crawlStartedAt);
+  const crawlStartedAt = canResume ? previousMeta!.crawlStartedAt! : nowFn().toISOString();
+  // A completed roster always starts at the top. Only an explicitly incomplete
+  // crawl with a saved cursor can resume.
+  const cursor = canResume ? previousMeta!.cursor : undefined;
 
   // Resolve the browser session ONCE here, then hand the cookies to fetchFollowing
   // so cookies (and any Keychain prompt) are only extracted a single time.
@@ -76,6 +97,20 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
       'Make sure you are logged into x.com in your browser and that the twid cookie is present.\n' +
       'You can also pass --cookies <ct0> <auth_token> with a valid session.'
     );
+  }
+
+  // Persist the new crawl marker before making network requests. If the first
+  // request fails, the old roster remains intact but is never mistaken for a
+  // complete authoritative snapshot.
+  if (!canResume) {
+    await writeJson(metaPath, {
+      cursor: undefined,
+      lastUpdated: previousMeta?.lastUpdated ?? crawlStartedAt,
+      count: existing.length,
+      viewerId,
+      snapshotComplete: false,
+      crawlStartedAt,
+    } satisfies FollowingMeta);
   }
 
   const maxMinutes = options.maxMinutes ?? 30;
@@ -93,27 +128,36 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
     queryId: options.queryId,
     csrfToken: session.csrfToken,
     cookieHeader: session.cookieHeader,
+    fetchImpl: options.fetchImpl,
+    now: () => nowFn().toISOString(),
   });
 
   // Merge results
-  const { merged, added } = mergeFollowingRecords(existing, fetchResult.records);
+  const observed = fetchResult.records.map((record) => ({ ...record, seenInCrawlAt: crawlStartedAt }));
+  const { merged, added } = mergeFollowingRecords(existing, observed);
+  const isTerminal = fetchResult.stopReason === 'end of following';
+  const seenThisCrawl = pruneToFollowingCrawl(merged, crawlStartedAt);
+  const suspiciousEmpty = isTerminal && existing.length > 0 && seenThisCrawl.length === 0;
+  const finalRecords = isTerminal && !suspiciousEmpty ? seenThisCrawl : merged;
+  const pruned = merged.length - finalRecords.length;
 
   // Write JSONL
-  await writeJsonLines(cachePath, merged);
+  await writeJsonLines(cachePath, finalRecords);
 
   // Write meta
-  const now = new Date().toISOString();
-  const isTerminal = fetchResult.stopReason === 'end of following';
+  const now = nowFn().toISOString();
   const meta: FollowingMeta = {
     cursor: isTerminal ? undefined : fetchResult.nextCursor,
     lastUpdated: now,
-    count: merged.length,
+    count: finalRecords.length,
     viewerId,
+    snapshotComplete: isTerminal && !suspiciousEmpty,
+    ...(isTerminal || suspiciousEmpty ? {} : { crawlStartedAt }),
   };
   await writeJson(metaPath, meta);
 
   // Rebuild index
-  const indexResult = await buildFollowingIndex();
+  await buildFollowingIndex();
 
   lastProgress = {
     page: fetchResult.pages,
@@ -127,10 +171,12 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
 
   return {
     added,
-    totalFollowing: merged.length,
+    totalFollowing: finalRecords.length,
     pages: fetchResult.pages,
     stopReason: fetchResult.stopReason,
     cachePath,
     metaPath,
+    snapshotComplete: meta.snapshotComplete === true,
+    pruned,
   };
 }

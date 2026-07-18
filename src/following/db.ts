@@ -269,6 +269,10 @@ export async function buildFollowingIndex(
     if (records.length > 0) {
       db.run('BEGIN TRANSACTION');
       try {
+        // following.jsonl is the authoritative roster snapshot. Rebuild the
+        // content table from it so accounts pruned after a completed crawl do
+        // not remain searchable in the FTS index.
+        db.run('DELETE FROM following');
         for (const record of records) {
           const preserved = existingRows.get(record.userId);
           // Compute bookmark overlap: preserve existing value from JSONL/DB,
@@ -295,6 +299,10 @@ export async function buildFollowingIndex(
         db.run('ROLLBACK');
         throw err;
       }
+    } else {
+      // A valid completed crawl can legitimately find zero follows; mirror
+      // that state rather than retaining stale rows from a prior snapshot.
+      db.run('DELETE FROM following');
     }
 
     if (shouldCloseBookmarksDb) bookmarksDb?.close();
@@ -482,6 +490,18 @@ export interface FollowingStatusView {
   classifiedCount: number;
   lastUpdated: string | null;
   cachePath: string;
+  snapshotComplete: boolean;
+}
+
+/** Legacy following metadata is untrusted until one full authoritative crawl completes. */
+export async function isFollowingSnapshotComplete(): Promise<boolean> {
+  try {
+    const { readJson } = await import('../fs.js');
+    const meta = await readJson<{ snapshotComplete?: unknown }>(followingMetaPath());
+    return meta.snapshotComplete === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getFollowingStatus(): Promise<FollowingStatusView> {
@@ -492,7 +512,7 @@ export async function getFollowingStatus(): Promise<FollowingStatusView> {
 
   try {
     const { readJson } = await import('../fs.js');
-    const meta = await readJson<{ lastUpdated?: string; count?: number }>(metaPath);
+    const meta = await readJson<{ lastUpdated?: string; count?: number; snapshotComplete?: unknown }>(metaPath);
     lastUpdated = meta.lastUpdated ?? null;
     count = meta.count ?? 0;
   } catch { /* no meta file yet */ }
@@ -504,7 +524,7 @@ export async function getFollowingStatus(): Promise<FollowingStatusView> {
     if (count === 0) count = stats.totalFollowing;
   } catch { /* DB may not exist yet */ }
 
-  return { count, classifiedCount, lastUpdated, cachePath };
+  return { count, classifiedCount, lastUpdated, cachePath, snapshotComplete: await isFollowingSnapshotComplete() };
 }
 
 // ── Classification update helpers ────────────────────────────────────────

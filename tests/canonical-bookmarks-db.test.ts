@@ -55,6 +55,11 @@ async function writeFollowing(dir: string, records: FollowingRecord[]): Promise<
   const followingDir = path.join(dir, 'following');
   await mkdir(followingDir, { recursive: true });
   await writeJsonLines(path.join(followingDir, 'following.jsonl'), records);
+  await writeJson(path.join(followingDir, 'meta.json'), {
+    lastUpdated: '2026-07-18T10:00:00.000Z',
+    count: records.length,
+    snapshotComplete: true,
+  });
 }
 
 async function writeXListMembers(dir: string, listId: string, members: Array<Record<string, unknown>>): Promise<void> {

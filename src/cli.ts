@@ -1901,7 +1901,6 @@ export function buildCli() {
     .option('--chrome-profile-directory <name>', 'Override Chrome profile directory')
     .option('--firefox-profile-dir <path>', 'Override Firefox profile dir')
     .option('--query-id <id>', 'Override the ListMembers GraphQL query id')
-    .option('--no-merge-following', 'Do not merge members into the following roster DB')
     .option('--json', 'Print the members digest JSON to stdout', false)
     .action(safe(async (list: string, options) => {
       const count = Number(options.count);
@@ -1924,8 +1923,6 @@ export function buildCli() {
         chromeProfileDirectory: stringOption(options.chromeProfileDirectory),
         firefoxProfileDir: stringOption(options.firefoxProfileDir),
         queryId: stringOption(options.queryId),
-        // commander: --no-merge-following sets mergeFollowing=false
-        mergeFollowing: options.mergeFollowing !== false,
       });
 
       if (options.json) {
@@ -1933,14 +1930,11 @@ export function buildCli() {
         return;
       }
 
-      const { digest, jsonPath, latestPath, following } = result;
+      const { digest, jsonPath, latestPath } = result;
       console.log(`  ✓ X list ${digest.listId} members: ${digest.members.length} accounts across ${digest.stats.pagesFetched} page(s)`);
       console.log(`  ✓ stop: ${digest.stats.stopReason}`);
       console.log(`  ✓ JSON: ${jsonPath}`);
       console.log(`  ✓ latest: ${latestPath}`);
-      if (following) {
-        console.log(`  ✓ following roster: +${following.added} new → ${following.total} total (${following.cachePath})`);
-      }
     }));
 
   // ── sync-following ──────────────────────────────────────────────────────
@@ -1995,6 +1989,7 @@ export function buildCli() {
 
       console.log(`\n  \u2713 ${result.added} new accounts synced (${result.totalFollowing} total following)`);
       console.log(`  ${friendlyStopReason(result.stopReason)}`);
+      console.log(`  snapshot: ${result.snapshotComplete ? 'complete' : 'incomplete'}${result.pruned ? ` · pruned ${result.pruned} no-longer-followed account(s)` : ''}`);
       console.log(`  \u2713 Data: ${followingDir()}\n`);
 
       if (options.classify) {
@@ -2735,6 +2730,7 @@ export function buildCli() {
         console.log(`  following: ${followingStatus.count}`);
         console.log(`  classified: ${followingStatus.classifiedCount}/${followingStatus.count}`);
         console.log(`  last updated: ${followingStatus.lastUpdated ?? 'never'}`);
+        console.log(`  snapshot: ${followingStatus.snapshotComplete ? 'complete' : 'incomplete — run ft sync-following --rebuild'}`);
         console.log(`  cache: ${followingStatus.cachePath}`);
       }
       if (projectsStatus && projectsStatus.count > 0) {

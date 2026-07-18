@@ -1,5 +1,5 @@
 import { searchCanonicalBookmarks, type CanonicalSearchResult } from './canonical-bookmarks-db.js';
-import { searchFollowing, type FollowingSearchResult } from './following/db.js';
+import { isFollowingSnapshotComplete, searchFollowing, type FollowingSearchResult } from './following/db.js';
 import { searchLibraryDocuments, type LibrarySearchResult } from './library.js';
 import { deriveTodaySources, readLatestXListDigest, type TodaySourceRow } from './x-list-store.js';
 
@@ -72,10 +72,11 @@ export async function researchLocalContext(query: string, options: ResearchOptio
   const limit = options.limit ?? 10;
   const trimmed = query.trim();
 
+  const followingComplete = await isFollowingSnapshotComplete();
   const [canonical, library, experts] = await Promise.all([
     searchCanonicalBookmarks({ query: trimmed, limit }).then((rows) => rows.map(canonicalHit)).catch(() => []),
     Promise.resolve().then(() => searchLibraryDocuments(trimmed, { limit })).catch(() => []),
-    searchFollowing({ query: trimmed, limit }).catch(() => []),
+    followingComplete ? searchFollowing({ query: trimmed, limit }).catch(() => []) : Promise.resolve([]),
   ]);
 
   let today: ResearchTodayHit[] = [];

@@ -10,6 +10,7 @@ import { pathExists, readJsonLines, writeMd } from '../fs.js';
 import { libraryDir, twitterBookmarksIndexPath } from '../paths.js';
 import { relatedSeedTerms } from '../canonical-bookmarks-db.js';
 import { followingCachePath } from '../following/paths.js';
+import { isFollowingSnapshotComplete } from '../following/db.js';
 import { projectsCachePath } from '../projects/paths.js';
 import type { ProjectRecord } from '../projects/types.js';
 
@@ -154,7 +155,7 @@ export async function computeInterests(now: Date = new Date()): Promise<Interest
 
   const experts: InterestsData['experts'] = [];
   const followingPath = followingCachePath();
-  if (await pathExists(followingPath)) {
+  if (await isFollowingSnapshotComplete() && await pathExists(followingPath)) {
     const risingTopics = rising.slice(0, 6).map((entry) => entry.topic);
     const records = await readJsonLines<FollowingRecordLike>(followingPath);
     for (const record of records) {

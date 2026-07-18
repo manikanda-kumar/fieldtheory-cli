@@ -22,6 +22,7 @@ import type { GitHubStarRecord } from './github-stars/types.js';
 import { projectsCachePath } from './projects/paths.js';
 import type { ProjectRecord } from './projects/types.js';
 import { followingCachePath } from './following/paths.js';
+import { isFollowingSnapshotComplete } from './following/db.js';
 import type { FollowingRecord } from './following/types.js';
 import type { ListMemberRecord, XListMembersDigest } from './x-list-members.js';
 
@@ -890,7 +891,7 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
     }
 
     const followingPath = followingCachePath();
-    if (await pathExists(followingPath)) {
+    if (await isFollowingSnapshotComplete() && await pathExists(followingPath)) {
       const followingRecords = await readJsonLines<FollowingRecord>(followingPath);
       sourceRows.push(...followingRecords
         .map(followingSourceFromRecord)

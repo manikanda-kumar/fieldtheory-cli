@@ -7,27 +7,20 @@
  * Writes:
  *   ~/.fieldtheory/x-lists/<listId>-members.json
  *   ~/.fieldtheory/x-lists/<listId>-members-latest.json  (stable pointer)
- * And optionally merges into the following roster (following.jsonl + following.db)
- * so network-prior / `ft experts` can use the handles.
+ *
+ * List membership is intentionally independent from the user's Following
+ * roster. An account is only marked followed when X's Following crawl returns
+ * it for the logged-in user.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { ensureXListsDir } from './paths.js';
-import { readJsonLines, writeJsonLines, writeJson, pathExists } from './fs.js';
 import {
   convertUserResultToFollowing,
   resolveBrowserSession,
   type BrowserSessionOptions,
 } from './following/fetch.js';
-import {
-  ensureFollowingDir,
-  followingCachePath,
-  followingMetaPath,
-} from './following/paths.js';
-import { buildFollowingIndex } from './following/db.js';
-import { mergeFollowingRecords } from './following/sync.js';
-import type { FollowingRecord, FollowingMeta } from './following/types.js';
 import { parseListId } from './x-list-fetch.js';
 
 const X_PUBLIC_BEARER =
@@ -308,62 +301,14 @@ export function writeListMembersDigest(digest: XListMembersDigest): { jsonPath: 
   return { jsonPath, latestPath: paths.latest };
 }
 
-/**
- * Merge list members into the following roster cache + rebuild FTS index.
- * Preserves existing classification fields when present.
- */
-export async function mergeListMembersIntoFollowing(
-  members: ListMemberRecord[],
-  listId: string
-): Promise<{ total: number; added: number; cachePath: string }> {
-  ensureFollowingDir();
-  const cachePath = followingCachePath();
-  const metaPath = followingMetaPath();
-
-  const existing = (await pathExists(cachePath))
-    ? await readJsonLines<FollowingRecord>(cachePath)
-    : [];
-
-  const asFollowing: FollowingRecord[] = members.map((m) => ({
-    userId: m.userId,
-    handle: m.handle,
-    name: m.name,
-    bio: m.bio,
-    profileImageUrl: m.profileImageUrl,
-    followerCount: m.followerCount,
-    followingCount: m.followingCount,
-    verified: m.verified,
-    syncedAt: m.syncedAt,
-  }));
-
-  const { merged, added } = mergeFollowingRecords(existing, asFollowing);
-  await writeJsonLines(cachePath, merged);
-
-  const meta: FollowingMeta & { sourceListId?: string } = {
-    lastUpdated: new Date().toISOString(),
-    count: merged.length,
-    sourceListId: listId,
-  };
-  // strip unknown field for strict writers — writeJson accepts any
-  await writeJson(metaPath, meta);
-  await buildFollowingIndex();
-
-  return { total: merged.length, added, cachePath };
-}
-
 export async function syncXListMembers(
-  options: FetchXListMembersOptions & { mergeFollowing?: boolean }
+  options: FetchXListMembersOptions,
 ): Promise<{
   digest: XListMembersDigest;
   jsonPath: string;
   latestPath: string;
-  following?: { total: number; added: number; cachePath: string };
 }> {
   const digest = await fetchXListMembers(options);
   const { jsonPath, latestPath } = writeListMembersDigest(digest);
-  let following: { total: number; added: number; cachePath: string } | undefined;
-  if (options.mergeFollowing !== false) {
-    following = await mergeListMembersIntoFollowing(digest.members, digest.listId);
-  }
-  return { digest, jsonPath, latestPath, following };
+  return { digest, jsonPath, latestPath };
 }

@@ -24,6 +24,8 @@ export interface FollowingRecord {
   expertiseSummary?: string;
   /** Count of user's bookmarks from this handle (filled from bookmarks.db). */
   bookmarkOverlap?: number;
+  /** Marks that this account was observed during an authoritative crawl. */
+  seenInCrawlAt?: string;
 }
 
 export interface FollowingMeta {
@@ -33,6 +35,10 @@ export interface FollowingMeta {
   count: number;
   /** The user ID whose following list was synced. */
   viewerId?: string;
+  /** True only after X's Following timeline has been read to its end. */
+  snapshotComplete?: boolean;
+  /** Stable marker shared by all pages of an interrupted/resumed crawl. */
+  crawlStartedAt?: string;
 }
 
 export interface FollowingSyncOptions {
@@ -66,6 +72,10 @@ export interface FollowingSyncOptions {
   classify?: boolean;
   /** Progress callback. */
   onProgress?: (status: FollowingSyncProgress) => void;
+  /** Injectable transport seam for tests. */
+  fetchImpl?: typeof fetch;
+  /** Injectable clock seam for snapshot lifecycle tests. */
+  now?: () => Date;
 }
 
 export interface FollowingSyncProgress {
@@ -84,4 +94,6 @@ export interface FollowingSyncResult {
   stopReason: string;
   cachePath: string;
   metaPath: string;
+  snapshotComplete: boolean;
+  pruned: number;
 }

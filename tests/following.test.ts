@@ -14,6 +14,8 @@ import {
 } from '../src/following/fetch.js';
 import {
   mergeFollowingRecords,
+  pruneToFollowingCrawl,
+  syncFollowing,
 } from '../src/following/sync.js';
 import {
   buildFollowingIndex,
@@ -31,6 +33,7 @@ import {
   classifyFollowingRegexAll,
 } from '../src/following/classify.js';
 import type { FollowingRecord } from '../src/following/types.js';
+import { syncXListMembers } from '../src/x-list-members.js';
 
 // ── Test helpers ──────────────────────────────────────────────────────────
 
@@ -291,6 +294,136 @@ test('mergeFollowingRecords sorts by handle', () => {
   assert.equal(merged[0].handle, 'alice');
   assert.equal(merged[1].handle, 'bob');
   assert.equal(merged[2].handle, 'zoe');
+});
+
+test('pruneToFollowingCrawl removes records not seen in the completed crawl', () => {
+  const marker = '2026-07-18T10:00:00.000Z';
+  const kept = pruneToFollowingCrawl([
+    makeRecord({ userId: '1', seenInCrawlAt: marker }),
+    makeRecord({ userId: '2', seenInCrawlAt: '2026-07-17T10:00:00.000Z' }),
+  ], marker);
+  assert.deepEqual(kept.map((record) => record.userId), ['1']);
+});
+
+function followingResponse(users: Array<{ id: string; handle: string }>, cursor?: string): string {
+  return JSON.stringify({
+    data: {
+      user: {
+        result: {
+          timeline: {
+            timeline: {
+              instructions: [{
+                type: 'TimelineAddEntries',
+                entries: [
+                  ...users.map((user) => ({
+                    entryId: `user-${user.id}`,
+                    content: { itemContent: { user_results: { result: {
+                      __typename: 'User', rest_id: user.id,
+                      legacy: { screen_name: user.handle, name: user.handle, description: `${user.handle} bio` },
+                    } } } },
+                  })),
+                  ...(cursor ? [{ entryId: 'cursor-bottom-next', content: { value: cursor } }] : []),
+                ],
+              }],
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+test('syncFollowing resumes one crawl, prunes stale accounts only at completion, and preserves classification', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const followingDir = path.join(dir, 'following');
+    await mkdir(followingDir, { recursive: true });
+    await writeFile(path.join(followingDir, 'following.jsonl'), [
+      JSON.stringify(makeRecord({ userId: '1', handle: 'alice', domains: ['ai'], primaryDomain: 'ai', expertise: ['agents'] })),
+      JSON.stringify(makeRecord({ userId: 'stale', handle: 'list-import' })),
+    ].join('\n') + '\n');
+    await writeFile(path.join(followingDir, 'meta.json'), JSON.stringify({
+      lastUpdated: '2026-07-17T00:00:00.000Z', count: 2, viewerId: '99', snapshotComplete: true,
+    }));
+    const now = () => new Date('2026-07-18T10:00:00.000Z');
+    const session = { csrfToken: 'ct0', cookieHeader: 'ct0=ct0; twid=u%3D99' };
+
+    const first = await syncFollowing({
+      ...session, maxPages: 1, delayMs: 0, maxMinutes: Infinity, now,
+      fetchImpl: async () => new Response(followingResponse([{ id: '1', handle: 'alice' }], 'next')),
+    });
+    assert.equal(first.snapshotComplete, false);
+    assert.equal(first.totalFollowing, 2, 'stale records remain while crawl is incomplete');
+
+    const second = await syncFollowing({
+      ...session, delayMs: 0, maxMinutes: Infinity, now,
+      fetchImpl: async () => new Response(followingResponse([{ id: '2', handle: 'bob' }])),
+    });
+    assert.equal(second.snapshotComplete, true);
+    assert.equal(second.pruned, 1);
+    assert.equal(second.totalFollowing, 2);
+
+    const records = (await readFile(path.join(followingDir, 'following.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepEqual(records.map((record) => record.userId).sort(), ['1', '2']);
+    assert.deepEqual(records.find((record) => record.userId === '1').domains, ['ai']);
+    assert.deepEqual(
+      (await searchFollowing({ query: 'list', limit: 10 })).map((record) => record.userId),
+      [],
+      'pruned accounts must not remain searchable in the Following index',
+    );
+    const meta = JSON.parse(await readFile(path.join(followingDir, 'meta.json'), 'utf8'));
+    assert.equal(meta.snapshotComplete, true);
+    assert.equal(meta.cursor, undefined);
+  });
+});
+
+test('syncFollowing refuses a legacy roster until an explicit rebuild and preserves a suspicious empty crawl', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const followingDir = path.join(dir, 'following');
+    await mkdir(followingDir, { recursive: true });
+    await writeFile(path.join(followingDir, 'following.jsonl'), JSON.stringify(makeRecord({ userId: '1', handle: 'alice' })) + '\n');
+    await writeFile(path.join(followingDir, 'meta.json'), JSON.stringify({ lastUpdated: '2026-07-17T00:00:00.000Z', count: 1 }));
+    const session = { csrfToken: 'ct0', cookieHeader: 'ct0=ct0; twid=u%3D99' };
+    await assert.rejects(
+      () => syncFollowing({ ...session, delayMs: 0, maxMinutes: Infinity }),
+      /sync-following --rebuild/,
+    );
+
+    const result = await syncFollowing({
+      ...session, rebuild: true, delayMs: 0, maxMinutes: Infinity,
+      fetchImpl: async () => new Response(followingResponse([])),
+    });
+    assert.equal(result.snapshotComplete, false);
+    assert.equal(result.totalFollowing, 1);
+    assert.equal(result.pruned, 0);
+  });
+});
+
+test('syncXListMembers leaves the Following cache and metadata untouched', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const followingDir = path.join(dir, 'following');
+    await mkdir(followingDir, { recursive: true });
+    const cachePath = path.join(followingDir, 'following.jsonl');
+    const metaPath = path.join(followingDir, 'meta.json');
+    await writeFile(cachePath, JSON.stringify(makeRecord({ userId: 'followed', handle: 'followed' })) + '\n');
+    await writeFile(metaPath, JSON.stringify({ count: 1, snapshotComplete: true }));
+    const beforeCache = await readFile(cachePath, 'utf8');
+    const beforeMeta = await readFile(metaPath, 'utf8');
+    const listResponse = JSON.stringify({
+      data: { list: { members_timeline: { timeline: { instructions: [{ type: 'TimelineAddEntries', entries: [{
+        entryId: 'user-2', content: { itemContent: { user_results: { result: {
+          __typename: 'User', rest_id: '2', legacy: { screen_name: 'listmember', name: 'List Member' },
+        } } } },
+      }] }] } } } },
+    });
+    await syncXListMembers({
+      listId: '123', csrfToken: 'ct0', cookieHeader: 'ct0=ct0', delayMs: 0,
+      fetchImpl: async () => new Response(listResponse),
+      now: () => '2026-07-18T10:00:00.000Z',
+    });
+    assert.equal(await readFile(cachePath, 'utf8'), beforeCache);
+    assert.equal(await readFile(metaPath, 'utf8'), beforeMeta);
+    assert.ok(existsSync(path.join(dir, 'x-lists', '123-members-latest.json')));
+  });
 });
 
 // ── DB index, search, list, show, stats ───────────────────────────────────
