@@ -71,6 +71,34 @@ test('library CRUD stays under canonical library root and uses conflict guards',
   });
 });
 
+test('library show returns bounded line slices with truncation metadata', async () => {
+  await withLibraryRoot(async () => {
+    const body = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join('\n');
+    await createLibraryDocument('entries/sliced', { content: body });
+
+    const whole = await showLibraryDocument('entries/sliced');
+    assert.equal(whole.totalLines, 10);
+    assert.equal(whole.fromLine, 1);
+    assert.equal(whole.truncated, false);
+    assert.equal(whole.content, body);
+
+    const middle = await showLibraryDocument('entries/sliced', { fromLine: 4, maxLines: 3 });
+    assert.equal(middle.content, 'line 4\nline 5\nline 6');
+    assert.equal(middle.fromLine, 4);
+    assert.equal(middle.totalLines, 10);
+    assert.equal(middle.truncated, true);
+
+    const tail = await showLibraryDocument('entries/sliced', { fromLine: 9, maxLines: 50 });
+    assert.equal(tail.content, 'line 9\nline 10');
+    assert.equal(tail.truncated, true);
+
+    // Out-of-range start clamps to the last line instead of erroring.
+    const clamped = await showLibraryDocument('entries/sliced', { fromLine: 99, maxLines: 5 });
+    assert.equal(clamped.fromLine, 10);
+    assert.equal(clamped.content, 'line 10');
+  });
+});
+
 test('library rejects traversal paths', async () => {
   await withLibraryRoot(async () => {
     await assert.rejects(

@@ -89,16 +89,24 @@ export function registerCompanionCommands(program: Command, safe: SafeAction): v
 
   library
     .command('show')
-    .description('Show one Library markdown file')
+    .description('Show one Library markdown file, optionally a bounded line range')
     .argument('<path>', 'Relative or absolute markdown path')
+    .option('--from-line <n>', 'Start at this 1-indexed line', (v: string) => Number(v))
+    .option('--max-lines <n>', 'Return at most this many lines', (v: string) => Number(v))
     .option('--json', 'JSON output')
     .action(safe(async (targetPath: string, options) => {
-      const doc = await showLibraryDocument(targetPath);
+      const doc = await showLibraryDocument(targetPath, {
+        fromLine: Number.isFinite(options.fromLine) ? Number(options.fromLine) : undefined,
+        maxLines: Number.isFinite(options.maxLines) ? Number(options.maxLines) : undefined,
+      });
       if (options.json) {
         printJson(doc);
         return;
       }
       console.log(doc.content);
+      if (doc.truncated) {
+        console.error(`  [lines ${doc.fromLine}-${doc.fromLine + doc.content.split('\n').length - 1} of ${doc.totalLines} — rerun with --from-line/--max-lines for more]`);
+      }
     }));
 
   library

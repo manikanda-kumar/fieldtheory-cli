@@ -22,12 +22,15 @@ export interface ResearchTodayHit {
 }
 
 export interface ResearchResult {
+  schemaVersion: 1;
   query: string;
   generatedAt: string;
   canonical: ResearchCanonicalHit[];
   library: LibrarySearchResult[];
   today: ResearchTodayHit[];
   experts: FollowingSearchResult[];
+  /** Per-group: true when the group filled its limit and more hits may exist. */
+  truncated: { canonical: boolean; library: boolean; today: boolean; experts: boolean };
   next: string[];
 }
 
@@ -91,15 +94,22 @@ export async function researchLocalContext(query: string, options: ResearchOptio
   }
 
   return {
+    schemaVersion: 1,
     query: trimmed,
     generatedAt: new Date().toISOString(),
     canonical,
     library,
     today,
     experts,
+    truncated: {
+      canonical: canonical.length >= limit,
+      library: library.length >= limit,
+      today: today.length >= limit,
+      experts: experts.length >= limit,
+    },
     next: [
       'ft show --unified <id> --json',
-      'ft library show <path> --json',
+      'ft library show <path> [--from-line <n> --max-lines <n>] --json',
       'ft experts show @handle --json',
       'ft ask "<question>" --json',
     ],

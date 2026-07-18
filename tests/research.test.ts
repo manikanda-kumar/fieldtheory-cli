@@ -65,6 +65,8 @@ test('researchLocalContext returns grouped canonical and library results with ne
     assert.deepEqual(result.canonical[0].sources, ['github-stars']);
     assert.equal(result.library.length, 1);
     assert.equal(result.library[0].relPath, 'memory.md');
+    assert.equal(result.schemaVersion, 1);
+    assert.deepEqual(result.truncated, { canonical: false, library: false, today: false, experts: false });
     assert.ok(result.next.includes('ft show --unified <id> --json'));
   });
 });

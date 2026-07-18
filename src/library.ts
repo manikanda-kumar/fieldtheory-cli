@@ -30,6 +30,17 @@ export interface LibrarySearchResult extends LibraryDocumentSummary {
 export interface LibraryDocument extends LibraryDocumentSummary {
   content: string;
   version: DocumentVersion;
+  totalLines: number;
+  /** 1-indexed first line of `content` within the file. */
+  fromLine: number;
+  /** True when `content` is a slice rather than the whole file. */
+  truncated: boolean;
+}
+
+export interface LibraryShowOptions {
+  /** 1-indexed line to start from. */
+  fromLine?: number;
+  maxLines?: number;
 }
 
 export interface LibraryWriteInput {
@@ -177,13 +188,21 @@ export function searchLibraryDocuments(query: string, options: LibraryListOption
   return results;
 }
 
-export async function showLibraryDocument(target: string): Promise<LibraryDocument> {
+export async function showLibraryDocument(target: string, options: LibraryShowOptions = {}): Promise<LibraryDocument> {
   const filePath = resolveLibraryPath(target);
   const { content, version } = await readMarkdownDocument(filePath);
+  const lines = content.split('\n');
+  const totalLines = lines.length;
+  const fromLine = Math.min(Math.max(1, Math.floor(options.fromLine ?? 1)), totalLines);
+  const maxLines = options.maxLines === undefined ? undefined : Math.max(1, Math.floor(options.maxLines));
+  const sliced = lines.slice(fromLine - 1, maxLines === undefined ? undefined : fromLine - 1 + maxLines);
   return {
     ...summaryForFile(filePath),
-    content,
+    content: sliced.join('\n'),
     version,
+    totalLines,
+    fromLine,
+    truncated: sliced.length < totalLines,
   };
 }
 

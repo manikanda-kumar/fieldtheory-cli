@@ -1011,7 +1011,7 @@ export async function searchCanonicalBookmarks(options: SearchCanonicalOptions):
     const rows = query
       ? db.exec(
         `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count, c.sources_json,
-                bm25(canonical_bookmarks_fts) AS score
+                bm25(canonical_bookmarks_fts, 10.0, 1.0) AS score
          FROM canonical_bookmarks c
          JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid
          WHERE canonical_bookmarks_fts MATCH ?
@@ -1164,7 +1164,7 @@ export async function findRelatedCanonicalBookmarks(seedText: string, options: F
 
     const rows = db.exec(
       `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count, c.sources_json,
-              bm25(canonical_bookmarks_fts) AS score, c.first_saved_at
+              bm25(canonical_bookmarks_fts, 10.0, 1.0) AS score, c.first_saved_at
        FROM canonical_bookmarks c
        JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid
        WHERE ${conditions.join(' AND ')}
@@ -1231,7 +1231,7 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
                     FROM canonical_bookmarks c
                     ${joinFts ? 'JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid' : ''}`;
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const order = `ORDER BY ${joinFts ? 'bm25(canonical_bookmarks_fts) ASC,' : ''} COALESCE(c.last_saved_at, c.first_saved_at, '') DESC, c.id ASC
+    const order = `ORDER BY ${joinFts ? 'bm25(canonical_bookmarks_fts, 10.0, 1.0) ASC,' : ''} COALESCE(c.last_saved_at, c.first_saved_at, '') DESC, c.id ASC
                    LIMIT ?
                    OFFSET ?`;
     // after/before are applied in JS because first_saved_at mixes ISO and

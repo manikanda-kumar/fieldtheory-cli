@@ -39,7 +39,7 @@ Field Theory has four main local surfaces:
 1. Check paths and status when setup matters: \`ft paths --json\`, \`ft status --json\`
 2. Start broad local research with \`ft research "<query>" --json\`
 3. Inspect exact unified items with \`ft show --unified <id> --json\`
-4. Read returned markdown paths with \`ft library show <path> --json\`
+4. Read returned markdown paths with \`ft library show <path> --from-line <n> --max-lines <n> --json\` (bounded reads; check \`truncated\`)
 5. Search your trusted following roster for domain experts: \`ft experts search "<query>" --json\`
 6. When the user asks what Field Theory document they are looking at, run \`ft current --json\`
 7. Check repo workflow state when branch/worktree/PR shape matters: \`ft state --json\`
@@ -55,7 +55,7 @@ When researching a topic, follow this tiered workflow before broad web search:
 \`\`\`bash
 ft research "<query>" --json                  # tier 1: unified local context
 ft show --unified <id> --json                 # inspect durable item provenance
-ft library show <path> --json                 # read deep markdown context
+ft library show <path> --max-lines 80 --json  # bounded markdown read (truncated flag + --from-line to continue)
 ft experts search "<query>" --json            # trusted accounts only
 # tier 3: broader web/X research via external tools (e.g. grok-cli)
 \`\`\`
@@ -172,7 +172,7 @@ ft possible prompt <node-id>
 ft possible nightly install --time 02:00 --defaults
 
 ft library search <query>      # Search Field Theory Library markdown
-ft library show <path>         # Read one Library page
+ft library show <path> [--from-line N --max-lines N]  # Read one Library page (bounded)
 ft library create <path>       # Create a Library page
 ft library update <path>       # Replace a Library page with --stdin/--file plus guard
 ft library open <path>         # Open a Library page in the Mac app
