@@ -15,8 +15,9 @@ function getToken(): string {
 
 async function fetchWithRetry<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getToken();
-  const attempts = 3;
+  const attempts = 6;
   const baseDelayMs = 1_000;
+  const maxRetryAfterMs = 90_000;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
@@ -37,8 +38,12 @@ async function fetchWithRetry<T>(url: string, options?: RequestInit): Promise<T>
         if (attempt === attempts - 1) {
           throw new Error(`Raindrop API rate limited (429) after ${attempts} attempts.`);
         }
+        const retryAfterSec = Number(response.headers.get('retry-after'));
         const backoff = baseDelayMs * 2 ** attempt + Math.floor(Math.random() * (baseDelayMs / 2));
-        await new Promise((resolve) => setTimeout(resolve, backoff));
+        const delayMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+          ? Math.min(retryAfterSec * 1_000, maxRetryAfterMs)
+          : backoff;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
         continue;
       }
 
