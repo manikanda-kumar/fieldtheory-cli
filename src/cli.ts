@@ -1909,6 +1909,7 @@ export function buildCli() {
     .option('--chrome-profile-directory <name>', 'Override Chrome profile directory')
     .option('--firefox-profile-dir <path>', 'Override Firefox profile dir')
     .option('--query-id <id>', 'Override the ListMembers GraphQL query id')
+    .option('--accept-large-shrink', 'Publish a complete roster that shrinks by more than 50%', false)
     .option('--json', 'Print the members digest JSON to stdout', false)
     .action(safe(async (list: string, options) => {
       const count = Number(options.count);
@@ -1931,6 +1932,7 @@ export function buildCli() {
         chromeProfileDirectory: stringOption(options.chromeProfileDirectory),
         firefoxProfileDir: stringOption(options.firefoxProfileDir),
         queryId: stringOption(options.queryId),
+        acceptLargeShrink: options.acceptLargeShrink === true,
       });
 
       if (options.json) {
@@ -1940,9 +1942,15 @@ export function buildCli() {
 
       const { digest, jsonPath, latestPath } = result;
       console.log(`  ✓ X list ${digest.listId} members: ${digest.members.length} accounts across ${digest.stats.pagesFetched} page(s)`);
+      console.log(`  ✓ snapshot: ${digest.stats.snapshotComplete ? 'complete' : 'incomplete'}`);
+      console.log(`  ✓ latest: ${result.latestStatus === 'updated'
+        ? 'updated'
+        : result.latestStatus === 'preserved'
+          ? 'preserved previous complete snapshot'
+          : 'no complete snapshot available'}`);
       console.log(`  ✓ stop: ${digest.stats.stopReason}`);
       console.log(`  ✓ JSON: ${jsonPath}`);
-      console.log(`  ✓ latest: ${latestPath}`);
+      console.log(`  ✓ latest file: ${latestPath}`);
     }));
 
   // ── sync-following ──────────────────────────────────────────────────────

@@ -618,7 +618,9 @@ async function readLatestXListMemberDigests(): Promise<XListMembersDigest[]> {
     if (!match) continue;
     try {
       const digest = await readJson<XListMembersDigest>(path.join(xListsDir(), file));
-      if (String(digest.listId) !== match[1] || !Array.isArray(digest.members)) continue;
+      if (String(digest.listId) !== match[1]
+        || !Array.isArray(digest.members)
+        || digest.stats?.snapshotComplete !== true) continue;
       digests.push(digest);
     } catch {
       // A partial or malformed snapshot must not block every other source.

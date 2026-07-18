@@ -6,16 +6,16 @@
  *
  * Writes:
  *   ~/.fieldtheory/x-lists/<listId>-members.json
- *   ~/.fieldtheory/x-lists/<listId>-members-latest.json  (stable pointer)
+ *   ~/.fieldtheory/x-lists/<listId>-members-latest.json  (complete snapshots only)
  *
  * List membership is intentionally independent from the user's Following
  * roster. An account is only marked followed when X's Following crawl returns
  * it for the logged-in user.
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { ensureXListsDir } from './paths.js';
+import { pathExists, readJson, writeJson } from './fs.js';
 import {
   convertUserResultToFollowing,
   resolveBrowserSession,
@@ -79,6 +79,8 @@ export interface XListMembersDigest {
     pagesFetched: number;
     stopReason: string;
     nextCursor?: string;
+    /** True only after X returned a page with no bottom cursor. */
+    snapshotComplete: boolean;
   };
 }
 
@@ -209,8 +211,11 @@ export async function fetchXListMembers(options: FetchXListMembersOptions): Prom
 
   const byId = new Map<string, ListMemberRecord>();
   let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  let consecutiveEmptyPages = 0;
   let pages = 0;
   let stopReason = 'max-pages';
+  const maxConsecutiveEmptyPages = 2;
 
   for (let page = 0; page < maxPages; page += 1) {
     const url = buildListMembersUrl(listId, queryId, count, cursor);
@@ -251,11 +256,28 @@ export async function fetchXListMembers(options: FetchXListMembersOptions): Prom
     pages += 1;
     for (const r of parsed.records) byId.set(r.userId, r);
 
-    if (parsed.records.length === 0 || !parsed.nextCursor) {
+    if (!parsed.nextCursor) {
       stopReason = 'end of members';
       break;
     }
+
     cursor = parsed.nextCursor;
+    if (seenCursors.has(cursor)) {
+      stopReason = 'cursor cycle';
+      break;
+    }
+    seenCursors.add(cursor);
+
+    if (parsed.records.length === 0) {
+      consecutiveEmptyPages += 1;
+      if (consecutiveEmptyPages >= maxConsecutiveEmptyPages) {
+        stopReason = 'too many empty pages';
+        break;
+      }
+    } else {
+      consecutiveEmptyPages = 0;
+    }
+
     if (page < maxPages - 1 && delayMs > 0) await sleep(delayMs);
   }
 
@@ -272,6 +294,7 @@ export async function fetchXListMembers(options: FetchXListMembersOptions): Prom
       pagesFetched: pages,
       stopReason,
       nextCursor: cursor,
+      snapshotComplete: stopReason === 'end of members',
     },
   };
 }
@@ -285,30 +308,57 @@ export function membersStorePaths(listId: string): {
   return {
     dir,
     stamped: (fetchedAt: string) => {
-      const stamp = fetchedAt.slice(0, 16).replace(/[:T]/g, '-');
+      const stamp = fetchedAt.slice(0, 19).replace(/[:T]/g, '-');
       return path.join(dir, `${listId}-members-${stamp}.json`);
     },
     latest: path.join(dir, `${listId}-members-latest.json`),
   };
 }
 
-export function writeListMembersDigest(digest: XListMembersDigest): { jsonPath: string; latestPath: string } {
+export async function writeListMembersDigest(digest: XListMembersDigest): Promise<{
+  jsonPath: string;
+  latestPath: string;
+  latestStatus: 'updated' | 'preserved' | 'unavailable';
+}> {
   const paths = membersStorePaths(digest.listId);
   const jsonPath = paths.stamped(digest.fetchedAt);
-  const payload = `${JSON.stringify(digest, null, 2)}\n`;
-  fs.writeFileSync(jsonPath, payload, { mode: 0o600 });
-  fs.writeFileSync(paths.latest, payload, { mode: 0o600 });
-  return { jsonPath, latestPath: paths.latest };
+  // Keep every attempt for diagnosis, but only a complete crawl is allowed to
+  // advance the stable roster consumed by the canonical index.
+  await writeJson(jsonPath, digest);
+  if (digest.stats.snapshotComplete) {
+    await writeJson(paths.latest, digest);
+    return { jsonPath, latestPath: paths.latest, latestStatus: 'updated' };
+  }
+  return {
+    jsonPath,
+    latestPath: paths.latest,
+    latestStatus: (await pathExists(paths.latest)) ? 'preserved' : 'unavailable',
+  };
 }
 
 export async function syncXListMembers(
-  options: FetchXListMembersOptions,
+  options: FetchXListMembersOptions & { acceptLargeShrink?: boolean },
 ): Promise<{
   digest: XListMembersDigest;
   jsonPath: string;
   latestPath: string;
+  latestStatus: 'updated' | 'preserved' | 'unavailable';
 }> {
   const digest = await fetchXListMembers(options);
-  const { jsonPath, latestPath } = writeListMembersDigest(digest);
-  return { digest, jsonPath, latestPath };
+  const paths = membersStorePaths(digest.listId);
+  if (digest.stats.snapshotComplete && !options.acceptLargeShrink && await pathExists(paths.latest)) {
+    try {
+      const previous = await readJson<XListMembersDigest>(paths.latest);
+      if (Array.isArray(previous.members)
+        && previous.members.length > 0
+        && digest.members.length < previous.members.length * 0.5) {
+        digest.stats.snapshotComplete = false;
+        digest.stats.stopReason = 'implausible shrink guard';
+      }
+    } catch {
+      // A malformed previous pointer cannot block a fresh complete snapshot.
+    }
+  }
+  const { jsonPath, latestPath, latestStatus } = await writeListMembersDigest(digest);
+  return { digest, jsonPath, latestPath, latestStatus };
 }

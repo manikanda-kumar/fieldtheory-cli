@@ -1007,6 +1007,13 @@ test('ft sync-projects: exposes expected options', () => {
   assert.ok(opts.includes('--dry-run'));
 });
 
+test('ft x-list-members exposes the large-shrink acceptance override', () => {
+  const program = buildCli();
+  const command = program.commands.find((entry: any) => entry.name() === 'x-list-members');
+  assert.ok(command);
+  assert.ok(command.options.some((option: any) => option.long === '--accept-large-shrink'));
+});
+
 test('ft sync-all: exposes unified refresh options', () => {
   const program = buildCli();
   const syncAllCmd = program.commands.find((c: any) => c.name() === 'sync-all');

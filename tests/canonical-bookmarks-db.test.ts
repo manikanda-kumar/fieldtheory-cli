@@ -69,7 +69,7 @@ async function writeXListMembers(dir: string, listId: string, members: Array<Rec
     listId,
     fetchedAt: '2026-07-18T10:00:00.000Z',
     members,
-    stats: { count: members.length, pagesFetched: 1, stopReason: 'end of members' },
+    stats: { count: members.length, pagesFetched: 1, stopReason: 'end of members', snapshotComplete: true },
   });
 }
 
@@ -307,6 +307,22 @@ test('rebuildCanonicalIndex excludes an incomplete Following snapshot', async ()
 
     await rebuildCanonicalIndex();
     assert.deepEqual(await listCanonicalBookmarks({ source: 'x-following', limit: 10 }), []);
+  });
+});
+
+test('rebuildCanonicalIndex excludes incomplete or legacy X-list member snapshots', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const member = {
+      userId: '42', handle: 'alice_ai', name: 'Alice AI', syncedAt: '2026-07-18T10:00:00.000Z',
+    };
+    await writeXListMembers(dir, '12345', [member]);
+    await writeJson(path.join(dir, 'x-lists', '12345-members-latest.json'), {
+      listId: '12345', fetchedAt: '2026-07-18T10:00:00.000Z', members: [member],
+      stats: { count: 1, pagesFetched: 1, stopReason: 'max-pages', snapshotComplete: false },
+    });
+
+    await rebuildCanonicalIndex();
+    assert.deepEqual(await listCanonicalBookmarks({ source: 'x-list-members', limit: 10 }), []);
   });
 });
 
