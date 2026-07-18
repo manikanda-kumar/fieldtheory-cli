@@ -263,8 +263,14 @@ export async function fetchFollowing(options: FetchFollowingOptions): Promise<{
 
   const allRecords = new Map<string, FollowingRecord>();
   let cursor = options.cursor;
+  const seenCursors = new Set(cursor ? [cursor] : []);
+  let consecutiveEmptyPages = 0;
   let pages = 0;
   let stopReason = 'max-pages';
+  // X sometimes returns a page made solely of unavailable accounts. Continue
+  // through a few such pages when it provides a new cursor, but never follow
+  // a cursor loop indefinitely.
+  const maxConsecutiveEmptyPages = 3;
 
   for (let page = 0; page < maxPages; page += 1) {
     if (deadline && Date.now() > deadline) {
@@ -304,14 +310,27 @@ export async function fetchFollowing(options: FetchFollowingOptions): Promise<{
       allRecords.set(record.userId, record);
     }
 
-    // A page with no users means the timeline is exhausted, even if X still
-    // hands back a cursor — stop rather than spin through empty pages.
-    if (parsed.records.length === 0 || !parsed.nextCursor) {
+    if (!parsed.nextCursor) {
       stopReason = 'end of following';
       break;
     }
 
     cursor = parsed.nextCursor;
+    if (seenCursors.has(cursor)) {
+      stopReason = 'cursor cycle';
+      break;
+    }
+    seenCursors.add(cursor);
+
+    if (parsed.records.length === 0) {
+      consecutiveEmptyPages += 1;
+      if (consecutiveEmptyPages >= maxConsecutiveEmptyPages) {
+        stopReason = 'too many empty pages';
+        break;
+      }
+    } else {
+      consecutiveEmptyPages = 0;
+    }
 
     if (page < maxPages - 1 && delayMs > 0) await sleep(delayMs);
   }

@@ -69,7 +69,7 @@ import { fetchXListDigest } from './x-list-fetch.js';
 import { renderXListHtml } from './x-list-html.js';
 import { syncXListMembers } from './x-list-members.js';
 import { syncFollowing } from './following/sync.js';
-import { searchFollowing, listFollowing, showFollowing, getFollowingStats, getFollowingStatus } from './following/db.js';
+import { isFollowingSnapshotComplete, searchFollowing, listFollowing, showFollowing, getFollowingStats, getFollowingStatus } from './following/db.js';
 import { classifyFollowingWithLlm, classifyFollowingRegexAll } from './following/classify.js';
 import { ensureFollowingDir, followingDir } from './following/paths.js';
 import type { FollowingSyncProgress } from './following/types.js';
@@ -375,6 +375,14 @@ export function parseVideoIdsText(text: string): string[] {
 
 function stringOption(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+async function requireCompleteFollowingSnapshot(): Promise<void> {
+  if (!(await isFollowingSnapshotComplete())) {
+    throw new Error(
+      'Following snapshot is incomplete. Run `ft sync-following` to finish the crawl or `ft sync-following --rebuild` to start again.'
+    );
+  }
 }
 
 function pathOption(value: unknown): string | undefined {
@@ -2051,6 +2059,7 @@ export function buildCli() {
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 20)
     .option('--json', 'JSON output')
     .action(safe(async (query: string, options) => {
+      await requireCompleteFollowingSnapshot();
       const results = await searchFollowing({ query, limit: Number(options.limit) || 20 });
       if (options.json) {
         printJson(results);
@@ -2083,6 +2092,7 @@ export function buildCli() {
     .option('--sort <mode>', 'Sort by: relevance, overlap, or followers', 'relevance')
     .option('--json', 'JSON output')
     .action(safe(async (options) => {
+      await requireCompleteFollowingSnapshot();
       const items = await listFollowing({
         domain: options.domain ? String(options.domain) : undefined,
         limit: Number(options.limit) || 30,
@@ -2109,6 +2119,7 @@ export function buildCli() {
     .argument('<handle>', 'X handle (with or without @)')
     .option('--json', 'JSON output')
     .action(safe(async (handle: string, options) => {
+      await requireCompleteFollowingSnapshot();
       const item = await showFollowing(String(handle));
       if (!item) {
         console.log(`  Account not found in following roster: ${String(handle)}`);

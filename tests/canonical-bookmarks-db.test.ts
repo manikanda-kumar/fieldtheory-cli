@@ -296,6 +296,20 @@ test('rebuildCanonicalIndex indexes following and latest X-list members as merge
   });
 });
 
+test('rebuildCanonicalIndex excludes an incomplete Following snapshot', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeFollowing(dir, [{
+      userId: '42', handle: 'alice_ai', name: 'Alice AI', syncedAt: '2026-07-18T10:00:00.000Z',
+    }]);
+    await writeJson(path.join(dir, 'following', 'meta.json'), {
+      lastUpdated: '2026-07-18T10:00:00.000Z', count: 1, snapshotComplete: false,
+    });
+
+    await rebuildCanonicalIndex();
+    assert.deepEqual(await listCanonicalBookmarks({ source: 'x-following', limit: 10 }), []);
+  });
+});
+
 test('rebuildCanonicalIndex merges GitHub-remote project with matching GitHub star', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeGitHubStars(dir, [githubStarRecord()]);

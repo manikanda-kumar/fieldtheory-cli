@@ -1053,6 +1053,38 @@ test('ft classify: exposes --unified with --regex', () => {
   assert.ok(opts.includes('--unified'));
 });
 
+test('ft experts refuses search, list, and show while the Following snapshot is incomplete', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-experts-incomplete-'));
+  const origEnv = process.env.FT_DATA_DIR;
+  const origExitCode = process.exitCode;
+  process.env.FT_DATA_DIR = tmpDir;
+  process.exitCode = 0;
+  fs.mkdirSync(path.join(tmpDir, 'following'), { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, 'following', 'meta.json'), JSON.stringify({
+    count: 1, snapshotComplete: false,
+  }));
+
+  try {
+    for (const args of [
+      ['experts', 'search', 'agents', '--json'],
+      ['experts', 'list', '--json'],
+      ['experts', 'show', '@alice', '--json'],
+    ]) {
+      process.exitCode = 0;
+      const stderr = await captureConsoleErrors(async () => {
+        await buildCli().parseAsync(['node', 'ft', ...args]);
+      });
+      assert.match(stderr, /Following snapshot is incomplete/);
+      assert.equal(process.exitCode, 1);
+    }
+  } finally {
+    if (origEnv === undefined) delete process.env.FT_DATA_DIR;
+    else process.env.FT_DATA_DIR = origEnv;
+    process.exitCode = origExitCode;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('ft classify --unified without --regex attempts LLM path', async () => {
   // classify --unified now supports LLM (not just --regex). Without an
   // engine available in the test env, it should fail gracefully without

@@ -52,6 +52,9 @@ export function pruneToFollowingCrawl(records: FollowingRecord[], crawlStartedAt
   return records.filter((record) => record.seenInCrawlAt === crawlStartedAt);
 }
 
+/** A full crawl that loses half the roster is more likely malformed than real. */
+const MIN_RETAINED_SNAPSHOT_FRACTION = 0.5;
+
 export async function syncFollowing(options: FollowingSyncOptions = {}): Promise<FollowingSyncResult> {
   ensureFollowingDir();
   const cachePath = followingCachePath();
@@ -99,20 +102,6 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
     );
   }
 
-  // Persist the new crawl marker before making network requests. If the first
-  // request fails, the old roster remains intact but is never mistaken for a
-  // complete authoritative snapshot.
-  if (!canResume) {
-    await writeJson(metaPath, {
-      cursor: undefined,
-      lastUpdated: previousMeta?.lastUpdated ?? crawlStartedAt,
-      count: existing.length,
-      viewerId,
-      snapshotComplete: false,
-      crawlStartedAt,
-    } satisfies FollowingMeta);
-  }
-
   const maxMinutes = options.maxMinutes ?? 30;
   const deadline = maxMinutes !== Infinity ? Date.now() + maxMinutes * 60_000 : undefined;
 
@@ -132,27 +121,76 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
     now: () => nowFn().toISOString(),
   });
 
+  // A failed/rate-limited first request has not changed the roster. Preserve
+  // the last known complete metadata so its consumers remain available.
+  if (fetchResult.pages === 0 && fetchResult.records.length === 0 && fetchResult.stopReason !== 'end of following') {
+    lastProgress = {
+      page: fetchResult.pages,
+      totalFetched: 0,
+      newAdded: 0,
+      running: false,
+      done: true,
+      stopReason: fetchResult.stopReason,
+    };
+    options.onProgress?.(lastProgress);
+    return {
+      added: 0,
+      totalFollowing: existing.length,
+      pages: fetchResult.pages,
+      stopReason: fetchResult.stopReason,
+      cachePath,
+      metaPath,
+      snapshotComplete: previousMeta?.snapshotComplete === true,
+      pruned: 0,
+    };
+  }
+
   // Merge results
   const observed = fetchResult.records.map((record) => ({ ...record, seenInCrawlAt: crawlStartedAt }));
   const { merged, added } = mergeFollowingRecords(existing, observed);
-  const isTerminal = fetchResult.stopReason === 'end of following';
+  const terminalResponse = fetchResult.stopReason === 'end of following';
   const seenThisCrawl = pruneToFollowingCrawl(merged, crawlStartedAt);
-  const suspiciousEmpty = isTerminal && existing.length > 0 && seenThisCrawl.length === 0;
-  const finalRecords = isTerminal && !suspiciousEmpty ? seenThisCrawl : merged;
+  const suspiciousEmpty = terminalResponse && existing.length > 0 && seenThisCrawl.length === 0;
+  const implausibleShrink = terminalResponse
+    && previousMeta?.snapshotComplete === true
+    && existing.length > 0
+    && seenThisCrawl.length < existing.length * MIN_RETAINED_SNAPSHOT_FRACTION;
+  const snapshotGuarded = suspiciousEmpty || implausibleShrink;
+  const isTerminal = terminalResponse && !snapshotGuarded;
+  const finalRecords = isTerminal ? seenThisCrawl : merged;
   const pruned = merged.length - finalRecords.length;
+  const stopReason = implausibleShrink
+    ? 'implausible shrink guard'
+    : suspiciousEmpty
+      ? 'suspicious empty crawl'
+      : fetchResult.stopReason;
+  const now = nowFn().toISOString();
+
+  // Only after fetchFollowing has returned do we mark a changed, incomplete
+  // crawl as such. A first-page exception or rate limit therefore leaves the
+  // previous complete snapshot usable.
+  if (!isTerminal) {
+    await writeJson(metaPath, {
+      cursor: fetchResult.nextCursor,
+      lastUpdated: now,
+      count: finalRecords.length,
+      viewerId,
+      snapshotComplete: false,
+      ...(fetchResult.nextCursor ? { crawlStartedAt } : {}),
+    } satisfies FollowingMeta);
+  }
 
   // Write JSONL
   await writeJsonLines(cachePath, finalRecords);
 
   // Write meta
-  const now = nowFn().toISOString();
   const meta: FollowingMeta = {
     cursor: isTerminal ? undefined : fetchResult.nextCursor,
     lastUpdated: now,
     count: finalRecords.length,
     viewerId,
     snapshotComplete: isTerminal && !suspiciousEmpty,
-    ...(isTerminal || suspiciousEmpty ? {} : { crawlStartedAt }),
+    ...(!isTerminal && fetchResult.nextCursor ? { crawlStartedAt } : {}),
   };
   await writeJson(metaPath, meta);
 
@@ -165,7 +203,7 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
     newAdded: added,
     running: false,
     done: true,
-    stopReason: fetchResult.stopReason,
+    stopReason,
   };
   options.onProgress?.(lastProgress);
 
@@ -173,7 +211,7 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
     added,
     totalFollowing: finalRecords.length,
     pages: fetchResult.pages,
-    stopReason: fetchResult.stopReason,
+    stopReason,
     cachePath,
     metaPath,
     snapshotComplete: meta.snapshotComplete === true,
