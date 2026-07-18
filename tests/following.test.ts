@@ -424,6 +424,57 @@ test('syncFollowing blocks an implausibly shrunken terminal crawl from pruning a
   });
 });
 
+test('syncFollowing blocks an implausible shrink after resuming until an explicit rebuild', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const followingDir = path.join(dir, 'following');
+    await mkdir(followingDir, { recursive: true });
+    const existing = Array.from({ length: 10 }, (_, index) => makeRecord({
+      userId: String(index + 1), handle: `person${index + 1}`,
+    }));
+    await writeFile(path.join(followingDir, 'following.jsonl'), existing.map((record) => JSON.stringify(record)).join('\n') + '\n');
+    await writeFile(path.join(followingDir, 'meta.json'), JSON.stringify({
+      lastUpdated: '2026-07-17T00:00:00.000Z', count: existing.length, viewerId: '99', snapshotComplete: true,
+    }));
+    const session = {
+      csrfToken: 'ct0', cookieHeader: 'ct0=ct0; twid=u%3D99', delayMs: 0, maxMinutes: Infinity,
+      now: () => new Date('2026-07-18T10:00:00.000Z'),
+    };
+
+    const partial = await syncFollowing({
+      ...session, maxPages: 1,
+      fetchImpl: async () => new Response(followingResponse([{ id: '1', handle: 'person1' }], 'next')),
+    });
+    assert.equal(partial.snapshotComplete, false);
+
+    const resumed = await syncFollowing({
+      ...session,
+      fetchImpl: async () => new Response(followingResponse([
+        { id: '2', handle: 'person2' },
+        { id: '3', handle: 'person3' },
+      ])),
+    });
+
+    assert.equal(resumed.stopReason, 'implausible shrink guard');
+    assert.equal(resumed.snapshotComplete, false);
+    assert.equal(resumed.pruned, 0);
+    assert.equal(resumed.totalFollowing, existing.length);
+    const cached = (await readFile(path.join(followingDir, 'following.jsonl'), 'utf8')).trim().split('\n');
+    assert.equal(cached.length, existing.length);
+
+    const rebuilt = await syncFollowing({
+      ...session, rebuild: true,
+      fetchImpl: async () => new Response(followingResponse([
+        { id: '1', handle: 'person1' },
+        { id: '2', handle: 'person2' },
+        { id: '3', handle: 'person3' },
+      ])),
+    });
+    assert.equal(rebuilt.snapshotComplete, true);
+    assert.equal(rebuilt.pruned, 7);
+    assert.equal(rebuilt.totalFollowing, 3);
+  });
+});
+
 test('syncFollowing preserves an unchanged complete snapshot after a first-page failure or rate limit', async () => {
   await withIsolatedDataDir(async (dir) => {
     const followingDir = path.join(dir, 'following');

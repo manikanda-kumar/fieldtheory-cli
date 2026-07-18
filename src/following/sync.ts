@@ -152,7 +152,7 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
   const seenThisCrawl = pruneToFollowingCrawl(merged, crawlStartedAt);
   const suspiciousEmpty = terminalResponse && existing.length > 0 && seenThisCrawl.length === 0;
   const implausibleShrink = terminalResponse
-    && previousMeta?.snapshotComplete === true
+    && !options.rebuild
     && existing.length > 0
     && seenThisCrawl.length < existing.length * MIN_RETAINED_SNAPSHOT_FRACTION;
   const snapshotGuarded = suspiciousEmpty || implausibleShrink;
