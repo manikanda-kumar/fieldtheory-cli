@@ -52,6 +52,7 @@ import { enrichBackfill, enrichThinItems, mergeEnrichmentSummaries } from './dai
 import { synthesizeDaily } from './daily/synthesize.js';
 import { writeInterests } from './daily/interests.js';
 import { dailyDigestPath } from './daily/paths.js';
+import { formatReviewPrompt, getReviewCard, gradeReviewCard, listDueReviewCards, type ReviewRating } from './daily/review.js';
 import { scanProjects } from './projects/scan.js';
 import { collectSessionPrompts } from './projects/sessions.js';
 import { getProjectsStatus, syncProjects } from './projects/sync.js';
@@ -1533,6 +1534,7 @@ export function buildCli() {
         }
         console.log(`  ✓ Digest written: ${result.digestPath}`);
         console.log(`    themes: ${result.themes.length} (${result.usedLlm ? 'llm' : 'mechanical'})${groundExternal ? ' · grounded' : ''}`);
+        console.log(`    reviews: ${result.reviewsDue} due · ${result.reviewsQueued} queued for tomorrow`);
         if (result.enrichedCount > 0) console.log(`    enriched links available: ${result.enrichedCount}`);
         if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);
         const interests = await writeInterests();
@@ -1747,6 +1749,59 @@ export function buildCli() {
         if (playlistIndexPath) console.log(`  ✓ Playlist index: ${playlistIndexPath}`);
       }
       if (failed > 0) process.exitCode = 1;
+    }));
+
+  // ── review ─────────────────────────────────────────────────────────────
+
+  const review = program
+    .command('review')
+    .description('Practice due retrieval prompts from earlier saved material')
+    .option('--limit <n>', 'Maximum due cards to show', (v: string) => Number(v), 3)
+    .action(safe(async (options) => {
+      const limit = typeof options.limit === 'number' && Number.isFinite(options.limit) ? Math.max(1, Math.floor(options.limit)) : 3;
+      const cards = await listDueReviewCards(new Date(), limit);
+      if (cards.length === 0) {
+        console.log('  No review cards are due today. New cards become due one day after they are created.');
+        return;
+      }
+      console.log(`  ${cards.length} review card${cards.length === 1 ? '' : 's'} due:\n`);
+      for (const card of cards) console.log(`  ${formatReviewPrompt(card)}\n`);
+    }));
+
+  review
+    .command('show')
+    .description('Reveal the source reminder for a review card')
+    .argument('<id>', 'Review card id')
+    .action(safe(async (id: string) => {
+      const card = await getReviewCard(id);
+      if (!card) {
+        console.error(`  Review card not found: ${id}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`\n  ${card.title}\n  Prompt: ${card.prompt}\n\n  Source reminder:\n  ${card.answer}`);
+      if (card.url) console.log(`\n  ${card.url}`);
+      console.log(`\n  Grade: ft review grade ${card.id} again|fuzzy|got-it`);
+    }));
+
+  review
+    .command('grade')
+    .description('Record a recall grade and schedule the next review')
+    .argument('<id>', 'Review card id')
+    .argument('<rating>', 'again, fuzzy, or got-it')
+    .action(safe(async (id: string, rating: string) => {
+      if (!['again', 'fuzzy', 'got-it'].includes(rating)) {
+        console.error('  Rating must be one of: again, fuzzy, got-it');
+        process.exitCode = 1;
+        return;
+      }
+      const card = await gradeReviewCard(id, rating as ReviewRating);
+      if (!card) {
+        console.error(`  Review card not found: ${id}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`  ✓ Next review in ${card.intervalDays} day${card.intervalDays === 1 ? '' : 's'} (${card.dueAt.slice(0, 10)})`);
     }));
 
   // ── x-list ──────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
 import { buildDailyAliases, buildDailyPrompt, contentLength, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+import { gradeReviewCard, listDueReviewCards, queueReviewCards } from '../src/daily/review.js';
 
 async function readFileText(filePath: string): Promise<string> {
   return readFile(filePath, 'utf8');
@@ -294,7 +295,9 @@ test('daily: synthesize validates citations, writes digest, and advances the rol
     assert.ok(result.droppedCitations >= 3);
 
     const digest = await readFileText(result.digestPath);
-    assert.match(digest, /# Daily Digest — 2026-07-07/);
+    assert.match(digest, /# Daily Learning Review — 2026-07-07/);
+    assert.match(digest, /## Recall first/);
+    assert.match(digest, /## Ponder/);
     assert.match(digest, /agent-runner/);
     assert.match(digest, /synthesis: llm/);
     assert.ok(!digest.includes('hallucinated'));
@@ -324,8 +327,47 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
     assert.match(result.themes[0].title, /github-stars/);
     const digest = await readFileText(result.digestPath);
     assert.match(digest, /synthesis: mechanical/);
-    assert.match(digest, /## Coverage/);
+    assert.match(digest, /## System details/);
     assert.match(digest, /- raindrop: never synced/);
+  });
+});
+
+test('daily: review cards are introduced tomorrow and grade into a spaced queue', async () => {
+  await withIsolatedDataDir(async () => {
+    const item: CanonicalRecentItem = {
+      id: 'canonical:review-source',
+      canonicalUrl: 'https://example.com/review-source',
+      displayTitle: 'Review source',
+      searchText: 'A detailed explanation of retrieval practice, contextual cues, and when to revisit an idea after first learning it.',
+      sources: ['raindrop'],
+      firstSavedAt: '2026-07-01T00:00:00.000Z',
+      lastSavedAt: '2026-07-01T00:00:00.000Z',
+      primaryCategory: null,
+      primaryDomain: null,
+    };
+    const started = new Date('2026-07-07T09:00:00.000Z');
+    const queued = await queueReviewCards([item], started);
+    assert.equal(queued.added, 1);
+    assert.deepEqual(await listDueReviewCards(started), []);
+
+    const due = await listDueReviewCards(new Date('2026-07-08T09:00:00.000Z'));
+    assert.equal(due.length, 1);
+    assert.match(due[0].prompt, /Without opening it/);
+
+    const graded = await gradeReviewCard(due[0].id, 'got-it', new Date('2026-07-08T09:00:00.000Z'));
+    assert.ok(graded);
+    assert.equal(graded.intervalDays, 3);
+    assert.equal(graded.dueAt, '2026-07-11T09:00:00.000Z');
+
+    const extended = await gradeReviewCard(due[0].id, 'got-it', new Date('2026-07-11T09:00:00.000Z'));
+    assert.ok(extended);
+    assert.equal(extended.intervalDays, 7);
+    assert.equal(extended.dueAt, '2026-07-18T09:00:00.000Z');
+
+    const reset = await gradeReviewCard(due[0].id, 'again', new Date('2026-07-18T09:00:00.000Z'));
+    assert.ok(reset);
+    assert.equal(reset.intervalDays, 1);
+    assert.equal(reset.dueAt, '2026-07-19T09:00:00.000Z');
   });
 });
 

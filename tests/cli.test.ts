@@ -138,6 +138,13 @@ test('ft enrich-backfill exposes limit, retry, concurrency, dry-run, and all opt
   assert.deepEqual(opts, ['--limit', '--dry-run', '--all', '--concurrency', '--retry-failed']);
 });
 
+test('ft review exposes due, show, and grade retrieval commands', () => {
+  const review = buildCli().commands.find((command: any) => command.name() === 'review');
+  assert.ok(review, 'review command should be registered');
+  assert.ok(review.options.some((option: any) => option.long === '--limit'));
+  assert.deepEqual(review.commands.map((command: any) => command.name()).sort(), ['grade', 'show']);
+});
+
 test('ft paths, current, state, recent, navigation aliases, library, commands, app, and install command groups are registered', () => {
   const program = buildCli();
   for (const name of [

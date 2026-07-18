@@ -10,12 +10,13 @@ import { pathExists, writeJson } from '../fs.js';
 import { writeMd } from '../fs.js';
 import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunProfile } from '../engine.js';
 import { extractJsonArray } from '../bookmark-classify-llm.js';
-import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+import { getCanonicalBookmarkById, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import { loadYoutubeState } from '../youtube/state.js';
 import { readDailyMeta, type DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+import { listDueReviewCards, queueReviewCards, type ReviewCard } from './review.js';
 
 const SNIPPET_CHARS = 240;
 const MAX_THEMES = 7;
@@ -63,6 +64,8 @@ export interface SynthesizeDailyOptions {
    * drops invented library item ids; external notes are URL-validated only.
    */
   groundExternal?: boolean;
+  /** Stable clock injection for review scheduling tests. */
+  now?: Date;
 }
 
 export interface SynthesizeDailyResult {
@@ -75,6 +78,8 @@ export interface SynthesizeDailyResult {
   /** Thin items are a subset of alsoSavedCount, never a separate rendering path. */
   thinSkipped: number;
   enrichedCount: number;
+  reviewsQueued: number;
+  reviewsDue: number;
   skipped: boolean;
 }
 
@@ -327,6 +332,8 @@ export function renderDigestMarkdown(
   usedLlm: boolean,
   youtubeNotes: Map<string, string> = new Map(),
   coverage: DailyCoverage,
+  dueReviews: ReviewCard[] = [],
+  reviewsQueued = 0,
 ): string {
   const notesSuffix = (url: string | null | undefined): string => {
     const videoId = extractYoutubeVideoId(url);
@@ -346,6 +353,19 @@ export function renderDigestMarkdown(
     const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
     return `- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`;
   };
+  const reflectionPrompt = (): string => {
+    const focus = themes[0]?.title ?? collection.items[0]?.displayTitle ?? 'today\'s material';
+    const project = collection.projectDeltas[0]?.repo;
+    if (project) {
+      return `What assumption in [[project:${project}]] might “${focus}” change? Name the smallest experiment that would test it.`;
+    }
+    const connectedItem = connected.find((entry) => entry.related.length > 0);
+    if (connectedItem?.related[0]) {
+      const older = connectedItem.related[0].title ?? connectedItem.related[0].url ?? 'an earlier save';
+      return `What changed between today’s “${connectedItem.item.displayTitle ?? connectedItem.item.canonicalUrl ?? 'save'}” and ${older}? State the difference in your own words.`;
+    }
+    return `Which item in “${focus}” deserves 20 focused minutes, and what question will you try to answer before opening it?`;
+  };
 
   const lines: string[] = [];
   lines.push('---');
@@ -362,9 +382,57 @@ export function renderDigestMarkdown(
   lines.push(`carried_over: ${coverage.counts.carriedOver}`);
   lines.push(`citations_dropped: ${coverage.counts.citationsDropped}`);
   lines.push(`undateable_excluded: ${coverage.counts.undateableExcluded}`);
+  lines.push(`reviews_due: ${dueReviews.length}`);
+  lines.push(`reviews_queued: ${reviewsQueued}`);
   lines.push('---');
   lines.push('');
-  lines.push(`# Daily Digest — ${collection.date}`);
+  lines.push(`# Daily Learning Review — ${collection.date}`);
+  lines.push('');
+
+  lines.push(`> **${collection.items.length} new saves · ${dueReviews.length} review${dueReviews.length === 1 ? '' : 's'} due · ${collection.projectDeltas.length} active project${collection.projectDeltas.length === 1 ? '' : 's'}**`);
+  lines.push('');
+
+  lines.push('## Recall first');
+  lines.push('');
+  if (dueReviews.length === 0) {
+    lines.push('No reviews are due today. New learning cards are introduced tomorrow so recall stays spaced.');
+  } else {
+    for (const card of dueReviews) {
+      lines.push(`### ${card.title}`);
+      lines.push('');
+      lines.push(`Saved ${card.savedAt?.slice(0, 10) ?? 'on an unknown date'} · ${card.sources.join(', ') || 'unknown source'}`);
+      lines.push('');
+      lines.push(`> ${card.prompt}`);
+      lines.push('');
+      lines.push('<details>');
+      lines.push('<summary>Reveal source reminder</summary>');
+      lines.push('');
+      lines.push(card.answer);
+      lines.push('');
+      lines.push('</details>');
+      lines.push('');
+      lines.push(`Grade after recalling: \`ft review grade ${card.id} again|fuzzy|got-it\``);
+      lines.push('');
+    }
+  }
+
+  lines.push('## Today\'s throughline');
+  lines.push('');
+  if (usedLlm) {
+    for (const theme of themes.slice(0, 3)) lines.push(`- **${theme.title}:** ${theme.summary}`);
+  } else {
+    lines.push('Synthesis was unavailable, so this is a structured inbox rather than a thematic briefing. The material below remains complete.');
+  }
+  lines.push('');
+
+  lines.push('## Ponder');
+  lines.push('');
+  lines.push(`> ${reflectionPrompt()}`);
+  lines.push('');
+  lines.push('Write a brief answer before opening more links; the point is to connect the material to your own work.');
+  lines.push('');
+
+  lines.push('## Today\'s material');
   lines.push('');
 
   for (const theme of themes) {
@@ -423,7 +491,10 @@ export function renderDigestMarkdown(
     lines.push('');
   }
 
-  lines.push('## Coverage');
+  lines.push('## System details');
+  lines.push('');
+  lines.push('<details>');
+  lines.push('<summary>Coverage and source freshness</summary>');
   lines.push('');
   lines.push('Source freshness:');
   for (const source of ['x', 'raindrop', 'github-stars', 'youtube', 'projects'] as const) {
@@ -432,6 +503,8 @@ export function renderDigestMarkdown(
   lines.push('- X profiles: following and X-list members are indexed for reference, but have no save date and are excluded from this activity window.');
   // thinSkipped is included in alsoSaved, preserving collected = themed + also-saved.
   lines.push(`- This run: collected ${coverage.counts.collected}; themed ${coverage.counts.themed}; also-saved ${coverage.counts.alsoSaved}; thin links skipped from synthesis ${coverage.counts.thinSkipped}; carried-over ${coverage.counts.carriedOver}; enriched links available to this digest ${coverage.counts.enriched}; citations dropped ${coverage.counts.citationsDropped}; undateable excluded (canonical total) ${coverage.counts.undateableExcluded}; synthesis ${coverage.counts.synthesis}.`);
+  lines.push('');
+  lines.push('</details>');
   lines.push('');
 
   return lines.join('\n');
@@ -450,6 +523,7 @@ export async function synthesizeDaily(
   ensureDailyDir();
   ensureDailyLibraryDir();
   const digestPath = dailyDigestPath(collection.date);
+  const now = options.now ?? new Date();
   const groundExternal = Boolean(options.groundExternal);
 
   if (collection.items.length === 0 && collection.projectDeltas.length === 0) {
@@ -462,6 +536,8 @@ export async function synthesizeDaily(
       alsoSavedCount: 0,
       thinSkipped: 0,
       enrichedCount: options.enrichedCount ?? 0,
+      reviewsQueued: 0,
+      reviewsDue: 0,
       skipped: true,
     };
   }
@@ -526,7 +602,24 @@ export async function synthesizeDaily(
     undateableExcluded: collection.undateableExcluded,
     synthesis: usedLlm ? 'llm' : 'mechanical',
   });
-  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage));
+  let relatedReviewQueue = { added: 0, total: 0 };
+  if (!collection.isExplicitDate) {
+    const relatedId = connected.flatMap((entry) => entry.related).at(0)?.id;
+    if (relatedId) {
+      const relatedItem = await getCanonicalBookmarkById(relatedId);
+      if (relatedItem) {
+        // One older, genuinely connected item starts the habit immediately.
+        relatedReviewQueue = await queueReviewCards([relatedItem], now, { initialDelayDays: 0, maxCards: 1 });
+      }
+    }
+  }
+  const dueReviews = collection.isExplicitDate ? [] : await listDueReviewCards(now);
+  const reviewQueue = collection.isExplicitDate
+    ? { added: 0, total: 0 }
+    : await queueReviewCards(collection.items, now);
+  await writeMd(digestPath, renderDigestMarkdown(
+    collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, relatedReviewQueue.added + reviewQueue.added,
+  ));
   if (!collection.isExplicitDate) {
     const meta = await readDailyMeta();
     const { lastRunItemId: _lastRunItemId, ...metaWithoutCursor } = meta;
@@ -549,6 +642,8 @@ export async function synthesizeDaily(
     alsoSavedCount: alsoSavedIds.length,
     thinSkipped,
     enrichedCount: options.enrichedCount ?? 0,
+    reviewsQueued: relatedReviewQueue.added + reviewQueue.added,
+    reviewsDue: dueReviews.length,
     skipped: false,
   };
 }

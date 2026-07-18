@@ -24,6 +24,11 @@ export function dailyMetaPath(): string {
   return path.join(dailyDir(), 'meta.json');
 }
 
+/** Durable spaced-retrieval queue for daily learning reviews. */
+export function dailyReviewPath(): string {
+  return path.join(dailyDir(), 'reviews.json');
+}
+
 /** Markdown output directory for daily digests. */
 export function dailyLibraryDir(): string {
   return path.join(libraryDir(), 'daily');
