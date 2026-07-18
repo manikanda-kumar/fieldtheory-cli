@@ -66,6 +66,7 @@ import { markPlaylistSynced, updateYoutubeState } from './youtube/state.js';
 import type { YtDlpAccessOptions } from './youtube/yt-dlp.js';
 import { fetchXListDigest } from './x-list-fetch.js';
 import { renderXListHtml } from './x-list-html.js';
+import { syncXListMembers } from './x-list-members.js';
 import { syncFollowing } from './following/sync.js';
 import { searchFollowing, listFollowing, showFollowing, getFollowingStats, getFollowingStatus } from './following/db.js';
 import { classifyFollowingWithLlm, classifyFollowingRegexAll } from './following/classify.js';
@@ -1829,6 +1830,62 @@ export function buildCli() {
       console.log(`  ✓ HTML: ${htmlPath}`);
       console.log(`  ✓ JSON: ${jsonPath}`);
       console.log('    Open in a browser; sort by reposts/likes/replies/quotes/views with the toolbar.');
+    }));
+
+  // ── x-list-members ──────────────────────────────────────────────────────
+
+  program
+    .command('x-list-members')
+    .description('Sync the member roster of an X/Twitter list (handles, bios) into local storage')
+    .argument('<list>', 'X list id or x.com/i/lists/<id> URL')
+    .option('--count <n>', 'Members per page (1-100)', (v: string) => Number(v), 100)
+    .option('--max-pages <n>', 'Max pages to paginate (default: 200)', (v: string) => Number(v), 200)
+    .option('--delay-ms <n>', 'Delay between pages in ms', (v: string) => Number(v), 600)
+    .option('--browser <id>', 'Browser session to read X cookies from (e.g. chrome, firefox)')
+    .option('--chrome-user-data-dir <path>', 'Override Chrome user data dir')
+    .option('--chrome-profile-directory <name>', 'Override Chrome profile directory')
+    .option('--firefox-profile-dir <path>', 'Override Firefox profile dir')
+    .option('--query-id <id>', 'Override the ListMembers GraphQL query id')
+    .option('--no-merge-following', 'Do not merge members into the following roster DB')
+    .option('--json', 'Print the members digest JSON to stdout', false)
+    .action(safe(async (list: string, options) => {
+      const count = Number(options.count);
+      if (!Number.isFinite(count) || count < 1 || count > 100) {
+        console.error('  Error: --count must be a number from 1 to 100.');
+        process.exitCode = 1;
+        return;
+      }
+      const maxPages = typeof options.maxPages === 'number' && Number.isFinite(options.maxPages)
+        ? options.maxPages
+        : 200;
+
+      const result = await syncXListMembers({
+        listId: list,
+        count,
+        maxPages,
+        delayMs: Number(options.delayMs) || 0,
+        browser: stringOption(options.browser),
+        chromeUserDataDir: stringOption(options.chromeUserDataDir),
+        chromeProfileDirectory: stringOption(options.chromeProfileDirectory),
+        firefoxProfileDir: stringOption(options.firefoxProfileDir),
+        queryId: stringOption(options.queryId),
+        // commander: --no-merge-following sets mergeFollowing=false
+        mergeFollowing: options.mergeFollowing !== false,
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify(result.digest, null, 2));
+        return;
+      }
+
+      const { digest, jsonPath, latestPath, following } = result;
+      console.log(`  ✓ X list ${digest.listId} members: ${digest.members.length} accounts across ${digest.stats.pagesFetched} page(s)`);
+      console.log(`  ✓ stop: ${digest.stats.stopReason}`);
+      console.log(`  ✓ JSON: ${jsonPath}`);
+      console.log(`  ✓ latest: ${latestPath}`);
+      if (following) {
+        console.log(`  ✓ following roster: +${following.added} new → ${following.total} total (${following.cachePath})`);
+      }
     }));
 
   // ── sync-following ──────────────────────────────────────────────────────

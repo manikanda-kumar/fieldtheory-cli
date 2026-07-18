@@ -161,18 +161,20 @@ export function convertUserResultToFollowing(result: any, now: string): Followin
   const typename = result.__typename;
   if (typename === 'UserUnavailable') return null;
 
-  const legacy = result.legacy;
+  const legacy = result.legacy ?? {};
+  const core = result.core ?? {};
   const restId = result.rest_id;
-  if (!restId || !legacy) return null;
+  if (!restId) return null;
 
-  const handle = legacy.screen_name;
+  // Mid-2026+ user objects put screen_name/name on `core`; older payloads used `legacy`.
+  const handle = legacy.screen_name ?? core.screen_name;
   if (!handle) return null;
 
   return {
     userId: String(restId),
     handle,
-    name: legacy.name ?? '',
-    bio: legacy.description ?? undefined,
+    name: legacy.name ?? core.name ?? '',
+    bio: legacy.description ?? result.profile_bio?.description ?? undefined,
     profileImageUrl: result.avatar?.image_url ?? legacy.profile_image_url_https ?? legacy.profile_image_url,
     followerCount: legacy.followers_count,
     followingCount: legacy.friends_count,
