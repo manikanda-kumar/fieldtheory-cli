@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { writeJsonLines } from '../src/fs.js';
+import { writeJson, writeJsonLines } from '../src/fs.js';
 import {
   classifyCanonicalBookmarks,
   formatCanonicalSearchResults,
+  getCanonicalBookmarksSince,
   getCanonicalBookmarkById,
   listCanonicalBookmarks,
   rebuildCanonicalIndex,
@@ -17,6 +18,7 @@ import { twitterBookmarksIndexPath } from '../src/paths.js';
 import type { RaindropRecord } from '../src/raindrop/types.js';
 import type { GitHubStarRecord } from '../src/github-stars/types.js';
 import type { ProjectRecord } from '../src/projects/types.js';
+import type { FollowingRecord } from '../src/following/types.js';
 
 async function withIsolatedDataDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-canonical-'));
@@ -47,6 +49,23 @@ async function writeProjects(dir: string, records: ProjectRecord[]): Promise<voi
   const projectsDir = path.join(dir, 'projects');
   await mkdir(projectsDir, { recursive: true });
   await writeJsonLines(path.join(projectsDir, 'projects.jsonl'), records);
+}
+
+async function writeFollowing(dir: string, records: FollowingRecord[]): Promise<void> {
+  const followingDir = path.join(dir, 'following');
+  await mkdir(followingDir, { recursive: true });
+  await writeJsonLines(path.join(followingDir, 'following.jsonl'), records);
+}
+
+async function writeXListMembers(dir: string, listId: string, members: Array<Record<string, unknown>>): Promise<void> {
+  const listsDir = path.join(dir, 'x-lists');
+  await mkdir(listsDir, { recursive: true });
+  await writeJson(path.join(listsDir, `${listId}-members-latest.json`), {
+    listId,
+    fetchedAt: '2026-07-18T10:00:00.000Z',
+    members,
+    stats: { count: members.length, pagesFetched: 1, stopReason: 'end of members' },
+  });
 }
 
 function githubStarRecord(overrides: Partial<GitHubStarRecord> = {}): GitHubStarRecord {
@@ -226,6 +245,49 @@ test('rebuildCanonicalIndex creates project source rows and indexes project cont
     const matches = await searchCanonicalBookmarks({ query: 'canonical prompts', limit: 10 });
     assert.equal(matches.length, 1);
     assert.equal(matches[0].id, listed[0].id);
+  });
+});
+
+test('rebuildCanonicalIndex indexes following and latest X-list members as merged people sources', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const person = {
+      userId: '42',
+      handle: 'alice_ai',
+      name: 'Alice AI',
+      bio: 'Researches agent memory and retrieval systems.',
+      followerCount: 1000,
+      followingCount: 200,
+      verified: true,
+      syncedAt: '2026-07-18T10:00:00.000Z',
+    };
+    await writeFollowing(dir, [{
+      ...person,
+      domains: ['AI'],
+      primaryDomain: 'AI',
+      expertise: ['agents', 'retrieval'],
+      expertiseSummary: 'Agent-memory researcher',
+      bookmarkOverlap: 3,
+    }]);
+    await writeXListMembers(dir, '12345', [person]);
+
+    const result = await rebuildCanonicalIndex();
+    assert.equal(result.sourceCount, 2);
+    assert.equal(result.canonicalCount, 1);
+
+    const following = await listCanonicalBookmarks({ source: 'x-following', limit: 10 });
+    const listMembers = await listCanonicalBookmarks({ source: 'x-list-members', limit: 10 });
+    assert.equal(following.length, 1);
+    assert.equal(listMembers.length, 1);
+    assert.equal(following[0].canonicalUrl, 'https://x.com/alice_ai');
+    assert.equal(following[0].firstSavedAt, null);
+    assert.deepEqual(following[0].sources.sort(), ['x-following', 'x-list-members:12345']);
+
+    const found = await searchCanonicalBookmarks({ query: 'agent retrieval', limit: 10 });
+    assert.equal(found.length, 1);
+    assert.match(found[0].searchText, /Alice AI/);
+
+    const daily = await getCanonicalBookmarksSince('2026-07-18T00:00:00.000Z');
+    assert.equal(daily.length, 0);
   });
 });
 

@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import type { Database } from 'sql.js';
 import { acquireDbLock, openDb, releaseDbLock, saveDb } from './db.js';
-import { pathExists, readJsonLines } from './fs.js';
-import { dataDir, twitterBookmarksCachePath, twitterBookmarksIndexPath } from './paths.js';
+import { listFiles, pathExists, readJson, readJsonLines } from './fs.js';
+import { dataDir, twitterBookmarksCachePath, twitterBookmarksIndexPath, xListsDir } from './paths.js';
 import type { BookmarkRecord } from './types.js';
 import { dedupeKeyForUrl, dedupeKeyForXBookmark } from './url-normalize.js';
 import { sanitizeFtsQuery } from './bookmarks-db.js';
@@ -21,6 +21,9 @@ import { githubStarsCachePath } from './github-stars/paths.js';
 import type { GitHubStarRecord } from './github-stars/types.js';
 import { projectsCachePath } from './projects/paths.js';
 import type { ProjectRecord } from './projects/types.js';
+import { followingCachePath } from './following/paths.js';
+import type { FollowingRecord } from './following/types.js';
+import type { ListMemberRecord, XListMembersDigest } from './x-list-members.js';
 
 export interface CanonicalRebuildResult {
   dbPath: string;
@@ -537,6 +540,92 @@ export function projectSourceFromRecord(record: ProjectRecord): CanonicalSourceI
   };
 }
 
+function xProfileUrl(handle: string): string {
+  return `https://x.com/${encodeURIComponent(handle.replace(/^@/, ''))}`;
+}
+
+function xPersonSource(
+  record: Pick<ListMemberRecord, 'userId' | 'handle' | 'name' | 'bio' | 'profileImageUrl' | 'followerCount' | 'followingCount' | 'verified' | 'syncedAt'> &
+    Partial<Pick<FollowingRecord, 'domains' | 'primaryDomain' | 'expertise' | 'expertiseSummary' | 'bookmarkOverlap'>>,
+  source: 'x-following' | 'x-list-members',
+  profile: string | null,
+): CanonicalSourceInput | null {
+  const handle = record.handle.replace(/^@/, '').trim();
+  const userId = record.userId.trim();
+  if (!handle || !userId) return null;
+
+  const sourceUrl = xProfileUrl(handle);
+  return {
+    id: source === 'x-following'
+      ? `x-following:${userId}`
+      : `x-list-member:${profile ?? 'unknown'}:${userId}`,
+    source,
+    profile,
+    sourceItemId: userId,
+    sourceUrl,
+    targetUrl: null,
+    // Profiles are people, not URL bookmarks. Stable X ids let a renamed handle
+    // merge cleanly across the following roster and every X-list membership.
+    dedupeKey: `x-person:${userId}`,
+    title: record.name ? `${record.name} (@${handle})` : `@${handle}`,
+    text: compactText([
+      `X profile @${handle}`,
+      record.name,
+      record.bio,
+      record.domains,
+      record.primaryDomain,
+      record.expertise,
+      record.expertiseSummary,
+    ]),
+    authorHandle: handle,
+    // A roster refresh is not a newly saved knowledge item. Leaving this null
+    // makes profiles queryable but keeps them out of the daily activity window.
+    savedAt: null,
+    createdAt: null,
+    modifiedAt: record.syncedAt,
+    folderPath: source === 'x-following'
+      ? ['X People', 'Following']
+      : ['X Lists', profile ?? 'Unknown list', 'Members'],
+    links: [sourceUrl],
+    contentPath: null,
+    metadata: {
+      userId,
+      handle,
+      ...(record.profileImageUrl ? { profileImageUrl: record.profileImageUrl } : {}),
+      ...(record.followerCount != null ? { followerCount: record.followerCount } : {}),
+      ...(record.followingCount != null ? { followingCount: record.followingCount } : {}),
+      ...(record.verified != null ? { verified: record.verified } : {}),
+      ...(record.bookmarkOverlap != null ? { bookmarkOverlap: record.bookmarkOverlap } : {}),
+      ...(source === 'x-list-members' && profile ? { listId: profile } : {}),
+    },
+  };
+}
+
+export function followingSourceFromRecord(record: FollowingRecord): CanonicalSourceInput | null {
+  return xPersonSource(record, 'x-following', null);
+}
+
+export function xListMemberSourceFromRecord(record: ListMemberRecord, listId: string): CanonicalSourceInput | null {
+  return xPersonSource(record, 'x-list-members', listId);
+}
+
+async function readLatestXListMemberDigests(): Promise<XListMembersDigest[]> {
+  const files = await listFiles(xListsDir());
+  const digests: XListMembersDigest[] = [];
+  for (const file of files) {
+    const match = file.match(/^(\d+)-members-latest\.json$/);
+    if (!match) continue;
+    try {
+      const digest = await readJson<XListMembersDigest>(path.join(xListsDir(), file));
+      if (String(digest.listId) !== match[1] || !Array.isArray(digest.members)) continue;
+      digests.push(digest);
+    } catch {
+      // A partial or malformed snapshot must not block every other source.
+    }
+  }
+  return digests;
+}
+
 function youtubeSourceFromVideo(video: YoutubeSourceVideoInput, savedAt: string): CanonicalSourceInput {
   const sourceUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
   const chapterText = video.chapters?.map((chapter) => compactText([
@@ -798,6 +887,20 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
     if (await pathExists(projectsPath)) {
       const projectRecords = await readJsonLines<ProjectRecord>(projectsPath);
       sourceRows.push(...projectRecords.map(projectSourceFromRecord));
+    }
+
+    const followingPath = followingCachePath();
+    if (await pathExists(followingPath)) {
+      const followingRecords = await readJsonLines<FollowingRecord>(followingPath);
+      sourceRows.push(...followingRecords
+        .map(followingSourceFromRecord)
+        .filter((row): row is CanonicalSourceInput => row !== null));
+    }
+
+    for (const digest of await readLatestXListMemberDigests()) {
+      sourceRows.push(...digest.members
+        .map((member) => xListMemberSourceFromRecord(member, digest.listId))
+        .filter((row): row is CanonicalSourceInput => row !== null));
     }
 
     sourceRows.push(...readYoutubeSourcesFromDb(db));

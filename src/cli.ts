@@ -2191,7 +2191,7 @@ export function buildCli() {
     .option('--folder <name>', 'Filter by X bookmark folder name (exact or unambiguous prefix)')
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 30)
     .option('--offset <n>', 'Offset into results', (v: string) => Number(v), 0)
-    .option('--source <source>', 'Filter unified list by source: x, raindrop, github-stars, project, youtube')
+    .option('--source <source>', 'Filter unified list by source: x, raindrop, github-stars, project, youtube, x-following, x-list-members')
     .option('--json', 'JSON output')
     .option('--unified', 'List unified X, Raindrop, GitHub Stars, project, and YouTube bookmarks')
     .action(safe(async (options) => {
@@ -3198,9 +3198,9 @@ export function buildCli() {
     .description('Export bookmarks as individual markdown files')
     .option('--force', 'Re-export all bookmarks (overwrite existing files)')
     .option('--changed', 'Re-export bookmarks whose source data changed since markdown was written')
-    .option('--canonical', 'Export from the unified canonical index (includes Raindrop, X, GitHub Stars, project, YouTube)')
+    .option('--canonical', 'Export from the unified canonical index (includes Raindrop, X, GitHub Stars, project, YouTube, and X people)')
     .option('--preview', 'Export to a temporary directory for preview (implies --canonical)')
-    .option('--source <source>', 'Filter by source: raindrop, x, github-stars, project, youtube (requires --canonical or --preview)')
+    .option('--source <source>', 'Filter by source: raindrop, x, github-stars, project, youtube, x-following, x-list-members (requires --canonical or --preview)')
     .option('--limit <n>', 'Max bookmarks to export', (v: string) => Number(v))
     .action(safe(async (options) => {
       if (!requireIndex()) return;

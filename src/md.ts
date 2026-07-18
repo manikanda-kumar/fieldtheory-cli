@@ -412,7 +412,7 @@ async function doCompileUnified(
   const toGenerate: UnifiedWorkItem[] = [];
   let skipCount = 0;
 
-  // Source pages — one per source (x, raindrop, github-stars, youtube, project)
+  // Source pages — one per source, including X people and X-list members.
   for (const [source, count] of Object.entries(sourceCounts)) {
     if (count < 1) continue;
     const key = `sources/${source}`;

@@ -429,7 +429,7 @@ export function renderDigestMarkdown(
   for (const source of ['x', 'raindrop', 'github-stars', 'youtube', 'projects'] as const) {
     lines.push(`- ${source}: ${coverage.freshness[source]}`);
   }
-  lines.push('- Dark sources: x-list and following are not yet in the canonical index.');
+  lines.push('- X profiles: following and X-list members are indexed for reference, but have no save date and are excluded from this activity window.');
   // thinSkipped is included in alsoSaved, preserving collected = themed + also-saved.
   lines.push(`- This run: collected ${coverage.counts.collected}; themed ${coverage.counts.themed}; also-saved ${coverage.counts.alsoSaved}; thin links skipped from synthesis ${coverage.counts.thinSkipped}; carried-over ${coverage.counts.carriedOver}; enriched links available to this digest ${coverage.counts.enriched}; citations dropped ${coverage.counts.citationsDropped}; undateable excluded (canonical total) ${coverage.counts.undateableExcluded}; synthesis ${coverage.counts.synthesis}.`);
   lines.push('');

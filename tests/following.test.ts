@@ -105,6 +105,23 @@ test('convertUserResultToFollowing parses a standard user_results.result', () =>
   assert.equal(record.syncedAt, '2026-06-21T00:00:00Z');
 });
 
+test('convertUserResultToFollowing supports current core/profile_bio user payloads', () => {
+  const record = convertUserResultToFollowing({
+    __typename: 'User',
+    rest_id: '5555',
+    is_blue_verified: true,
+    core: { screen_name: 'newpayload', name: 'New Payload' },
+    profile_bio: { description: 'Uses X’s current user payload shape.' },
+    avatar: { image_url: 'https://pbs.twimg.com/profile_images/new.jpg' },
+  }, '2026-07-18T10:00:00.000Z');
+  assert.ok(record);
+  assert.equal(record.handle, 'newpayload');
+  assert.equal(record.name, 'New Payload');
+  assert.equal(record.bio, 'Uses X’s current user payload shape.');
+  assert.equal(record.profileImageUrl, 'https://pbs.twimg.com/profile_images/new.jpg');
+  assert.equal(record.verified, true);
+});
+
 test('convertUserResultToFollowing returns null for UserUnavailable', () => {
   const result = { __typename: 'UserUnavailable', rest_id: '123' };
   const record = convertUserResultToFollowing(result, '2026-06-21T00:00:00Z');
