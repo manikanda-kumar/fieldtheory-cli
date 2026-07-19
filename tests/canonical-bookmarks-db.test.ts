@@ -543,6 +543,47 @@ test('classifyCanonicalBookmarks classifies raindrop-only GitHub bookmarks as to
   });
 });
 
+test('classifyCanonicalBookmarks is fill-only and never overwrites existing classifications', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), []);
+    await writeRaindropBookmarks(dir, [
+      {
+        id: 20,
+        url: 'https://github.com/example/tool',
+        title: 'Acme Tool',
+        collectionPath: [],
+        createdAt: '2026-05-10T00:00:00.000Z',
+        syncedAt: '2026-05-10T00:00:00.000Z',
+      },
+      {
+        id: 21,
+        url: 'https://example.com/essay',
+        title: 'Untypable essay',
+        collectionPath: [],
+        createdAt: '2026-05-11T00:00:00.000Z',
+        syncedAt: '2026-05-11T00:00:00.000Z',
+      },
+    ]);
+    await rebuildCanonicalIndex();
+
+    // Simulate an LLM-written classification on the github row.
+    const db = await openDb(twitterBookmarksIndexPath());
+    db.run(`UPDATE canonical_bookmarks SET categories = 'research', primary_category = 'research'
+            WHERE canonical_url = 'https://github.com/example/tool'`);
+    saveDb(db, twitterBookmarksIndexPath());
+    db.close();
+
+    const summary = await classifyCanonicalBookmarks();
+    // Only the still-unclassified essay row is swept; the LLM row is untouched.
+    assert.equal(summary.total, 1);
+
+    const rows = await listCanonicalBookmarks({ limit: 10 });
+    const byUrl = new Map(rows.map((row) => [row.canonicalUrl, row]));
+    assert.equal(byUrl.get('https://github.com/example/tool')!.primaryCategory, 'research');
+    assert.equal(byUrl.get('https://github.com/example/tool')!.categories, 'research');
+  });
+});
+
 test('rebuildCanonicalIndex does not dedupe X bookmark with multiple external links against raindrop URL', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [{

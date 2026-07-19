@@ -1416,9 +1416,13 @@ export async function classifyCanonicalBookmarks(): Promise<{ total: number; cla
   try {
     initCanonicalSchema(db);
 
+    // Fill-only: touch rows without a real classification. Sweeping every row
+    // would overwrite LLM-written categories with regex output (or null) —
+    // that clobber silently erased ~11k LLM classifications on 2026-07-19.
     const canonicalRows = db.exec(
       `SELECT id, canonical_url, display_title, search_text
        FROM canonical_bookmarks
+       WHERE primary_category IS NULL OR primary_category IN ('', 'unclassified')
        ORDER BY id ASC`,
     )[0]?.values ?? [];
     const sourceRows = db.exec(
