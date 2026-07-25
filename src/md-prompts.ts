@@ -38,17 +38,24 @@ export function sanitizeForPrompt(text: string, maxLen = 400): string {
     .trim();
 }
 
-const FRONTMATTER_RULES = `
+// Inject the concrete date: models don't reliably know "today" and hallucinate it.
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function frontmatterRules(): string {
+  return `
 The page MUST start with YAML frontmatter in this exact format:
 \`\`\`
 ---
 tags: [ft/<type>]
 source_count: <number of bookmarks used>
 source_type: bookmarks
-last_updated: <today's date YYYY-MM-DD>
+last_updated: ${todayIso()}
 ---
 \`\`\`
 Replace <type> with the appropriate type (category, domain, or entity).`.trim();
+}
 
 const WIKILINK_RULES = `
 Cross-reference other pages using wikilink syntax:
@@ -84,7 +91,7 @@ export function buildCategoryPagePrompt(category: string, bookmarks: MdBookmark[
 
 ${SECURITY_NOTE}
 
-${FRONTMATTER_RULES}
+${frontmatterRules()}
 
 ${WIKILINK_RULES}
 
@@ -126,7 +133,7 @@ export function buildDomainPagePrompt(domain: string, bookmarks: MdBookmark[]): 
 
 ${SECURITY_NOTE}
 
-${FRONTMATTER_RULES}
+${frontmatterRules()}
 
 ${WIKILINK_RULES}
 
@@ -171,7 +178,7 @@ export function buildEntityPagePrompt(authorHandle: string, bookmarks: MdBookmar
 
 ${SECURITY_NOTE}
 
-${FRONTMATTER_RULES}
+${frontmatterRules()}
 
 ${WIKILINK_RULES}
 
@@ -262,7 +269,7 @@ tags: [ft/source]
 source: ${source}
 source_count: <number of bookmarks used>
 source_type: canonical
-last_updated: <today's date YYYY-MM-DD>
+last_updated: ${todayIso()}
 ---
 \`\`\`
 
