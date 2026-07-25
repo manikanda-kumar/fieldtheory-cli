@@ -1507,6 +1507,42 @@ test('sanitizeBookmarkedAt: clears GraphQL bookmark dates even when they look pl
   assert.equal(result.bookmarkedAt, null);
 });
 
+test('sanitizeBookmarkedAt: keeps Tweetsmash-sourced dates on GraphQL records', () => {
+  const result = sanitizeBookmarkedAt(makeRecord({
+    ingestedVia: 'graphql',
+    postedAt: '2026-03-10T12:00:00.000Z',
+    syncedAt: '2026-03-28T00:00:00.000Z',
+    bookmarkedAt: '2026-03-15T00:00:00.000Z',
+    bookmarkedAtSource: 'tweetsmash',
+  }));
+
+  assert.equal(result.bookmarkedAt, '2026-03-15T00:00:00.000Z');
+});
+
+test('sanitizeBookmarkedAt: keeps Tweetsmash dates even past the syncedAt skew window', () => {
+  // Tweetsmash may import a bookmark hours after our own sync stored the
+  // record — its date must not be treated as clock skew.
+  const result = sanitizeBookmarkedAt(makeRecord({
+    ingestedVia: 'graphql',
+    postedAt: '2026-03-10T12:00:00.000Z',
+    syncedAt: '2026-03-15T00:00:00.000Z',
+    bookmarkedAt: '2026-03-15T06:00:00.000Z',
+    bookmarkedAtSource: 'tweetsmash',
+  }));
+
+  assert.equal(result.bookmarkedAt, '2026-03-15T06:00:00.000Z');
+});
+
+test('sanitizeBookmarkedAt: clears unparseable Tweetsmash-sourced dates', () => {
+  const result = sanitizeBookmarkedAt(makeRecord({
+    ingestedVia: 'graphql',
+    bookmarkedAt: 'not-a-date',
+    bookmarkedAtSource: 'tweetsmash',
+  }));
+
+  assert.equal(result.bookmarkedAt, null);
+});
+
 test('formatSyncResult: formats all fields', () => {
   const result = formatSyncResult({
     added: 50,

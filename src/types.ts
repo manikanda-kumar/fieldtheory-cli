@@ -63,6 +63,8 @@ export interface BookmarkRecord {
   text: string;
   postedAt?: string | null;
   bookmarkedAt?: string | null;
+  /** Provenance of bookmarkedAt when it did not come from the sync source itself (e.g. 'tweetsmash'). */
+  bookmarkedAtSource?: string | null;
   /** X's opaque bookmark ordering key. Useful for chronology, not timestamps. */
   sortIndex?: string | null;
   syncedAt: string;

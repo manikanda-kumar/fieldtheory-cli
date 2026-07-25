@@ -223,6 +223,9 @@ export async function applyTweetsmashEnrichment(): Promise<TweetsmashApplyResult
     if (record.bookmarkedAt == null && importedAt) {
       if (Date.parse(importedAt) > burstEndMs) {
         record.bookmarkedAt = importedAt;
+        // Mark provenance so sanitizeBookmarkedAt doesn't null this on the
+        // next sync (graphql-ingested records normally never carry dates).
+        record.bookmarkedAtSource = 'tweetsmash';
         result.datesSet += 1;
         changed = true;
       } else {

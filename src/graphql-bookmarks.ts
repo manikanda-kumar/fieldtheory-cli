@@ -133,6 +133,14 @@ function parseSnowflake(value?: string | null): bigint | null {
 const MAX_FUTURE_BOOKMARK_SKEW_MS = 5 * 60_000;
 
 export function sanitizeBookmarkedAt(record: BookmarkRecord): BookmarkRecord {
+  if (record.bookmarkedAtSource === 'tweetsmash') {
+    // Enrichment-provided date: trust it if parseable. GraphQL nulling and the
+    // syncedAt skew check below don't apply (Tweetsmash imports can postdate
+    // our own sync of the record).
+    if (record.bookmarkedAt != null && parseTimestampMs(record.bookmarkedAt) != null) return record;
+    return record.bookmarkedAt == null ? record : { ...record, bookmarkedAt: null };
+  }
+
   if (record.ingestedVia === 'graphql') {
     return record.bookmarkedAt == null ? record : { ...record, bookmarkedAt: null };
   }

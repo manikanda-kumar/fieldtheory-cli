@@ -146,6 +146,8 @@ test('applyTweetsmashEnrichment sets dates outside the initial burst, merges tag
     assert.equal(byId.get('old')!.bookmarkedAt ?? null, null);
     assert.equal(byId.get('old2')!.bookmarkedAt, '2026-06-30T00:00:00.000Z');
     assert.equal(byId.get('fresh')!.bookmarkedAt, '2026-07-10T12:00:00.000Z');
+    assert.equal(byId.get('fresh')!.bookmarkedAtSource, 'tweetsmash');
+    assert.equal(byId.get('old2')!.bookmarkedAtSource ?? null, null);
     assert.deepEqual(byId.get('fresh')!.tags, ['existing', 'ai-agents']);
     assert.equal(byId.get('fresh')!.tweetsmashRead, true);
     assert.equal(byId.get('unmatched')!.tweetsmashRead, undefined);
