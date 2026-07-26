@@ -12,7 +12,7 @@ import { collectDailyCoverage } from '../src/daily/coverage.js';
 import { enrichBackfill, enrichThinItems, isEnrichmentEligible, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
-import { buildDailyAliases, buildDailyPrompt, contentLength, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+import { buildDailyAliases, buildDailyPrompt, contentLength, dailyFallbackChain, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
 import { gradeReviewCard, listDueReviewCards, queueReviewCards } from '../src/daily/review.js';
 
@@ -332,6 +332,24 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
     assert.match(digest, /## System details/);
     assert.match(digest, /- raindrop: never synced/);
   });
+});
+
+test('daily: the fallback chain adds a second engine and never repeats the primary', () => {
+  assert.deepEqual(dailyFallbackChain('grok', {}), [
+    { engine: 'agy', model: undefined },
+    { engine: 'droid', model: 'deepseek-v4-flash' },
+  ]);
+  // A primary that is already a fallback must not be retried as one.
+  assert.deepEqual(dailyFallbackChain('agy', {}), [{ engine: 'droid', model: 'deepseek-v4-flash' }]);
+  assert.deepEqual(
+    dailyFallbackChain('grok', { FT_DAILY_FALLBACK_ENGINE: 'none', FT_DAILY_FALLBACK_ENGINE_2: 'none' }),
+    [],
+  );
+  assert.deepEqual(
+    dailyFallbackChain('claude', { FT_DAILY_FALLBACK_ENGINE: 'grok', FT_DAILY_FALLBACK_MODEL: 'grok-4.5', FT_DAILY_FALLBACK_ENGINE_2: 'grok' }),
+    [{ engine: 'grok', model: 'grok-4.5' }],
+    'a duplicate second fallback collapses into the first',
+  );
 });
 
 test('daily: synthesis writes a readable HTML page beside the markdown, or skips it on request', async () => {
