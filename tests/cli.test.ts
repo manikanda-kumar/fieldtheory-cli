@@ -131,11 +131,15 @@ test('ft search, stats, and status expose --json', () => {
   }
 });
 
-test('ft enrich-backfill exposes limit, retry, concurrency, dry-run, and all options', () => {
+test('ft enrich-backfill exposes limit, retry, concurrency, dry-run, all, and engine options', () => {
   const command = buildCli().commands.find((c: any) => c.name() === 'enrich-backfill');
   assert.ok(command, 'enrich-backfill command should be registered');
   const opts = command.options.map((option: any) => option.long);
-  assert.deepEqual(opts, ['--limit', '--dry-run', '--all', '--concurrency', '--retry-failed']);
+  assert.deepEqual(opts, [
+    '--limit', '--dry-run', '--all', '--concurrency', '--retry-failed',
+    // Engine overrides let a rate-limited or slow default summarizer be swapped out.
+    '--engine', '--model', '--effort',
+  ]);
 });
 
 test('ft review exposes due, show, and grade retrieval commands', () => {
