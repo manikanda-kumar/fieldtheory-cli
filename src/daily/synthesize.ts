@@ -555,10 +555,14 @@ export function dailyFallbackChain(primaryLabel: string, env: NodeJS.ProcessEnv 
       engine: (env.FT_DAILY_FALLBACK_ENGINE ?? 'agy').trim(),
       model: env.FT_DAILY_FALLBACK_MODEL?.trim() || undefined,
     },
-    {
-      engine: (env.FT_DAILY_FALLBACK_ENGINE_2 ?? 'droid').trim(),
-      model: (env.FT_DAILY_FALLBACK_MODEL_2 ?? 'deepseek-v4-flash').trim() || undefined,
-    },
+    // The default model belongs to the default engine only: pairing
+    // deepseek-v4-flash with a user-chosen engine makes it reject the model.
+    (() => {
+      const engine = (env.FT_DAILY_FALLBACK_ENGINE_2 ?? 'droid').trim();
+      const model = env.FT_DAILY_FALLBACK_MODEL_2?.trim()
+        || (engine === 'droid' ? 'deepseek-v4-flash' : undefined);
+      return { engine, model };
+    })(),
   ];
   const seen = new Set([primaryLabel]);
   const chain: DailyFallbackSpec[] = [];

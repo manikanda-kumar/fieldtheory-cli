@@ -350,6 +350,16 @@ test('daily: the fallback chain adds a second engine and never repeats the prima
     [{ engine: 'grok', model: 'grok-4.5' }],
     'a duplicate second fallback collapses into the first',
   );
+  // Live 2026-07-26: overriding only the engine sent droid's default model to
+  // agy, which rejected it ("model deepseek-v4-flash is not recognized").
+  assert.deepEqual(
+    dailyFallbackChain('grok', { FT_DAILY_FALLBACK_ENGINE: 'none', FT_DAILY_FALLBACK_ENGINE_2: 'agy' }),
+    [{ engine: 'agy', model: undefined }],
+  );
+  assert.deepEqual(
+    dailyFallbackChain('grok', { FT_DAILY_FALLBACK_ENGINE: 'none', FT_DAILY_FALLBACK_ENGINE_2: 'agy', FT_DAILY_FALLBACK_MODEL_2: 'gemini-3.6-flash-high' }),
+    [{ engine: 'agy', model: 'gemini-3.6-flash-high' }],
+  );
 });
 
 test('daily: synthesis writes a readable HTML page beside the markdown, or skips it on request', async () => {
