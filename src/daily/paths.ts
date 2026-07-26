@@ -46,3 +46,8 @@ export function dailyDigestPath(date: string): string {
   }
   return path.join(dailyLibraryDir(), `${date}.md`);
 }
+
+/** Readable companion page beside the markdown digest. */
+export function dailyDigestHtmlPath(date: string): string {
+  return dailyDigestPath(date).replace(/\.md$/, '.html');
+}

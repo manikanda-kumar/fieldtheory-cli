@@ -139,7 +139,7 @@ async function stageRead(
   const prompt = buildReadPrompt({
     seedItems: seedArtifacts.map((a) => ({ content: a.content, type: a.type })),
   });
-  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs });
+  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs, cwd: process.cwd() });
   const brief = parseSeedBrief(raw);
 
   writeSeedBriefCache(seedIds, ctx.engine.label, brief);
@@ -178,7 +178,7 @@ async function stageSurvey(
     budget: ctx.budget,
   });
 
-  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs });
+  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs, cwd: process.cwd() });
   const surfaces = parseSurfaces(raw);
 
   const surfaceArtifact = writeArtifact({
@@ -244,7 +244,7 @@ async function stageGenerate(
     budget: ctx.budget,
   });
 
-  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs });
+  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs, cwd: process.cwd() });
   const candidates = parseCandidates(raw);
 
   writeResultCache(briefArtifact.id, ctx.frame.id, ctx.steering, gitHead, { candidates }, ctx.engine.label);
@@ -272,7 +272,7 @@ async function stageCritique(
   emit(ctx, 'critique', `Critiquing ${candidates.length} candidates...`);
 
   const prompt = buildCritiquePrompt({ candidates, seedBrief: brief, frame: ctx.frame, budget: ctx.budget });
-  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs });
+  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs, cwd: process.cwd() });
   const critiques = parseCritiques(raw);
 
   // Pair candidates with their critiques; drop fatal ones
@@ -320,7 +320,7 @@ async function stageScore(
 
   // One LLM call for all candidates — faster and produces better-calibrated relative scores
   const prompt = buildBatchScorePrompt({ surviving, seedBrief: brief, frame: ctx.frame });
-  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs });
+  const raw = await invokeEngineAsync(ctx.engine, prompt, { timeout: ctx.budget.timeoutMs, cwd: process.cwd() });
   const allScores = parseBatchScores(raw, surviving.length);
 
   const dotArtifacts: Artifact[] = [];

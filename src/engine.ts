@@ -8,6 +8,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { loadPreferences, savePreferences } from './preferences.js';
 import { PromptCancelledError, promptText } from './prompt.js';
@@ -378,6 +379,32 @@ export async function resolveEngine(profile: EngineRunProfile = {}): Promise<Res
 export interface InvokeOptions {
   timeout?: number;
   maxBuffer?: number;
+  /**
+   * Working directory for the child. Defaults to an empty scratch directory —
+   * every engine we drive is an agentic CLI that discovers instruction files
+   * (CLAUDE.md, AGENTS.md) from its cwd and can write to it. Live 2026-07-26: a
+   * grounded `ft daily` run from this repo followed the user's global "maintain
+   * CONTINUITY.md" instruction and overwrote the repo's ledger with the digest
+   * task's own ledger. Pass an explicit cwd only when the engine is meant to
+   * read that tree (repo analysis).
+   */
+  cwd?: string;
+}
+
+/**
+ * Empty scratch cwd for engine children, so a prompt-only call cannot pick up
+ * or modify the caller's project files. Override with FT_ENGINE_CWD.
+ */
+export function engineWorkDir(): string {
+  const configured = process.env.FT_ENGINE_CWD?.trim();
+  const dir = configured || path.join(os.tmpdir(), 'fieldtheory-engine');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  } catch {
+    // A read-only tmpdir is not worth failing a sync over; fall back to cwd.
+    return process.cwd();
+  }
 }
 
 /**
@@ -516,6 +543,7 @@ export function invokeEngine(engine: ResolvedEngine, prompt: string, opts: Invok
     timeout,
     maxBuffer,
     encoding: 'buffer',
+    cwd: opts.cwd ?? engineWorkDir(),
   });
 
   const stderrBuf = result.stderr ?? Buffer.alloc(0);
@@ -599,6 +627,7 @@ export function invokeEngineAsync(engine: ResolvedEngine, prompt: string, opts: 
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args(user, engine, system), {
       stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: opts.cwd ?? engineWorkDir(),
     });
 
     // Close stdin immediately with EOF so `claude -p` doesn't wait on it.

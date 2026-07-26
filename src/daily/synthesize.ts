@@ -15,7 +15,8 @@ import { loadYoutubeState } from '../youtube/state.js';
 import { readDailyMeta, type DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
-import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+import { dailyDigestHtmlPath, dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+import { renderDigestHtml } from './html.js';
 import { listDueReviewCards, queueReviewCards, type ReviewCard } from './review.js';
 
 const SNIPPET_CHARS = 240;
@@ -66,10 +67,14 @@ export interface SynthesizeDailyOptions {
   groundExternal?: boolean;
   /** Stable clock injection for review scheduling tests. */
   now?: Date;
+  /** Write the companion HTML page beside the markdown (default true). */
+  html?: boolean;
 }
 
 export interface SynthesizeDailyResult {
   digestPath: string;
+  /** Companion HTML page, unless writing it was disabled. */
+  htmlPath?: string;
   themes: DailyTheme[];
   usedLlm: boolean;
   /** Engine label that produced the themes (e.g. "grok", "agy (fallback)"). */
@@ -703,10 +708,21 @@ export async function synthesizeDaily(
   const reviewQueue = collection.isExplicitDate
     ? { added: 0, total: 0 }
     : await queueReviewCards(collection.items, now);
+  const reviewsQueued = relatedReviewQueue.added + reviewQueue.added;
+  const llmMeta = { engine: llmEngine, error: llmError };
   await writeMd(digestPath, renderDigestMarkdown(
-    collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, relatedReviewQueue.added + reviewQueue.added,
-    { engine: llmEngine, error: llmError },
+    collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
+    llmMeta,
   ));
+  // The markdown stays the durable artifact; the page is the readable one.
+  let htmlPath: string | undefined;
+  if (options.html !== false) {
+    htmlPath = dailyDigestHtmlPath(collection.date);
+    await writeMd(htmlPath, renderDigestHtml(
+      collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
+      llmMeta,
+    ));
+  }
   if (!collection.isExplicitDate) {
     const meta = await readDailyMeta();
     const { lastRunItemId: _lastRunItemId, ...metaWithoutCursor } = meta;
@@ -722,6 +738,7 @@ export async function synthesizeDaily(
 
   return {
     digestPath,
+    htmlPath,
     themes,
     usedLlm,
     llmEngine,
@@ -731,7 +748,7 @@ export async function synthesizeDaily(
     alsoSavedCount: alsoSavedIds.length,
     thinSkipped,
     enrichedCount: options.enrichedCount ?? 0,
-    reviewsQueued: relatedReviewQueue.added + reviewQueue.added,
+    reviewsQueued,
     reviewsDue: dueReviews.length,
     skipped: false,
   };

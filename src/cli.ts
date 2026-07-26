@@ -1525,6 +1525,7 @@ export function buildCli() {
     .option('--effort <effort>', 'Effort override for digest synthesis')
     .option('--ground', 'Allow web/X search for additional grounded notes (best with --engine grok)', false)
     .option('--no-ground', 'Disable web/X grounding even if FT_DAILY_GROUND is set')
+    .option('--no-html', 'Skip the companion HTML page written beside the digest markdown')
     .option('--json', 'JSON output')
     .action(safe(async (options, command) => {
       ensureDataDir();
@@ -1557,6 +1558,7 @@ export function buildCli() {
           ? Boolean(options.ground)
           : groundEnv;
         const result = await synthesizeDaily(collection, connected, {
+          html: options.html !== false,
           enrichedCount: enrichment.enrichedCount,
           enrichedItemIds: collection.items.filter((item) => item.canonicalUrl && enrichment.summaries.has(item.canonicalUrl)).map((item) => item.id),
           groundExternal,
@@ -1571,6 +1573,7 @@ export function buildCli() {
           return;
         }
         console.log(`  ✓ Digest written: ${result.digestPath}`);
+        if (result.htmlPath) console.log(`  ✓ Readable page: ${result.htmlPath}`);
         console.log(`    themes: ${result.themes.length} (${result.usedLlm ? `llm via ${result.llmEngine ?? 'default'}` : 'mechanical'})${groundExternal ? ' · grounded' : ''}`);
         if (!result.usedLlm && result.llmError) console.log(`    llm failed: ${result.llmError}`);
         console.log(`    reviews: ${result.reviewsDue} due · ${result.reviewsQueued} queued for tomorrow`);

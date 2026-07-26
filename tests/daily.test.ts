@@ -334,6 +334,43 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
   });
 });
 
+test('daily: synthesis writes a readable HTML page beside the markdown, or skips it on request', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/page-tool', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool with detailed commentary about architecture, deployment tradeoffs, operational considerations, and practical implementation guidance. '.repeat(2) }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const connected = await connectDailyItems(collection);
+    const result = await synthesizeDaily(collection, connected, {
+      profile: { engine: 'grok' },
+      invoke: async () => JSON.stringify([
+        { title: 'Tooling theme', summary: 'One starred tool.', itemIds: ['i1'] },
+      ]),
+    });
+
+    assert.ok(result.htmlPath?.endsWith('2026-07-06.html'));
+    const page = await readFileText(result.htmlPath!);
+    assert.match(page, /^<!doctype html>/);
+    assert.match(page, /Daily Learning Review — 2026-07-06/);
+    assert.match(page, /Tooling theme/);
+    assert.match(page, /a\/page-tool/);
+    assert.match(page, /data-filterable/, 'rows opt into chip + search filtering');
+    assert.match(page, /Recall first/);
+    assert.match(page, /Coverage and source freshness/);
+    assert.doesNotMatch(page, /<script src=|<link rel="stylesheet"/, 'the page must stay self-contained');
+
+    const noHtml = await synthesizeDaily(collection, connected, {
+      html: false,
+      invoke: async () => JSON.stringify([
+        { title: 'Tooling theme', summary: 'One starred tool.', itemIds: ['i1'] },
+      ]),
+    });
+    assert.equal(noHtml.htmlPath, undefined);
+  });
+});
+
 test('daily: successful synthesis records the engine label in result and frontmatter', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeStars(dir, [
