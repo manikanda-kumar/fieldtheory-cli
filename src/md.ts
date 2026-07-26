@@ -31,12 +31,17 @@ import {
   type CanonicalSample,
 } from './canonical-bookmarks-db.js';
 import { resolveEngine, invokeEngineAsync, EngineInvocationError, type ResolvedEngine } from './engine.js';
+import { ensureWikiConfig, readWikiGuidance, wikiConfigPath } from './library-config.js';
 import {
   buildCategoryPagePrompt, buildDomainPagePrompt, buildEntityPagePrompt,
   buildSourcePagePrompt,
   type MdBookmark,
 } from './md-prompts.js';
 import { stripLlmMarkdownFence } from './md-fence.js';
+import {
+  htmlEscape, renderHtmlGroup, renderHtmlPage,
+  type HtmlChip, type HtmlItem,
+} from './html-kit.js';
 
 const MIN_CATEGORY_COUNT = 5;
 const MIN_DOMAIN_COUNT   = 5;
@@ -199,111 +204,320 @@ When bookmarks in a group disagree, note it explicitly:
   await writeMd(schemaPath, schema);
 }
 
-async function generateIndex(): Promise<string> {
-  const sourceFiles   = (await listFiles(mdSourcesDir())).filter(f => f.endsWith('.md')).sort();
-  const categoryFiles = (await listFiles(mdCategoriesDir())).filter(f => f.endsWith('.md')).sort();
-  const domainFiles   = (await listFiles(mdDomainsDir())).filter(f => f.endsWith('.md')).sort();
-  const entityFiles   = (await listFiles(mdEntitiesDir())).filter(f => f.endsWith('.md')).sort();
-  const conceptFiles  = (await listFiles(mdConceptsDir())).filter(f => f.endsWith('.md')).sort();
+interface LibraryPage {
+  /** Slug without the .md extension. */
+  name: string;
+  /** Path relative to the library root, e.g. "categories/tool.md". */
+  rel: string;
+  label: string;
+  /** Bookmarks fed to the page's prompt (capped by MAX_SAMPLE_SIZE). */
+  sampled: number;
+  /** Canonical items behind the page, when known. */
+  items?: number;
+  updated: string;
+  mtimeMs: number;
+}
 
+/** Real canonical item counts per page slug, so navigation can rank by depth
+ *  instead of by the 50-item prompt sample recorded in frontmatter. */
+async function libraryItemCounts(): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  try {
+    const [categories, domains, sources] = await Promise.all([
+      getCanonicalCategoryCounts(),
+      getCanonicalDomainCounts(),
+      getCanonicalSourceCounts(),
+    ]);
+    for (const [name, count] of Object.entries(categories)) counts.set(`categories/${slug(name)}`, count);
+    for (const [name, count] of Object.entries(domains)) counts.set(`domains/${slug(name)}`, count);
+    for (const [name, count] of Object.entries(sources)) counts.set(`sources/${slug(name)}`, count);
+  } catch { /* an index-only run against a missing db still produces navigation */ }
+  return counts;
+}
+
+interface LibrarySection {
+  id: string;
+  title: string;
+  dir: string;
+  pages: LibraryPage[];
+}
+
+const FRONTMATTER_COUNT = /^source_count:\s*(\d+)\s*$/m;
+const FRONTMATTER_UPDATED = /^last_updated:\s*"?(\d{4}-\d{2}-\d{2})"?\s*$/m;
+
+/** Read the cheap navigational facts out of a generated page's frontmatter. */
+async function readLibraryPage(dir: string, subdir: string, file: string): Promise<LibraryPage> {
+  const full = path.join(dir, file);
+  const name = file.replace(/\.md$/, '');
+  let sampled = 0;
+  let updated = '';
+  let mtimeMs = 0;
+  try {
+    mtimeMs = fs.statSync(full).mtimeMs;
+  } catch { /* a page removed mid-run simply sorts last */ }
+  try {
+    const head = (await readMd(full)).slice(0, 600);
+    sampled = Number(FRONTMATTER_COUNT.exec(head)?.[1] ?? 0);
+    updated = FRONTMATTER_UPDATED.exec(head)?.[1] ?? '';
+  } catch { /* unreadable page still deserves a link */ }
+  if (!updated && mtimeMs) updated = new Date(mtimeMs).toISOString().slice(0, 10);
+  return {
+    name,
+    rel: `${subdir}/${file}`,
+    label: name.replace(/-/g, ' '),
+    sampled,
+    updated,
+    mtimeMs,
+  };
+}
+
+async function collectLibrarySections(counts?: Map<string, number>): Promise<LibrarySection[]> {
+  const defs: Array<{ id: string; title: string; dir: string }> = [
+    { id: 'sources', title: 'Sources', dir: mdSourcesDir() },
+    { id: 'categories', title: 'Categories', dir: mdCategoriesDir() },
+    { id: 'domains', title: 'Domains', dir: mdDomainsDir() },
+    { id: 'entities', title: 'Entities', dir: mdEntitiesDir() },
+    { id: 'concepts', title: 'Concepts', dir: mdConceptsDir() },
+  ];
+  const sections: LibrarySection[] = [];
+  for (const def of defs) {
+    const files = (await listFiles(def.dir)).filter((f) => f.endsWith('.md')).sort();
+    const pages = await Promise.all(files.map((file) => readLibraryPage(def.dir, def.id, file)));
+    for (const page of pages) {
+      const items = counts?.get(`${def.id}/${page.name}`);
+      if (items !== undefined) page.items = items;
+    }
+    sections.push({ ...def, pages });
+  }
+  return sections;
+}
+
+/** Latest daily reviews, newest first — the library's time axis. */
+async function recentDailyDigests(limit = 5): Promise<LibraryPage[]> {
+  const dir = path.join(mdDir(), 'daily');
+  const files = (await listFiles(dir)).filter((f) => /^\d{4}-\d{2}-\d{2}\.md$/.test(f)).sort().reverse().slice(0, limit);
+  return Promise.all(files.map((file) => readLibraryPage(dir, 'daily', file)));
+}
+
+/** First sentence of the config's Purpose section, for the index preamble. */
+function purposeLine(guidance: string | undefined): string {
+  const purpose = /Purpose:\n([\s\S]*?)(?:\n\n|$)/.exec(guidance ?? '')?.[1]?.replace(/\s+/g, ' ').trim();
+  if (!purpose) return 'Auto-generated knowledge base compiled from every synced source.';
+  const sentence = purpose.split(/(?<=\.)\s/)[0] ?? purpose;
+  return sentence.length > 320 ? `${sentence.slice(0, 319).trimEnd()}…` : sentence;
+}
+
+function byUpdatedDesc(a: LibraryPage, b: LibraryPage): number {
+  return b.mtimeMs - a.mtimeMs;
+}
+
+function byDepthDesc(a: LibraryPage, b: LibraryPage): number {
+  return (b.items ?? b.sampled) - (a.items ?? a.sampled) || a.name.localeCompare(b.name);
+}
+
+/**
+ * Prefer the canonical item count; fall back to the prompt sample size, labelled
+ * as a sample, because "50 sources" on every page reads like a real total when
+ * it is really MAX_SAMPLE_SIZE.
+ */
+function depthLabel(page: LibraryPage): string {
+  if (page.items !== undefined) return `${page.items} items`;
+  return page.sampled ? `${page.sampled} sampled` : '';
+}
+
+/** Newest pages, capped per section so one rebuilt directory cannot fill the list. */
+function recentAcrossSections(sections: LibrarySection[], limit: number, perSection: number): LibraryPage[] {
+  const taken = new Map<string, number>();
+  const picked: LibraryPage[] = [];
+  for (const page of sections.flatMap((section) => section.pages).sort(byUpdatedDesc)) {
+    const key = page.rel.split('/')[0];
+    const used = taken.get(key) ?? 0;
+    if (used >= perSection) continue;
+    taken.set(key, used + 1);
+    picked.push(page);
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}
+
+/**
+ * index.md is a navigation surface, not a file listing: the entry points come
+ * first (biggest pages, newest reviews, config), then the full catalog. Domain
+ * pages are the long tail, so past 40 they collapse into a compact line.
+ */
+async function generateIndex(): Promise<string> {
+  const counts = await libraryItemCounts();
+  const sections = await collectLibrarySections(counts);
+  const guidance = await readWikiGuidance();
+  const daily = await recentDailyDigests();
+  const allPages = sections.flatMap((section) => section.pages);
   const now = new Date().toISOString().slice(0, 10);
+  const wikilink = (page: LibraryPage): string => `[[${page.rel.replace(/\.md$/, '')}]]`;
+
   const lines: string[] = [
-    `---`,
-    `tags: [ft/index]`,
+    '---',
+    'tags: [ft/index]',
     `last_updated: ${now}`,
-    `---`,
-    ``,
-    `# FT Knowledge Base Index`,
-    ``,
-    `Auto-generated catalog. Edit individual pages, not this file.`,
-    ``,
+    `pages: ${allPages.length}`,
+    '---',
+    '',
+    '# Field Theory Library',
+    '',
+    purposeLine(guidance),
+    '',
+    `${allPages.length} generated pages across ${sections.filter((section) => section.pages.length > 0).length} page types. Navigation surface — edit \`wiki.config.md\`, not this file.`,
+    '',
+    '## Start here',
+    '',
   ];
 
-  if (sourceFiles.length > 0) {
-    lines.push(`## Sources (${sourceFiles.length})`);
+  const sourcePages = sections.find((section) => section.id === 'sources')?.pages ?? [];
+  if (sourcePages.length > 0) {
+    lines.push(`- **Sources:** ${[...sourcePages].sort(byDepthDesc).map(wikilink).join(' · ')}`);
+  }
+  const deepest = allPages
+    .filter((page) => !page.rel.startsWith('sources/') && (page.items ?? 0) > 0)
+    .sort(byDepthDesc)
+    .slice(0, 8);
+  if (deepest.length > 0) {
+    lines.push(`- **Deepest pages:** ${deepest.map((page) => `${wikilink(page)} (${page.items})`).join(' · ')}`);
+  }
+  if (daily.length > 0) {
+    lines.push(`- **Latest reviews:** ${daily.map((page) => `[${page.name}](daily/${page.name}.md)`).join(' · ')}`);
+  }
+  lines.push('- **Config:** [[wiki.config]] — purpose, audience, and style rules used when pages are written.');
+  lines.push('- **Search:** `ft research <topic>` for cross-source hits; `ft ask <question>` to read these pages.');
+  lines.push('');
+
+  const recent = recentAcrossSections(sections, 10, 4);
+  if (recent.length > 0) {
+    lines.push('## Recently updated');
     lines.push('');
-    for (const f of sourceFiles) lines.push(`- [[sources/${f.replace(/\.md$/, '')}]]`);
+    for (const page of recent) {
+      const depth = depthLabel(page);
+      lines.push(`- ${wikilink(page)}${page.updated ? ` — ${page.updated}` : ''}${depth ? ` · ${depth}` : ''}`);
+    }
     lines.push('');
   }
 
-  if (categoryFiles.length > 0) {
-    lines.push(`## Categories (${categoryFiles.length})`);
+  lines.push('## Catalog');
+  lines.push('');
+  for (const section of sections) {
+    if (section.pages.length === 0) continue;
+    lines.push(`### ${section.title} (${section.pages.length})`);
     lines.push('');
-    for (const f of categoryFiles) lines.push(`- [[categories/${f.replace(/\.md$/, '')}]]`);
-    lines.push('');
-  }
-
-  if (domainFiles.length > 0) {
-    lines.push(`## Domains (${domainFiles.length})`);
-    lines.push('');
-    for (const f of domainFiles) lines.push(`- [[domains/${f.replace(/\.md$/, '')}]]`);
-    lines.push('');
-  }
-
-  if (entityFiles.length > 0) {
-    lines.push(`## Entities (${entityFiles.length})`);
-    lines.push('');
-    for (const f of entityFiles) lines.push(`- [[entities/${f.replace(/\.md$/, '')}]]`);
-    lines.push('');
-  }
-
-  if (conceptFiles.length > 0) {
-    lines.push(`## Concepts (${conceptFiles.length})`);
-    lines.push('');
-    for (const f of conceptFiles) lines.push(`- [[concepts/${f.replace(/\.md$/, '')}]]`);
+    if (section.pages.length > 40) {
+      // A 200-line list of one-word domain pages is noise; keep it scannable.
+      lines.push(section.pages.map(wikilink).join(' · '));
+    } else {
+      for (const page of section.pages) {
+        const depth = depthLabel(page);
+        lines.push(`- ${wikilink(page)}${depth ? ` — ${depth}` : ''}`);
+      }
+    }
     lines.push('');
   }
 
   return lines.join('\n');
 }
 
-/** Generate a simple static HTML index with links to all wiki pages. */
-async function generateHtmlIndex(): Promise<string> {
-  const sourceFiles   = (await listFiles(mdSourcesDir())).filter(f => f.endsWith('.md')).sort();
-  const categoryFiles = (await listFiles(mdCategoriesDir())).filter(f => f.endsWith('.md')).sort();
-  const domainFiles   = (await listFiles(mdDomainsDir())).filter(f => f.endsWith('.md')).sort();
-  const entityFiles   = (await listFiles(mdEntitiesDir())).filter(f => f.endsWith('.md')).sort();
-  const conceptFiles  = (await listFiles(mdConceptsDir())).filter(f => f.endsWith('.md')).sort();
-  const now = new Date().toISOString().slice(0, 10);
-
-  function section(title: string, files: string[], subdir: string): string {
-    if (files.length === 0) return '';
-    const links = files.map(f => {
-      const name = f.replace(/\.md$/, '');
-      const label = name.replace(/-/g, ' ');
-      return `      <li><a href="${subdir}/${name}.md">${escapeHtml(label)}</a></li>`;
-    }).join('\n');
-    return `  <section>\n    <h2>${escapeHtml(title)} (${files.length})</h2>\n    <ul>\n${links}\n    </ul>\n  </section>\n`;
-  }
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FT Knowledge Base</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a1a1a; background: #fafafa; }
-    h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
-    .updated { color: #888; font-size: 0.85rem; margin-bottom: 2rem; }
-    h2 { font-size: 1.2rem; margin-top: 2rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.3rem; }
-    ul { list-style: none; padding: 0; columns: 2; column-gap: 2rem; }
-    li { padding: 0.15rem 0; break-inside: avoid; }
-    a { color: #0066cc; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    section { margin-bottom: 1rem; }
-  </style>
-</head>
-<body>
-  <h1>FT Knowledge Base</h1>
-  <p class="updated">Last updated: ${now}</p>
-${section('Sources', sourceFiles, 'sources')}${section('Categories', categoryFiles, 'categories')}${section('Domains', domainFiles, 'domains')}${section('Entities', entityFiles, 'entities')}${section('Concepts', conceptFiles, 'concepts')}</body>
-</html>
-`;
+/**
+ * Rewrite index.md + index.html from what is on disk. Cheap and LLM-free, so
+ * callers can refresh navigation without regenerating page content.
+ */
+export async function regenerateLibraryIndexes(): Promise<{ indexPath: string; htmlPath: string; pages: number }> {
+  await ensureWikiConfig();
+  const indexContent = await generateIndex();
+  await writeMd(mdIndexPath(), indexContent);
+  const htmlContent = await generateHtmlIndex();
+  await writeMd(mdHtmlPath(), htmlContent);
+  const pages = Number(/^pages:\s*(\d+)$/m.exec(indexContent)?.[1] ?? 0);
+  return { indexPath: mdIndexPath(), htmlPath: mdHtmlPath(), pages };
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+/** Readable HTML entry point for the library, built on the shared page shell. */
+async function generateHtmlIndex(): Promise<string> {
+  const counts = await libraryItemCounts();
+  const sections = await collectLibrarySections(counts);
+  const guidance = await readWikiGuidance();
+  const daily = await recentDailyDigests(7);
+  const allPages = sections.flatMap((section) => section.pages);
+  const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+
+  const toItem = (page: LibraryPage, group: string): HtmlItem => ({
+    title: page.label,
+    url: page.rel,
+    eyebrow: group,
+    byline: [depthLabel(page), page.updated ? `updated ${page.updated}` : '']
+      .filter(Boolean)
+      .join(' · '),
+    group,
+    openLabel: 'Markdown',
+  });
+
+  const chips: HtmlChip[] = [{ label: 'Everything' }];
+  const groups: string[] = [];
+
+  if (daily.length > 0) {
+    chips.push({ label: 'Daily reviews', value: 'daily', count: daily.length });
+    groups.push(renderHtmlGroup({
+      label: 'Daily reviews',
+      sublabel: 'Newest first',
+      count: `${daily.length} shown`,
+      intro: 'Each review has a readable HTML page beside its markdown.',
+      items: daily.map((page) => ({
+        title: page.name,
+        url: `daily/${page.name}.html`,
+        eyebrow: 'daily',
+        byline: 'HTML page · markdown beside it',
+        group: 'daily',
+        openLabel: 'Open page',
+      })),
+      group: 'daily',
+    }));
+  }
+
+  const recent = recentAcrossSections(sections, 8, 3);
+  if (recent.length > 0) {
+    chips.push({ label: 'Recently updated', value: 'recent', count: recent.length });
+    groups.push(renderHtmlGroup({
+      label: 'Recently updated',
+      sublabel: 'Fresh pages',
+      count: `${recent.length} pages`,
+      items: recent.map((page) => toItem(page, 'recent')),
+      group: 'recent',
+    }));
+  }
+
+  for (const section of sections) {
+    if (section.pages.length === 0) continue;
+    const ordered = [...section.pages].sort(byDepthDesc);
+    chips.push({ label: section.title, value: section.id, count: section.pages.length });
+    groups.push(renderHtmlGroup({
+      label: section.title,
+      sublabel: `${section.pages.length} pages`,
+      count: 'by depth',
+      items: ordered.map((page) => toItem(page, section.id)),
+      group: section.id,
+    }));
+  }
+
+  return renderHtmlPage({
+    title: 'Field Theory Library',
+    subtitle: purposeLine(guidance),
+    stats: [
+      { label: 'Pages', value: allPages.length },
+      ...sections.filter((section) => section.pages.length > 0).map((section) => ({
+        label: section.title,
+        value: section.pages.length,
+      })),
+    ],
+    metaLine: `Rebuilt <b>${htmlEscape(now)}</b> UTC by <code>ft md</code> · page style comes from <code>wiki.config.md</code>`,
+    chips,
+    searchPlaceholder: 'Search page names',
+    body: groups.join(''),
+    footer: 'Links open the generated markdown; daily reviews open their HTML page. Run <code>ft wiki --unified</code> to refresh page content.',
+  });
 }
 
 /** Grep-friendly log entry: `## [YYYY-MM-DD] type | detail` */
@@ -459,6 +673,9 @@ async function doCompileUnified(
   }
 
   // ── Generate each page ───────────────────────────────────────────────
+  // The library owner's own instructions ride along with every page prompt.
+  await ensureWikiConfig();
+  const guidance = await readWikiGuidance();
   let consecutiveFailures = 0;
   let firstFailureMsg = '';
   for (let i = 0; i < toGenerate.length; i++) {
@@ -469,13 +686,13 @@ async function doCompileUnified(
     let prompt: string;
     if (item.type === 'source') {
       samples = await sampleCanonicalBySource(item.name, MAX_SAMPLE_SIZE);
-      prompt = buildSourcePagePrompt(item.name, mapCanonicalToMdBookmarks(samples));
+      prompt = buildSourcePagePrompt(item.name, mapCanonicalToMdBookmarks(samples), guidance);
     } else if (item.type === 'category') {
       samples = await sampleCanonicalByCategory(item.name, MAX_SAMPLE_SIZE);
-      prompt = buildCategoryPagePrompt(item.name, mapCanonicalToMdBookmarks(samples));
+      prompt = buildCategoryPagePrompt(item.name, mapCanonicalToMdBookmarks(samples), guidance);
     } else {
       samples = await sampleCanonicalByDomain(item.name, MAX_SAMPLE_SIZE);
-      prompt = buildDomainPagePrompt(item.name, mapCanonicalToMdBookmarks(samples));
+      prompt = buildDomainPagePrompt(item.name, mapCanonicalToMdBookmarks(samples), guidance);
     }
 
     const opts = llmOpts(samples.length);
@@ -646,6 +863,8 @@ async function doCompile(
     }
 
     // ── Generate each page ───────────────────────────────────────────────
+    await ensureWikiConfig();
+    const guidance = await readWikiGuidance();
     let consecutiveFailures = 0;
     let firstFailureMsg = '';
     for (let i = 0; i < toGenerate.length; i++) {
@@ -656,13 +875,13 @@ async function doCompile(
       let prompt: string;
       if (item.type === 'category') {
         samples = await sampleByCategory(item.name, MAX_SAMPLE_SIZE, db);
-        prompt  = buildCategoryPagePrompt(item.name, mapToMdBookmarks(samples));
+        prompt  = buildCategoryPagePrompt(item.name, mapToMdBookmarks(samples), guidance);
       } else if (item.type === 'domain') {
         samples = await sampleByDomain(item.name, MAX_SAMPLE_SIZE, db);
-        prompt  = buildDomainPagePrompt(item.name, mapToMdBookmarks(samples));
+        prompt  = buildDomainPagePrompt(item.name, mapToMdBookmarks(samples), guidance);
       } else {
         samples = await sampleByAuthor(item.name, MAX_SAMPLE_SIZE, db);
-        prompt  = buildEntityPagePrompt(item.name, mapToMdBookmarks(samples));
+        prompt  = buildEntityPagePrompt(item.name, mapToMdBookmarks(samples), guidance);
       }
 
       const opts = llmOpts(samples.length);

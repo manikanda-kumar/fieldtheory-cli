@@ -57,6 +57,19 @@ last_updated: ${todayIso()}
 Replace <type> with the appropriate type (category, domain, or entity).`.trim();
 }
 
+/**
+ * Author-owned guidance from library/wiki.config.md. Untrusted bookmark text is
+ * fenced off by SECURITY_NOTE; this block is the opposite — the user's own
+ * instructions for how their wiki should read.
+ */
+export function wikiGuidanceBlock(guidance?: string): string {
+  if (!guidance?.trim()) return '';
+  return `
+## Library config (written by the library's owner — follow it)
+
+${guidance.trim()}`.trimEnd();
+}
+
 const WIKILINK_RULES = `
 Cross-reference other pages using wikilink syntax:
 - Other category pages: [[categories/tool]], [[categories/security]]
@@ -84,12 +97,13 @@ function formatBookmarks(bookmarks: MdBookmark[]): string {
   }).join('\n\n');
 }
 
-export function buildCategoryPagePrompt(category: string, bookmarks: MdBookmark[]): string {
+export function buildCategoryPagePrompt(category: string, bookmarks: MdBookmark[], guidance?: string): string {
   return withSystemOverride(
     'wiki page writer that outputs only raw markdown',
     `Write a comprehensive summary page for the bookmark category "${category}".
 
 ${SECURITY_NOTE}
+${wikiGuidanceBlock(guidance)}
 
 ${frontmatterRules()}
 
@@ -126,12 +140,13 @@ Now write the wiki page. Output ONLY the markdown — no preamble, no explanatio
   );
 }
 
-export function buildDomainPagePrompt(domain: string, bookmarks: MdBookmark[]): string {
+export function buildDomainPagePrompt(domain: string, bookmarks: MdBookmark[], guidance?: string): string {
   return withSystemOverride(
     'wiki page writer that outputs only raw markdown',
     `Write a comprehensive summary page for the subject domain "${domain}".
 
 ${SECURITY_NOTE}
+${wikiGuidanceBlock(guidance)}
 
 ${frontmatterRules()}
 
@@ -171,12 +186,13 @@ Now write the wiki page. Output ONLY the markdown — no preamble, no explanatio
   );
 }
 
-export function buildEntityPagePrompt(authorHandle: string, bookmarks: MdBookmark[]): string {
+export function buildEntityPagePrompt(authorHandle: string, bookmarks: MdBookmark[], guidance?: string): string {
   return withSystemOverride(
     'wiki page writer that outputs only raw markdown',
     `Write a summary page for the author/entity "@${authorHandle}".
 
 ${SECURITY_NOTE}
+${wikiGuidanceBlock(guidance)}
 
 ${frontmatterRules()}
 
@@ -252,7 +268,7 @@ const SOURCE_DESCRIPTIONS: Record<string, string> = {
   project: 'Local development projects scanned from the user\'s machine',
 };
 
-export function buildSourcePagePrompt(source: string, bookmarks: MdBookmark[]): string {
+export function buildSourcePagePrompt(source: string, bookmarks: MdBookmark[], guidance?: string): string {
   const description = SOURCE_DESCRIPTIONS[source] ?? `Bookmarks from the "${source}" source`;
   return withSystemOverride(
     'wiki page writer that outputs only raw markdown',
@@ -261,6 +277,7 @@ export function buildSourcePagePrompt(source: string, bookmarks: MdBookmark[]): 
 ${description}
 
 ${SECURITY_NOTE}
+${wikiGuidanceBlock(guidance)}
 
 The page MUST start with YAML frontmatter in this exact format:
 \`\`\`

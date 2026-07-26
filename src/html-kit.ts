@@ -124,7 +124,10 @@ function searchHaystack(item: HtmlItem): string {
 }
 
 export function renderHtmlItem(item: HtmlItem): string {
-  const classes = ['item', ...(item.lead ? ['lead'] : [])].join(' ');
+  // Catalog rows (a page name plus counts) get a tighter line than reading-list
+  // rows, which carry prose and a preview.
+  const compact = !item.body && !item.media && !item.extra?.length && !item.footnote;
+  const classes = ['item', ...(item.lead ? ['lead'] : []), ...(compact ? ['compact'] : [])].join(' ');
   const parts: string[] = [];
   parts.push(`<article class="${classes}" data-filterable data-group="${htmlEscape(item.group ?? '')}" data-text="${htmlEscape(searchHaystack(item))}">`);
   if (item.eyebrow || item.byline || item.url) {
@@ -230,6 +233,9 @@ a:hover{border-bottom-color:var(--accent);color:var(--accent)}
 .item:first-of-type{padding-top:2px}
 .item:last-child{border:0;padding-bottom:2px}
 .item.lead{grid-template-columns:minmax(0,1fr) 260px}
+.item.compact{padding:11px 0}
+.item.compact .toprow{margin-bottom:3px}
+.item.compact h3{margin:0;font-size:17px;line-height:1.3}
 .item:not(:has(.media)){grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "title" "why" "extra"}
 .toprow{grid-area:top;display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
 .kicker{color:var(--brand);font:800 10px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase}

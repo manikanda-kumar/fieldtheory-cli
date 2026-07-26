@@ -36,7 +36,7 @@ import { formatClassificationSummary } from './bookmark-classify.js';
 import { classifyWithLlm, classifyDomainsWithLlm } from './bookmark-classify-llm.js';
 import { resolveEngine, detectAvailableEngines } from './engine.js';
 import { loadPreferences, savePreferences } from './preferences.js';
-import { compileMd } from './md.js';
+import { compileMd, regenerateLibraryIndexes } from './md.js';
 import { cleanWikiFences } from './md-fence.js';
 import { askMd } from './md-ask.js';
 import { lintMd, fixLintIssues } from './md-lint.js';
@@ -3392,6 +3392,7 @@ export function buildCli() {
     .description('Compile Karpathy-style markdown wiki from bookmarks (requires an available LLM engine: claude, codex, grok, agy CLI on PATH, or droid via OpenCode Go auth)')
     .option('--full', 'Recompile all pages (ignore incremental cache)')
     .option('--clean', 'Strip leftover LLM code fences from existing wiki pages (no compile)')
+    .option('--index-only', 'Rebuild index.md and index.html from pages already on disk (no LLM calls)')
     .option('--unified', 'Compile from the unified canonical index (all sources: X, Raindrop, GitHub Stars, YouTube, Projects)')
     .option('--json', 'Output JSON result instead of text')
     .addOption(engineOption())
@@ -3400,6 +3401,14 @@ export function buildCli() {
     .action(safe(async (options) => {
       if (options.unified && !requireUnifiedIndex()) return;
       if (!options.unified && !requireIndex()) return;
+
+      if (options.indexOnly) {
+        const indexes = await regenerateLibraryIndexes();
+        console.log(`  ✓ Index rebuilt from ${indexes.pages} pages`);
+        console.log(`    ${indexes.indexPath}`);
+        console.log(`    ${indexes.htmlPath}`);
+        return;
+      }
 
       if (options.clean) {
         const fence = await cleanWikiFences({ backup: true });
