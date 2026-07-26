@@ -58,7 +58,12 @@ export function openCodeApiKey(options: Pick<OpenCodeClientOptions, 'apiKey'> = 
 export function createOpenCodeClient(options: OpenCodeClientOptions = {}): OpenCodeClient {
   const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
   const model = options.model?.trim() || process.env.FT_ENRICH_MODEL?.trim() || DEFAULT_MODEL;
-  const timeoutMs = Math.max(1, options.timeoutMs ?? 30_000);
+  // 30s starved deepseek on long pages: a 926-link enrichment backfill logged
+  // 451 timeouts against 128 HTTP 403s (2026-07-26). Override per-run with
+  // FT_OPENCODE_TIMEOUT_MS.
+  const envTimeout = Number(process.env.FT_OPENCODE_TIMEOUT_MS);
+  const defaultTimeout = Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 90_000;
+  const timeoutMs = Math.max(1, options.timeoutMs ?? defaultTimeout);
 
   return {
     async chat(chatOptions) {
