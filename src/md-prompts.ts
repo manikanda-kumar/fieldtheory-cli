@@ -43,6 +43,12 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Pages are read standalone in markdown viewers, so each needs its own H1. */
+const TITLE_RULE = `
+After the frontmatter, the first line MUST be a single H1 title for the page
+(for example "# Agent tooling" or "# github.com"), followed by one sentence
+stating the page's most useful takeaway. Do not repeat the H1 later.`.trim();
+
 function frontmatterRules(): string {
   return `
 The page MUST start with YAML frontmatter in this exact format:
@@ -54,7 +60,9 @@ source_type: bookmarks
 last_updated: ${todayIso()}
 ---
 \`\`\`
-Replace <type> with the appropriate type (category, domain, or entity).`.trim();
+Replace <type> with the appropriate type (category, domain, or entity).
+
+${TITLE_RULE}`.trim();
 }
 
 /**
@@ -289,6 +297,8 @@ source_type: canonical
 last_updated: ${todayIso()}
 ---
 \`\`\`
+
+${TITLE_RULE}
 
 ${WIKILINK_RULES}
 
