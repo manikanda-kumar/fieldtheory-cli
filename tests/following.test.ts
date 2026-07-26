@@ -376,6 +376,81 @@ test('syncFollowing resumes one crawl, prunes stale accounts only at completion,
   });
 });
 
+test('syncFollowing completes a head crawl that ends in X empty-page padding', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const followingDir = path.join(dir, 'following');
+    await mkdir(followingDir, { recursive: true });
+    await writeFile(path.join(followingDir, 'following.jsonl'), [
+      JSON.stringify(makeRecord({ userId: '1', handle: 'alice' })),
+      JSON.stringify(makeRecord({ userId: 'stale', handle: 'unfollowed' })),
+    ].join('\n') + '\n');
+    await writeFile(path.join(followingDir, 'meta.json'), JSON.stringify({
+      lastUpdated: '2026-07-25T00:00:00.000Z', count: 2, viewerId: '99', snapshotComplete: true,
+    }));
+
+    let page = 0;
+    const result = await syncFollowing({
+      csrfToken: 'ct0', cookieHeader: 'ct0=ct0; twid=u%3D99', delayMs: 0, maxMinutes: Infinity,
+      now: () => new Date('2026-07-26T10:00:00.000Z'),
+      // One real page, then cursor-bearing empty pages forever (live X behavior).
+      fetchImpl: async () => {
+        page += 1;
+        const users = page === 1 ? [{ id: '1', handle: 'alice' }, { id: '2', handle: 'bob' }] : [];
+        return new Response(followingResponse(users, `cursor-${page}`));
+      },
+    });
+
+    assert.equal(result.stopReason, 'end of following (empty-page padding)');
+    assert.equal(result.snapshotComplete, true);
+    assert.equal(result.pruned, 1, 'accounts absent from a completed head crawl are pruned');
+    assert.equal(result.totalFollowing, 2);
+    const meta = JSON.parse(await readFile(path.join(followingDir, 'meta.json'), 'utf8'));
+    assert.equal(meta.cursor, undefined);
+    assert.equal(meta.snapshotComplete, true);
+  });
+});
+
+test('syncFollowing clears a resumed cursor that only yields empty pages so the next run starts at the head', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const followingDir = path.join(dir, 'following');
+    await mkdir(followingDir, { recursive: true });
+    const metaPath = path.join(followingDir, 'meta.json');
+    await writeFile(path.join(followingDir, 'following.jsonl'), JSON.stringify(makeRecord({ userId: '1', handle: 'alice' })) + '\n');
+    await writeFile(metaPath, JSON.stringify({
+      lastUpdated: '2026-07-19T00:00:00.000Z', count: 1, viewerId: '99',
+      snapshotComplete: false, cursor: 'dead-tail', crawlStartedAt: '2026-07-19T00:00:00.000Z',
+    }));
+    const session = {
+      csrfToken: 'ct0', cookieHeader: 'ct0=ct0; twid=u%3D99', delayMs: 0, maxMinutes: Infinity,
+      now: () => new Date('2026-07-26T10:00:00.000Z'),
+    };
+
+    let page = 0;
+    const stalled = await syncFollowing({
+      ...session,
+      fetchImpl: async () => new Response(followingResponse([], `empty-${page += 1}`)),
+    });
+    assert.match(stalled.stopReason, /stale resume cursor cleared/);
+    assert.equal(stalled.snapshotComplete, false);
+    assert.equal(stalled.totalFollowing, 1, 'roster is preserved while the crawl is incomplete');
+    const cleared = JSON.parse(await readFile(metaPath, 'utf8'));
+    assert.equal(cleared.cursor, undefined);
+    assert.equal(cleared.crawlStartedAt, undefined);
+
+    let requestedCursor: unknown = 'not requested';
+    const recovered = await syncFollowing({
+      ...session,
+      fetchImpl: async (url) => {
+        requestedCursor = JSON.parse(new URL(String(url)).searchParams.get('variables') ?? '{}').cursor;
+        return new Response(followingResponse([{ id: '1', handle: 'alice' }, { id: '2', handle: 'bob' }]));
+      },
+    });
+    assert.equal(requestedCursor, undefined, 'next run must start at the head, not the dead tail');
+    assert.equal(recovered.snapshotComplete, true);
+    assert.equal(recovered.totalFollowing, 2);
+  });
+});
+
 test('syncFollowing refuses a legacy roster until an explicit rebuild and preserves a suspicious empty crawl', async () => {
   await withIsolatedDataDir(async (dir) => {
     const followingDir = path.join(dir, 'following');

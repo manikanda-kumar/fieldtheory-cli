@@ -517,9 +517,52 @@ export function renderDigestMarkdown(
   return lines.join('\n');
 }
 
+/**
+ * Digest prompts are long and grounded runs also wait on the engine's web/X
+ * tools, so the shared 120s engine default kills healthy calls (2026-07-23:
+ * primary, retry, and fallback all timed out at 120s and the digest fell back
+ * to mechanical). Override with FT_DAILY_TIMEOUT_MS.
+ */
+const DAILY_INVOKE_TIMEOUT_MS = 300_000;
+
+function dailyInvokeTimeoutMs(): number {
+  const raw = Number(process.env.FT_DAILY_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DAILY_INVOKE_TIMEOUT_MS;
+}
+
 async function defaultInvoke(profile: EngineRunProfile, prompt: string): Promise<string> {
   const engine = await resolveEngine(profile);
-  return invokeEngineAsync(engine, prompt);
+  return invokeEngineAsync(engine, prompt, {
+    timeout: dailyInvokeTimeoutMs(),
+    maxBuffer: 1024 * 1024 * 4,
+  });
+}
+
+interface DailyFallbackSpec {
+  engine: string;
+  model?: string;
+}
+
+/** Fallback engines tried, in order, after the primary and its retry. */
+export function dailyFallbackChain(primaryLabel: string, env: NodeJS.ProcessEnv = process.env): DailyFallbackSpec[] {
+  const candidates: DailyFallbackSpec[] = [
+    {
+      engine: (env.FT_DAILY_FALLBACK_ENGINE ?? 'agy').trim(),
+      model: env.FT_DAILY_FALLBACK_MODEL?.trim() || undefined,
+    },
+    {
+      engine: (env.FT_DAILY_FALLBACK_ENGINE_2 ?? 'droid').trim(),
+      model: (env.FT_DAILY_FALLBACK_MODEL_2 ?? 'deepseek-v4-flash').trim() || undefined,
+    },
+  ];
+  const seen = new Set([primaryLabel]);
+  const chain: DailyFallbackSpec[] = [];
+  for (const candidate of candidates) {
+    if (!candidate.engine || candidate.engine === 'none' || seen.has(candidate.engine)) continue;
+    seen.add(candidate.engine);
+    chain.push(candidate);
+  }
+  return chain;
 }
 
 export async function synthesizeDaily(
@@ -574,19 +617,20 @@ export async function synthesizeDaily(
       // Unattended runs hit transient engine flakiness: retry the primary
       // engine once, then try the fallback engine before going mechanical.
       const primaryLabel = profile.engine ?? 'default';
-      const fallbackEngine = (process.env.FT_DAILY_FALLBACK_ENGINE ?? 'agy').trim();
       const attempts: Array<{ label: string; invoke: (prompt: string) => Promise<string> }> = options.invoke
         ? [{ label: primaryLabel, invoke: options.invoke }]
         : [
             { label: primaryLabel, invoke: (p) => defaultInvoke(profile, p) },
             { label: `${primaryLabel} (retry)`, invoke: (p) => defaultInvoke(profile, p) },
-            ...(fallbackEngine && fallbackEngine !== 'none' && fallbackEngine !== primaryLabel
-              ? [{
-                  label: `${fallbackEngine} (fallback)`,
-                  // Fresh profile: the primary's model/effort don't transfer across engines.
-                  invoke: (p: string) => defaultInvoke({ engine: fallbackEngine, ...(groundExternal ? { webSearch: true } : {}) }, p),
-                }]
-              : []),
+            ...dailyFallbackChain(primaryLabel).map((spec, index) => ({
+              label: `${spec.engine} (fallback${index === 0 ? '' : ` ${index + 1}`})`,
+              // Fresh profile: the primary's model/effort don't transfer across engines.
+              invoke: (p: string) => defaultInvoke({
+                engine: spec.engine,
+                ...(spec.model ? { model: spec.model } : {}),
+                ...(groundExternal ? { webSearch: true } : {}),
+              }, p),
+            })),
           ];
       for (const attempt of attempts) {
         try {

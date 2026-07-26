@@ -148,7 +148,14 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
   // Merge results
   const observed = fetchResult.records.map((record) => ({ ...record, seenInCrawlAt: crawlStartedAt }));
   const { merged, added } = mergeFollowingRecords(existing, observed);
-  const terminalResponse = fetchResult.stopReason === 'end of following';
+  // X's Following timeline does not reliably serve a cursorless final page: it
+  // pads the tail with cursor-bearing empty pages, so `end of following` may
+  // never fire (live 2026-07-26: a full head crawl saw all 1,510 accounts and
+  // still stopped on empty-page padding). A crawl that started at the head and
+  // walked into that padding has covered the whole roster, so it is terminal.
+  // The suspicious-empty and implausible-shrink guards below still gate pruning.
+  const exhaustedTail = cursor === undefined && fetchResult.stopReason === 'too many empty pages';
+  const terminalResponse = fetchResult.stopReason === 'end of following' || exhaustedTail;
   const seenThisCrawl = pruneToFollowingCrawl(merged, crawlStartedAt);
   const suspiciousEmpty = terminalResponse && existing.length > 0 && seenThisCrawl.length === 0;
   const implausibleShrink = terminalResponse
@@ -157,13 +164,24 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
     && seenThisCrawl.length < existing.length * MIN_RETAINED_SNAPSHOT_FRACTION;
   const snapshotGuarded = suspiciousEmpty || implausibleShrink;
   const isTerminal = terminalResponse && !snapshotGuarded;
+  // A resumed crawl whose cursor only yields empty pages (or loops) has reached
+  // a dead tail. Keeping that cursor makes every later run resume at the tail
+  // and never reach the head, so the snapshot can never complete again.
+  const deadResumeCursor = canResume
+    && fetchResult.records.length === 0
+    && (fetchResult.stopReason === 'too many empty pages' || fetchResult.stopReason === 'cursor cycle');
+  const savedCursor = deadResumeCursor ? undefined : fetchResult.nextCursor;
   const finalRecords = isTerminal ? seenThisCrawl : merged;
   const pruned = merged.length - finalRecords.length;
   const stopReason = implausibleShrink
     ? 'implausible shrink guard'
     : suspiciousEmpty
       ? 'suspicious empty crawl'
-      : fetchResult.stopReason;
+      : deadResumeCursor
+        ? `${fetchResult.stopReason} — stale resume cursor cleared`
+        : exhaustedTail
+          ? 'end of following (empty-page padding)'
+          : fetchResult.stopReason;
   const now = nowFn().toISOString();
 
   // Only after fetchFollowing has returned do we mark a changed, incomplete
@@ -171,12 +189,12 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
   // previous complete snapshot usable.
   if (!isTerminal) {
     await writeJson(metaPath, {
-      cursor: fetchResult.nextCursor,
+      cursor: savedCursor,
       lastUpdated: now,
       count: finalRecords.length,
       viewerId,
       snapshotComplete: false,
-      ...(fetchResult.nextCursor ? { crawlStartedAt } : {}),
+      ...(savedCursor ? { crawlStartedAt } : {}),
     } satisfies FollowingMeta);
   }
 
@@ -185,12 +203,12 @@ export async function syncFollowing(options: FollowingSyncOptions = {}): Promise
 
   // Write meta
   const meta: FollowingMeta = {
-    cursor: isTerminal ? undefined : fetchResult.nextCursor,
+    cursor: isTerminal ? undefined : savedCursor,
     lastUpdated: now,
     count: finalRecords.length,
     viewerId,
     snapshotComplete: isTerminal && !suspiciousEmpty,
-    ...(!isTerminal && fetchResult.nextCursor ? { crawlStartedAt } : {}),
+    ...(!isTerminal && savedCursor ? { crawlStartedAt } : {}),
   };
   await writeJson(metaPath, meta);
 

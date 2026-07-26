@@ -42,6 +42,22 @@ function runPlanAssertions(): void {
   assert.equal(plan.find((step) => step.id === 'daily')?.enabled, false);
 }
 
+test('buildSyncAllPlan classifies the X table when --classify is on', () => {
+  const off = buildSyncAllPlan({ noSynthesis: true });
+  assert.equal(off.find((step) => step.id === 'x-classify')?.enabled, false);
+
+  const plan = buildSyncAllPlan({ classify: true });
+  const step = plan.find((item) => item.id === 'x-classify');
+  assert.equal(step?.enabled, true);
+  assert.deepEqual(step?.command, ['classify', '--regex']);
+  const ids = plan.map((item) => item.id);
+  assert.ok(ids.indexOf('x-classify') > ids.indexOf('x'), 'X classification runs after the X sync');
+  assert.ok(ids.indexOf('x-classify') < ids.indexOf('canonical-index'), 'X classification runs before the canonical rebuild');
+
+  const skipped = buildSyncAllPlan({ classify: true, skip: ['x'] });
+  assert.equal(skipped.find((item) => item.id === 'x-classify')?.enabled, false);
+});
+
 test('buildSyncAllPlan runs the daily digest step in the synthesis tail', () => {
   const plan = buildSyncAllPlan({});
   const dailyStep = plan.find((step) => step.id === 'daily');

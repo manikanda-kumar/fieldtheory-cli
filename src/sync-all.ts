@@ -89,6 +89,18 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       reason: process.env.TWEETSMASH_API_KEY ? undefined : 'set TWEETSMASH_API_KEY to include',
     },
     {
+      id: 'x-classify',
+      // Regex-only and fill-only: cheap, offline, and never overwrites an
+      // existing label. Without it the X-only table drifts to zero categories
+      // (2026-07-26: 0/10,648) and ft categories / ft search --category /
+      // the viz dashboard go blank while canonical stays classified.
+      label: 'Classify X bookmarks (regex)',
+      source: 'x',
+      command: ['classify', '--regex'],
+      enabled: enabled('x') && classify,
+      reason: classify ? undefined : 'pass --classify to include',
+    },
+    {
       id: 'x-list',
       label: 'Fetch X list digest',
       source: 'x-list',
