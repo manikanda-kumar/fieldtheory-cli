@@ -345,6 +345,30 @@ function recentAcrossSections(sections: LibrarySection[], limit: number, perSect
  * first (biggest pages, newest reviews, config), then the full catalog. Domain
  * pages are the long tail, so past 40 they collapse into a compact line.
  */
+/**
+ * `--only` accepts either exact page keys ("entities/karpathy") or a whole page
+ * type ("entities"). Type selection matters because the X-only and unified
+ * compilers write into the same directories: refreshing entity pages must not
+ * overwrite category and domain pages that the unified run produced.
+ */
+interface OnlyFilter {
+  matches(key: string): boolean;
+}
+
+function buildOnlyFilter(only: string[] | undefined): OnlyFilter | null {
+  const entries = (only ?? []).flatMap((entry) => entry.split(',')).map((entry) => entry.trim()).filter(Boolean);
+  if (entries.length === 0) return null;
+  const keys = new Set(entries.filter((entry) => entry.includes('/')));
+  const types = new Set(entries.filter((entry) => !entry.includes('/')).map((entry) => entry.replace(/\/$/, '')));
+  return {
+    matches(key: string): boolean {
+      if (keys.has(key)) return true;
+      const type = key.split('/')[0];
+      return types.has(type);
+    },
+  };
+}
+
 async function generateIndex(): Promise<string> {
   const counts = await libraryItemCounts();
   const sections = await collectLibrarySections(counts);
@@ -571,7 +595,7 @@ function engineFailureHint(engineName: string, err: EngineInvocationError | null
 export async function compileMd(options: CompileOptions = {}): Promise<CompileResult> {
   const progress  = options.onProgress ?? ((s: string) => fs.writeSync(2, s + '\n'));
   const startTime = Date.now();
-  const onlySet   = options.only ? new Set(options.only) : null;
+  const onlyFilter = buildOnlyFilter(options.only);
 
   // ── Lock file to prevent concurrent runs ──────────────────────────────
   const lockPath = path.join(mdDir(), '.lock');
@@ -590,7 +614,7 @@ export async function compileMd(options: CompileOptions = {}): Promise<CompileRe
   }
 
   try {
-    return await doCompile(options, progress, startTime, onlySet);
+    return await doCompile(options, progress, startTime, onlyFilter);
   } finally {
     try { fs.unlinkSync(lockPath); } catch { /* best effort */ }
   }
@@ -600,7 +624,7 @@ async function doCompileUnified(
   options: CompileOptions,
   progress: (s: string) => void,
   startTime: number,
-  onlySet: Set<string> | null,
+  onlySet: OnlyFilter | null,
   engine: ResolvedEngine,
   state: MdState,
   isFullCompile: boolean,
@@ -630,7 +654,7 @@ async function doCompileUnified(
   for (const [source, count] of Object.entries(sourceCounts)) {
     if (count < 1) continue;
     const key = `sources/${source}`;
-    if (onlySet && !onlySet.has(key)) continue;
+    if (onlySet && !onlySet.matches(key)) continue;
     if (!isFullCompile && !onlySet && !hasChanged(state, key, count)) { skipCount++; continue; }
     toGenerate.push({ key, type: 'source', name: source, count });
   }
@@ -638,7 +662,7 @@ async function doCompileUnified(
   for (const [category, count] of Object.entries(categoryCounts)) {
     if (count < MIN_CATEGORY_COUNT) continue;
     const key = `categories/${category}`;
-    if (onlySet && !onlySet.has(key)) continue;
+    if (onlySet && !onlySet.matches(key)) continue;
     if (!isFullCompile && !onlySet && !hasChanged(state, key, count)) { skipCount++; continue; }
     toGenerate.push({ key, type: 'category', name: category, count });
   }
@@ -646,7 +670,7 @@ async function doCompileUnified(
   for (const [domain, count] of Object.entries(domainCounts)) {
     if (count < MIN_DOMAIN_COUNT) continue;
     const key = `domains/${domain}`;
-    if (onlySet && !onlySet.has(key)) continue;
+    if (onlySet && !onlySet.matches(key)) continue;
     if (!isFullCompile && !onlySet && !hasChanged(state, key, count)) { skipCount++; continue; }
     toGenerate.push({ key, type: 'domain', name: domain, count });
   }
@@ -765,7 +789,7 @@ async function doCompile(
   options: CompileOptions,
   progress: (s: string) => void,
   startTime: number,
-  onlySet: Set<string> | null,
+  onlySet: OnlyFilter | null,
 ): Promise<CompileResult> {
   const engine = await resolveEngine({
     override: options.engineOverride,
@@ -819,7 +843,7 @@ async function doCompile(
     for (const [category, count] of Object.entries(categoryCounts)) {
       if (count < MIN_CATEGORY_COUNT) continue;
       const key = `categories/${category}`;
-      if (onlySet && !onlySet.has(key)) continue;
+      if (onlySet && !onlySet.matches(key)) continue;
       if (!isFullCompile && !onlySet && !hasChanged(state, key, count)) { skipCount++; continue; }
       toGenerate.push({ key, type: 'category', name: category, count });
     }
@@ -827,14 +851,14 @@ async function doCompile(
     for (const [domain, count] of Object.entries(domainCounts)) {
       if (count < MIN_DOMAIN_COUNT) continue;
       const key = `domains/${domain}`;
-      if (onlySet && !onlySet.has(key)) continue;
+      if (onlySet && !onlySet.matches(key)) continue;
       if (!isFullCompile && !onlySet && !hasChanged(state, key, count)) { skipCount++; continue; }
       toGenerate.push({ key, type: 'domain', name: domain, count });
     }
 
     for (const { handle, count } of topAuthors) {
       const key = `entities/${handle}`;
-      if (onlySet && !onlySet.has(key)) continue;
+      if (onlySet && !onlySet.matches(key)) continue;
       if (!isFullCompile && !onlySet && !hasChanged(state, key, count)) { skipCount++; continue; }
       toGenerate.push({ key, type: 'entity', name: handle, count });
     }

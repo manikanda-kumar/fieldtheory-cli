@@ -3401,6 +3401,7 @@ export function buildCli() {
     .option('--full', 'Recompile all pages (ignore incremental cache)')
     .option('--clean', 'Strip leftover LLM code fences from existing wiki pages (no compile)')
     .option('--index-only', 'Rebuild index.md and index.html from pages already on disk (no LLM calls)')
+    .option('--only <keys>', 'Limit generation to page types or exact keys (e.g. entities, or domains/github.com)')
     .option('--unified', 'Compile from the unified canonical index (all sources: X, Raindrop, GitHub Stars, YouTube, Projects)')
     .option('--json', 'Output JSON result instead of text')
     .addOption(engineOption())
@@ -3444,6 +3445,7 @@ export function buildCli() {
         const result = await compileMd({
           full: options.full,
           unified: Boolean(options.unified),
+          only: options.only ? [String(options.only)] : undefined,
           engineOverride: options.engine ? String(options.engine) : undefined,
           modelOverride: options.model ? String(options.model) : undefined,
           effortOverride: options.effort ? String(options.effort) : undefined,
