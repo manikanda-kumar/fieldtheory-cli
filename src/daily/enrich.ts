@@ -3,6 +3,7 @@ import type { Database } from 'sql.js';
 import { acquireDbLock, openDb, releaseDbLock, saveDb } from '../db.js';
 import { twitterBookmarksIndexPath } from '../paths.js';
 import { createOpenCodeClient, openCodeApiKey } from '../llm/opencode-client.js';
+import { invokeEngineAsync, resolveEngine, type EngineRunProfile } from '../engine.js';
 import { THIN_CONTENT_CHARS, contentLength } from './synthesize.js';
 
 const FAILED_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -27,6 +28,13 @@ export interface EnrichThinItemsOptions {
   limit?: number;
   now?: Date;
   onMissingKey?: () => void;
+  /**
+   * Summarize through a local engine CLI (claude, codex, grok, droid, agy)
+   * instead of the OpenCode zen/go endpoint. Useful when the default model is
+   * rate limited or too slow: the 2026-07-26 backfill lost 451 links to LLM
+   * timeouts.
+   */
+  engine?: EngineRunProfile;
 }
 
 export interface EnrichThinItemsResult {
@@ -45,6 +53,9 @@ export interface EnrichmentBackfillResult {
   errorKinds: Array<{ error: string; count: number }>;
 }
 
+/** Engine CLIs spawn a process per call, so they need more room than the HTTP client. */
+const ENGINE_SUMMARY_TIMEOUT_MS = 180_000;
+
 export interface EnrichBackfillOptions extends EnrichThinItemsOptions {
   all?: boolean;
   dryRun?: boolean;
@@ -57,7 +68,7 @@ export interface EnrichBackfillOptions extends EnrichThinItemsOptions {
 export async function enrichThinItems(items: CanonicalRecentItem[], options: EnrichThinItemsOptions = {}): Promise<EnrichThinItemsResult> {
   const eligible = items.filter((item) => isEligible(item));
   if (eligible.length === 0) return { enrichedCount: 0, summaries: new Map() };
-  if (!options.llm && !openCodeApiKey()) {
+  if (!options.llm && !options.engine?.engine && !openCodeApiKey()) {
     options.onMissingKey?.();
     return { enrichedCount: 0, summaries: new Map() };
   }
@@ -89,7 +100,7 @@ export async function enrichBackfill(options: EnrichBackfillOptions = {}): Promi
   }).length;
   const base = { eligible: eligible.length, pending: pending.length, attempted: 0, ok: 0, failed: 0, skippedCached, errorKinds: [] };
   if (options.dryRun || pending.length === 0) return base;
-  if (!options.llm && !openCodeApiKey()) {
+  if (!options.llm && !options.engine?.engine && !openCodeApiKey()) {
     options.onMissingKey?.();
     return base;
   }
@@ -186,6 +197,21 @@ async function readCanonicalItems(): Promise<CanonicalRecentItem[]> {
   }
 }
 
+/**
+ * Summarizer used when the caller supplies no llm seam: an engine CLI when one
+ * was requested, otherwise the OpenCode zen/go client.
+ */
+function engineOrOpenCodeLlm(profile?: EngineRunProfile): (prompt: string) => Promise<string> {
+  if (!profile?.engine) {
+    return async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text;
+  }
+  let resolved: Awaited<ReturnType<typeof resolveEngine>> | undefined;
+  return async (prompt: string) => {
+    resolved ??= await resolveEngine(profile);
+    return invokeEngineAsync(resolved, prompt, { timeout: ENGINE_SUMMARY_TIMEOUT_MS });
+  };
+}
+
 async function enrichEligibleItems(
   eligible: CanonicalRecentItem[],
   cached: Map<string, LinkEnrichmentEntry>,
@@ -198,7 +224,7 @@ async function enrichEligibleItems(
 ): Promise<LinkEnrichmentEntry[]> {
   const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, retryFailed)).slice(0, limit);
   const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
-  const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+  const llm = options.llm ?? engineOrOpenCodeLlm(options.engine);
   let attempted = 0;
   let ok = 0;
   let failed = 0;

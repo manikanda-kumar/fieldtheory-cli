@@ -1485,6 +1485,9 @@ export function buildCli() {
     .option('--all', 'Attempt every pending eligible link', false)
     .option('--concurrency <n>', 'Concurrent backfill workers (default: 2)', (v: string) => Number(v), 2)
     .option('--retry-failed', 'Immediately retry cached transient failures', false)
+    .addOption(engineOption())
+    .option('--model <model>', 'Model override passed to the engine (e.g. grok-4.5)')
+    .option('--effort <effort>', 'Reasoning effort passed to the engine (low | medium | high | xhigh | max)')
     .action(safe(async (options) => {
       ensureDataDir();
       const crashGuard = (kind: string) => (error: unknown) => console.error(`  enrich-backfill ${kind}: ${error instanceof Error ? error.message : String(error)}`);
@@ -1495,6 +1498,11 @@ export function buildCli() {
       let result;
       try {
         result = await enrichBackfill({
+          engine: {
+            engine: stringOption(options.engine) ?? stringOption(process.env.FT_ENRICH_ENGINE),
+            model: stringOption(options.model) ?? stringOption(process.env.FT_ENRICH_ENGINE_MODEL),
+            effort: stringOption(options.effort),
+          },
           limit: typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : 100,
           all: Boolean(options.all), dryRun: Boolean(options.dryRun), retryFailed: Boolean(options.retryFailed),
           concurrency: typeof options.concurrency === 'number' && Number.isFinite(options.concurrency) ? Math.max(1, Math.floor(options.concurrency)) : 2,
