@@ -1326,6 +1326,8 @@ export function buildCli() {
     .option('--only <sources>', 'Comma-separated sources to run before the required canonical rebuild')
     .option('--no-synthesis', 'Skip canonical Markdown export after rebuilding the unified index')
     .option('--classify', 'Pass --classify to source commands that support it', false)
+    .option('--retries <n>', 'Retries for network sync steps after a failure (env FT_SYNC_RETRIES, default 2)', (v: string) => Number(v))
+    .option('--retry-delay <ms>', 'Backoff before the first retry; triples each attempt (env FT_SYNC_RETRY_DELAY_MS, default 20000)', (v: string) => Number(v))
     .action(safe(async (options) => {
       ensureDataDir();
       const result = await runSyncAll({
@@ -1337,6 +1339,8 @@ export function buildCli() {
         youtubeLimit: typeof options.youtubeLimit === 'number' && Number.isFinite(options.youtubeLimit) ? options.youtubeLimit : 8,
         noSynthesis: options.synthesis === false,
         classify: Boolean(options.classify),
+        retries: typeof options.retries === 'number' && Number.isFinite(options.retries) ? options.retries : undefined,
+        retryDelayMs: typeof options.retryDelay === 'number' && Number.isFinite(options.retryDelay) ? options.retryDelay : undefined,
       });
       console.log(formatSyncAllResult(result));
       if (!result.ok) process.exitCode = 1;

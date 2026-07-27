@@ -80,7 +80,7 @@ test('buildSyncAllPlan honors --only and --skip source filters', () => {
 
 test('runSyncAll isolates source failures and still runs canonical rebuild', async () => {
   const commands: string[][] = [];
-  const result = await runSyncAll({ only: 'raindrop,github-stars', noSynthesis: true }, {
+  const result = await runSyncAll({ only: 'raindrop,github-stars', noSynthesis: true, retries: 0 }, {
     async run(command) {
       commands.push(command);
       return { exitCode: command[0] === 'sync-raindrop' ? 1 : 0 };
@@ -91,6 +91,73 @@ test('runSyncAll isolates source failures and still runs canonical rebuild', asy
   assert.deepEqual(commands.map((command) => command[0]), ['sync-raindrop', 'sync-github-stars', 'index']);
   assert.equal(result.steps.find((step) => step.id === 'raindrop')?.status, 'failed');
   assert.equal(result.steps.find((step) => step.id === 'canonical-index')?.status, 'ok');
+});
+
+test('runSyncAll retries a failed network step and reports the winning attempt', async () => {
+  const commands: string[][] = [];
+  const waits: number[] = [];
+  const result = await runSyncAll({ only: 'raindrop', noSynthesis: true }, {
+    async run(command) {
+      commands.push(command);
+      const attempt = commands.filter((entry) => entry[0] === 'sync-raindrop').length;
+      return { exitCode: command[0] === 'sync-raindrop' && attempt < 3 ? 1 : 0 };
+    },
+  }, async (ms) => {
+    waits.push(ms);
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(commands.map((command) => command[0]), ['sync-raindrop', 'sync-raindrop', 'sync-raindrop', 'index']);
+  assert.deepEqual(waits, [20_000, 60_000]);
+  const raindrop = result.steps.find((step) => step.id === 'raindrop');
+  assert.equal(raindrop?.status, 'ok');
+  assert.equal(raindrop?.attempts, 3);
+  assert.match(formatSyncAllResult(result), /Sync Raindrop bookmarks {2}ft sync-raindrop after 3 attempts/);
+});
+
+test('runSyncAll gives up after the retry budget and never retries local steps', async () => {
+  const commands: string[][] = [];
+  const result = await runSyncAll({ only: 'projects', noSynthesis: true, retryDelayMs: 0 }, {
+    async run(command) {
+      commands.push(command);
+      return { exitCode: command[0] === 'index' ? 1 : 0 };
+    },
+  }, async () => {});
+
+  // `index` is required but not network-backed: one attempt, no retry.
+  assert.deepEqual(commands.map((command) => command[0]), ['sync-projects', 'index']);
+  assert.equal(result.steps.find((step) => step.id === 'canonical-index')?.attempts, 1);
+
+  const flaky: string[][] = [];
+  const exhausted = await runSyncAll({ only: 'x-list', xList: '123', noSynthesis: true, retryDelayMs: 0 }, {
+    async run(command) {
+      flaky.push(command);
+      return { exitCode: command[0] === 'x-list' ? 1 : 0 };
+    },
+  }, async () => {});
+
+  assert.equal(exhausted.ok, false);
+  assert.equal(flaky.filter((command) => command[0] === 'x-list').length, 3);
+  const xList = exhausted.steps.find((step) => step.id === 'x-list');
+  assert.equal(xList?.status, 'failed');
+  assert.equal(xList?.attempts, 3);
+  assert.match(formatSyncAllResult(exhausted), /failed \(1\) after 3 attempts/);
+});
+
+test('runSyncAll retries a thrown runner error too', async () => {
+  let calls = 0;
+  const result = await runSyncAll({ only: 'github-stars', noSynthesis: true, retryDelayMs: 0 }, {
+    async run(command) {
+      if (command[0] !== 'sync-github-stars') return { exitCode: 0 };
+      calls += 1;
+      if (calls === 1) throw new Error('fetch failed');
+      return { exitCode: 0 };
+    },
+  }, async () => {});
+
+  assert.equal(calls, 2);
+  assert.equal(result.ok, true);
+  assert.equal(result.steps.find((step) => step.id === 'github-stars')?.attempts, 2);
 });
 
 test('buildSyncAllPlan places projects after GitHub stars and before YouTube', () => {

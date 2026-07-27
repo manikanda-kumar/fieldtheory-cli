@@ -11,6 +11,10 @@ export interface SyncAllOptions {
   youtubeLimit?: number;
   noSynthesis?: boolean;
   classify?: boolean;
+  /** Extra attempts for network-backed steps after the first failure. */
+  retries?: number;
+  /** Base backoff before the first retry; each further wait triples it. */
+  retryDelayMs?: number;
 }
 
 export interface SyncAllStep {
@@ -21,12 +25,15 @@ export interface SyncAllStep {
   enabled: boolean;
   reason?: string;
   required?: boolean;
+  /** Network-backed steps are retried; local ones fail fast. */
+  retryable?: boolean;
 }
 
 export interface SyncAllStepResult extends SyncAllStep {
   status: 'planned' | 'skipped' | 'ok' | 'failed';
   exitCode?: number | null;
   error?: string;
+  attempts?: number;
 }
 
 export interface SyncAllResult {
@@ -71,6 +78,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       source: 'following',
       command: ['sync-following'],
       enabled: enabled('following'),
+      retryable: true,
     },
     {
       id: 'x',
@@ -78,6 +86,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       source: 'x',
       command: ['sync'],
       enabled: enabled('x'),
+      retryable: true,
     },
     {
       id: 'tweetsmash',
@@ -85,6 +94,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       source: 'tweetsmash',
       // Index rebuild runs later in the pipeline; skip the per-step rebuild.
       command: ['sync-tweetsmash', '--no-index'],
+      retryable: true,
       enabled: enabled('tweetsmash') && Boolean(process.env.TWEETSMASH_API_KEY),
       reason: process.env.TWEETSMASH_API_KEY ? undefined : 'set TWEETSMASH_API_KEY to include',
     },
@@ -106,6 +116,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       source: 'x-list',
       command: options.xList ? ['x-list', options.xList, '--since-hours', '24'] : ['x-list', '--since-hours', '24'],
       enabled: enabled('x-list') && Boolean(options.xList),
+      retryable: true,
       reason: options.xList ? undefined : 'pass --x-list <id> to include',
     },
     {
@@ -114,6 +125,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       source: 'raindrop',
       command: ['sync-raindrop', ...(classify ? ['--classify'] : [])],
       enabled: enabled('raindrop'),
+      retryable: true,
     },
     {
       id: 'github-stars',
@@ -121,6 +133,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       source: 'github-stars',
       command: ['sync-github-stars', ...(classify ? ['--classify'] : [])],
       enabled: enabled('github-stars'),
+      retryable: true,
     },
     {
       id: 'projects',
@@ -137,6 +150,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
         ? ['sync-youtube', '--playlist', options.playlist, '--limit', String(options.youtubeLimit ?? 8)]
         : ['sync-youtube', '--limit', String(options.youtubeLimit ?? 8)],
       enabled: enabled('youtube') && Boolean(options.playlist),
+      retryable: true,
       reason: options.playlist ? undefined : 'pass --playlist <url-or-id> to include',
     },
     {
@@ -173,9 +187,18 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
   return steps;
 }
 
-export async function runSyncAll(options: SyncAllOptions, runner: SyncAllRunner = defaultSyncAllRunner()): Promise<SyncAllResult> {
+export const DEFAULT_SYNC_ALL_RETRIES = 2;
+export const DEFAULT_SYNC_ALL_RETRY_DELAY_MS = 20_000;
+
+export async function runSyncAll(
+  options: SyncAllOptions,
+  runner: SyncAllRunner = defaultSyncAllRunner(),
+  sleep: (ms: number) => Promise<void> = defaultSleep,
+): Promise<SyncAllResult> {
   const plan = buildSyncAllPlan(options);
   const steps: SyncAllStepResult[] = [];
+  const retries = resolveRetries(options);
+  const retryDelayMs = resolveRetryDelayMs(options);
 
   for (const step of plan) {
     if (!step.enabled) {
@@ -186,15 +209,59 @@ export async function runSyncAll(options: SyncAllOptions, runner: SyncAllRunner 
       steps.push({ ...step, status: 'planned' });
       continue;
     }
-    try {
-      const result = await runner.run(step.command);
-      steps.push({ ...step, status: result.exitCode === 0 ? 'ok' : 'failed', exitCode: result.exitCode });
-    } catch (error) {
-      steps.push({ ...step, status: 'failed', error: error instanceof Error ? error.message : String(error) });
+    // Transient network faults (`Error: fetch failed`) killed whole steps on
+    // 2026-07-20/24/27; each one succeeded on a manual re-run minutes later.
+    const maxAttempts = step.retryable ? retries + 1 : 1;
+    let outcome: SyncAllStepResult | null = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const result = await runner.run(step.command);
+        outcome = {
+          ...step,
+          status: result.exitCode === 0 ? 'ok' : 'failed',
+          exitCode: result.exitCode,
+          attempts: attempt,
+        };
+      } catch (error) {
+        outcome = {
+          ...step,
+          status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+          attempts: attempt,
+        };
+      }
+      if (outcome.status === 'ok' || attempt === maxAttempts) break;
+      // Backoff triples per attempt: 20s, then 60s.
+      await sleep(retryDelayMs * 3 ** (attempt - 1));
     }
+    steps.push(outcome as SyncAllStepResult);
   }
 
   return { dryRun: Boolean(options.dryRun), steps, ok: !steps.some((step) => step.status === 'failed') };
+}
+
+function resolveRetries(options: SyncAllOptions): number {
+  const value = options.retries ?? numberFromEnv(process.env.FT_SYNC_RETRIES);
+  if (value == null || !Number.isFinite(value) || value < 0) return DEFAULT_SYNC_ALL_RETRIES;
+  return Math.floor(value);
+}
+
+function resolveRetryDelayMs(options: SyncAllOptions): number {
+  const value = options.retryDelayMs ?? numberFromEnv(process.env.FT_SYNC_RETRY_DELAY_MS);
+  if (value == null || !Number.isFinite(value) || value < 0) return DEFAULT_SYNC_ALL_RETRY_DELAY_MS;
+  return value;
+}
+
+function numberFromEnv(raw: string | undefined): number | null {
+  if (!raw?.trim()) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export function formatSyncAllResult(result: SyncAllResult): string {
@@ -202,8 +269,10 @@ export function formatSyncAllResult(result: SyncAllResult): string {
   for (const step of result.steps) {
     const icon = step.status === 'ok' ? '✓' : step.status === 'failed' ? '!' : step.status === 'skipped' ? '-' : '•';
     const command = step.command.filter(Boolean).join(' ');
+    const tries = (step.attempts ?? 1) > 1 ? ` after ${step.attempts} attempts` : '';
     const suffix = step.status === 'failed'
-      ? ` failed${step.exitCode != null ? ` (${step.exitCode})` : ''}${step.error ? `: ${step.error}` : ''}`
+      ? ` failed${step.exitCode != null ? ` (${step.exitCode})` : ''}${step.error ? `: ${step.error}` : ''}${tries}`
+      : step.status === 'ok' ? tries
       : step.reason ? ` — ${step.reason}` : '';
     lines.push(`  ${icon} ${step.label}${command ? `  ft ${command}` : ''}${suffix}`);
   }
