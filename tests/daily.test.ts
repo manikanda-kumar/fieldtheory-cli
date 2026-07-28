@@ -14,7 +14,7 @@ import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
 import { buildDailyAliases, buildDailyPrompt, contentLength, dailyFallbackChain, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
-import { gradeReviewCard, listDueReviewCards, queueReviewCards } from '../src/daily/review.js';
+import { gradeReviewCard, listDueReviewCards, markReviewCardsShown, queueReviewCards } from '../src/daily/review.js';
 
 async function readFileText(filePath: string): Promise<string> {
   return readFile(filePath, 'utf8');
@@ -461,6 +461,71 @@ test('daily: review cards are introduced tomorrow and grade into a spaced queue'
     assert.ok(reset);
     assert.equal(reset.intervalDays, 1);
     assert.equal(reset.dueAt, '2026-07-19T09:00:00.000Z');
+  });
+});
+
+test('daily: ungraded due cards rotate instead of pinning the same recall section', async () => {
+  await withIsolatedDataDir(async () => {
+    const items: CanonicalRecentItem[] = ['a', 'b', 'c', 'd', 'e'].map((key, index) => ({
+      id: `canonical:rotate-${key}`,
+      canonicalUrl: `https://example.com/${key}`,
+      displayTitle: `Rotate ${key}`,
+      // Longest text wins the queueing sort, so this fixes a deterministic order.
+      searchText: `${'retrieval practice and spaced revisiting '.repeat(5 - index)}${key}`,
+      sources: ['raindrop'],
+      firstSavedAt: '2026-07-01T00:00:00.000Z',
+      lastSavedAt: '2026-07-01T00:00:00.000Z',
+      primaryCategory: null,
+      primaryDomain: null,
+    }));
+    const started = new Date('2026-07-07T09:00:00.000Z');
+    await queueReviewCards(items, started, { maxCards: 5 });
+
+    const dayOne = new Date('2026-07-08T09:00:00.000Z');
+    const first = await listDueReviewCards(dayOne, 2);
+    assert.equal(first.length, 2);
+    await markReviewCardsShown(first.map((card) => card.id), dayOne);
+
+    // Second digest must not repeat the cards the first one already asked.
+    const second = await listDueReviewCards(new Date('2026-07-09T09:00:00.000Z'), 2);
+    assert.deepEqual(
+      second.map((card) => card.id).filter((id) => first.some((card) => card.id === id)),
+      [],
+    );
+
+    // Ungraded cards keep cycling rather than disappearing.
+    await markReviewCardsShown(second.map((card) => card.id), new Date('2026-07-09T09:00:00.000Z'));
+    const third = await listDueReviewCards(new Date('2026-07-10T09:00:00.000Z'), 2);
+    assert.equal(third.length, 2);
+    assert.equal(third.some((card) => second.some((shown) => shown.id === card.id)), false);
+  });
+});
+
+test('daily: a card ignored three times cools off for a week', async () => {
+  await withIsolatedDataDir(async () => {
+    const item: CanonicalRecentItem = {
+      id: 'canonical:ignored',
+      canonicalUrl: 'https://example.com/ignored',
+      displayTitle: 'Ignored card',
+      searchText: 'Spaced retrieval only works when the reader actually answers the prompt.',
+      sources: ['raindrop'],
+      firstSavedAt: '2026-07-01T00:00:00.000Z',
+      lastSavedAt: '2026-07-01T00:00:00.000Z',
+      primaryCategory: null,
+      primaryDomain: null,
+    };
+    await queueReviewCards([item], new Date('2026-07-07T09:00:00.000Z'));
+    const id = 'review:canonical:ignored';
+    for (const day of ['2026-07-08', '2026-07-09']) {
+      await markReviewCardsShown([id], new Date(`${day}T09:00:00.000Z`));
+      assert.equal((await listDueReviewCards(new Date(`${day}T12:00:00.000Z`))).length, 1);
+    }
+    await markReviewCardsShown([id], new Date('2026-07-10T09:00:00.000Z'));
+
+    assert.deepEqual(await listDueReviewCards(new Date('2026-07-11T09:00:00.000Z')), []);
+    const back = await listDueReviewCards(new Date('2026-07-17T12:00:00.000Z'));
+    assert.equal(back.length, 1);
+    assert.equal(back[0].shownCount, 3);
   });
 });
 

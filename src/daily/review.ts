@@ -10,6 +10,8 @@ import { dailyReviewPath, ensureDailyDir } from './paths.js';
 const MAX_NEW_CARDS_PER_DIGEST = 3;
 const ANSWER_CHARS = 360;
 const GOT_IT_INTERVALS = [3, 7, 14, 30, 60, 120];
+const SHOWN_BEFORE_COOLDOWN = 3;
+const IGNORED_COOLDOWN_DAYS = 7;
 
 export type ReviewRating = 'again' | 'fuzzy' | 'got-it';
 
@@ -28,6 +30,9 @@ export interface ReviewCard {
   reviewCount: number;
   lastReviewedAt?: string;
   lastRating?: ReviewRating;
+  /** Set when a digest renders the card, whether or not it was ever graded. */
+  lastShownAt?: string;
+  shownCount?: number;
 }
 
 export interface ReviewableItem {
@@ -72,13 +77,52 @@ async function writeReviewCards(cards: ReviewCard[]): Promise<void> {
   await writeJson(dailyReviewPath(), { version: 1, cards } satisfies ReviewState);
 }
 
-/** Return a short, oldest-first daily review queue. */
+/**
+ * Return a short daily review queue, rotating through the backlog.
+ *
+ * Grading is what normally moves `dueAt` forward, so an ungraded queue used to
+ * pin the same three oldest cards to every digest forever (live: 26 due cards,
+ * 0 ever graded, identical Recall section on 07-27 and 07-28). Cards not shown
+ * yet come first, then the ones shown longest ago, so the whole backlog cycles
+ * even when nobody runs `ft review grade`.
+ */
 export async function listDueReviewCards(now: Date = new Date(), limit = 3): Promise<ReviewCard[]> {
   const nowMs = now.getTime();
   return (await readReviewCards())
     .filter((card) => Date.parse(card.dueAt) <= nowMs)
-    .sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt) || a.createdAt.localeCompare(b.createdAt))
+    .sort((a, b) => shownRank(a) - shownRank(b)
+      || Date.parse(a.dueAt) - Date.parse(b.dueAt)
+      || a.createdAt.localeCompare(b.createdAt))
     .slice(0, Math.max(1, limit));
+}
+
+function shownRank(card: ReviewCard): number {
+  return card.lastShownAt ? Date.parse(card.lastShownAt) : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * Record that a digest rendered these cards. A card ignored `SHOWN_BEFORE_COOLDOWN`
+ * times without a grade cools off for a week so it stops crowding the rotation.
+ */
+export async function markReviewCardsShown(ids: string[], now: Date = new Date()): Promise<number> {
+  if (ids.length === 0) return 0;
+  const shown = new Set(ids);
+  const cards = await readReviewCards();
+  let touched = 0;
+  const updated = cards.map((card) => {
+    if (!shown.has(card.id)) return card;
+    touched += 1;
+    const shownCount = (card.shownCount ?? 0) + 1;
+    const ignored = card.reviewCount === 0 && shownCount % SHOWN_BEFORE_COOLDOWN === 0;
+    return {
+      ...card,
+      shownCount,
+      lastShownAt: now.toISOString(),
+      ...(ignored ? { dueAt: datePlusDays(now, IGNORED_COOLDOWN_DAYS) } : {}),
+    };
+  });
+  if (touched > 0) await writeReviewCards(updated);
+  return touched;
 }
 
 export async function getReviewCard(id: string): Promise<ReviewCard | null> {

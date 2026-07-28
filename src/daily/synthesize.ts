@@ -17,7 +17,7 @@ import type { ConnectedItem, RelatedRef } from './connect.js';
 import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
 import { dailyDigestHtmlPath, dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
 import { renderDigestHtml } from './html.js';
-import { listDueReviewCards, queueReviewCards, type ReviewCard } from './review.js';
+import { listDueReviewCards, markReviewCardsShown, queueReviewCards, type ReviewCard } from './review.js';
 
 const SNIPPET_CHARS = 240;
 const MAX_THEMES = 7;
@@ -726,6 +726,11 @@ export async function synthesizeDaily(
       collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
       llmMeta,
     ));
+  }
+  if (!collection.isExplicitDate) {
+    // Marked only after the digest is on disk: the rotation must reflect cards
+    // the reader actually received.
+    await markReviewCardsShown(dueReviews.map((card) => card.id), now);
   }
   if (!collection.isExplicitDate) {
     const meta = await readDailyMeta();
