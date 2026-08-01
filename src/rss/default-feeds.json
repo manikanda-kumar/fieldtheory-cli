@@ -1,0 +1,571 @@
+{
+  "feeds": [
+    {
+      "name": "Daniel Miessler",
+      "url": "https://danielmiessler.com/feed.rss",
+      "enabled": true
+    },
+    {
+      "name": "Unsloth AI",
+      "url": "https://unslothai.substack.com/feed",
+      "enabled": true
+    },
+    {
+      "name": "Anthropic",
+      "url": "https://raw.githubusercontent.com/Olshansk/rss-feeds/refs/heads/main/feeds/feed_anthropic.xml",
+      "enabled": false,
+      "description": " [disabled: feed 404]"
+    },
+    {
+      "name": "Eugene Yan",
+      "url": "https://eugeneyan.com/rss/",
+      "enabled": true
+    },
+    {
+      "name": "Edward Z. Yang's Blog",
+      "url": "https://blog.ezyang.com/feed.xml",
+      "enabled": true
+    },
+    {
+      "name": "AmpCode",
+      "url": "https://ampcode.com/podcast.rss",
+      "enabled": true
+    },
+    {
+      "name": "Abseil",
+      "url": "https://abseil.io/feed.xml",
+      "enabled": true
+    },
+    {
+      "name": "Andrej Karpathy",
+      "url": "https://karpathy.bearblog.dev/feed.xml",
+      "enabled": true
+    },
+    {
+      "name": "Armin Ronacher",
+      "url": "https://lucumr.pocoo.org/feed.xml",
+      "enabled": true
+    },
+    {
+      "name": "Mario Zechner",
+      "url": "https://mariozechner.at/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "ngrok",
+      "url": "https://ngrok.com/blog/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "Nicolay Gerold",
+      "url": "https://nicolaygerold.com/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "R. Lance Martin",
+      "url": "https://rlancemartin.github.io/feed.xml",
+      "enabled": true
+    },
+    {
+      "name": "Simon Willison",
+      "url": "https://simonwillison.net/atom/everything/",
+      "enabled": true
+    },
+    {
+      "name": "Peter Steinberger",
+      "url": "https://steipete.me/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "Drew Breunig",
+      "url": "https://www.dbreunig.com/feed.xml",
+      "enabled": true
+    },
+    {
+      "name": "Arpit Bhayani",
+      "url": "https://arpitbhayani.me/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "LangChain Docs",
+      "url": "https://blog.langchain.com/rss/",
+      "enabled": true
+    },
+    {
+      "name": "Evan Hahn",
+      "url": "https://evanhahn.com/index.xml",
+      "enabled": true
+    },
+    {
+      "name": "Swirl AI Newsletter",
+      "url": "https://www.newsletter.swirlai.com/feed.rss",
+      "enabled": true
+    },
+    {
+      "name": "Philipp Schmid",
+      "url": "https://www.philschmid.de/rss",
+      "enabled": true
+    },
+    {
+      "name": "Sean Goedecke",
+      "url": "https://seangoedecke.com/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "Varun Trivedy",
+      "url": "https://www.vtrivedy.com/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "Spiess Dev",
+      "url": "https://spiess.dev/feed.xml",
+      "enabled": true
+    },
+    {
+      "name": "OpenAI",
+      "url": "https://openai.com/news/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "Sankalp's Blog",
+      "url": "https://sankalp.bearblog.dev/feed/?type=rss",
+      "enabled": true
+    },
+    {
+      "name": "Luca LP",
+      "url": "https://lucalp.dev/feed/?type=rss",
+      "enabled": true
+    },
+    {
+      "name": "Shlok Desai",
+      "url": "https://www.shloked.com/feed/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "Solmaz",
+      "url": "https://solmaz.io/feed.xml",
+      "enabled": true
+    },
+    {
+      "name": "Robot Paper",
+      "url": "https://robotpaper.ai/rss/",
+      "enabled": true
+    },
+    {
+      "name": "Martin Fowler",
+      "url": "https://martinfowler.com/feed.atom",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=46)"
+    },
+    {
+      "name": "Lenny's Newsletter",
+      "url": "https://www.lennysnewsletter.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=23)"
+    },
+    {
+      "name": "Thorsten Ball \u2014 Register Spill",
+      "url": "https://registerspill.thorstenball.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=23)"
+    },
+    {
+      "name": "The Pragmatic Engineer",
+      "url": "https://newsletter.pragmaticengineer.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=19)"
+    },
+    {
+      "name": "Geoffrey Huntley",
+      "url": "https://ghuntley.com/rss/",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=16)"
+    },
+    {
+      "name": "Latent Space",
+      "url": "https://www.latent.space/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=16)"
+    },
+    {
+      "name": "Addy Osmani",
+      "url": "https://addyosmani.com/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=15)"
+    },
+    {
+      "name": "Luke Wroblewski",
+      "url": "https://feeds.feedburner.com/FunctioningForm",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=14)"
+    },
+    {
+      "name": "Aref \u2014 Notes",
+      "url": "https://notes.aref.vc/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=14)"
+    },
+    {
+      "name": "Jason Liu",
+      "url": "https://jxnl.co/feed_rss_created.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=11)"
+    },
+    {
+      "name": "Sebastian Raschka Magazine",
+      "url": "https://magazine.sebastianraschka.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=11)"
+    },
+    {
+      "name": "Tomasz Tunguz",
+      "url": "https://tomtunguz.com/index.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=11)"
+    },
+    {
+      "name": "Boris Tane",
+      "url": "https://boristane.com/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=9)"
+    },
+    {
+      "name": "Alex L. Zhang",
+      "url": "https://alexzhang13.github.io/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=7)"
+    },
+    {
+      "name": "Geoffrey Litt",
+      "url": "https://www.geoffreylitt.com/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=7)"
+    },
+    {
+      "name": "ByteByteGo",
+      "url": "https://blog.bytebytego.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=6)"
+    },
+    {
+      "name": "Farnam Street",
+      "url": "https://fs.blog/feed/",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=6)"
+    },
+    {
+      "name": "The Polymathic Engineer",
+      "url": "https://newsletter.francofernando.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=6)"
+    },
+    {
+      "name": "Tech World with Milan",
+      "url": "https://newsletter.techworld-with-milan.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=6)"
+    },
+    {
+      "name": "SivaLabs",
+      "url": "https://www.sivalabs.in/index.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=6)"
+    },
+    {
+      "name": "Ashpreet Bedi",
+      "url": "https://www.ashpreetbedi.com/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=5)"
+    },
+    {
+      "name": "AlgoMaster",
+      "url": "https://blog.algomaster.io/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=5)"
+    },
+    {
+      "name": "Ted Neward",
+      "url": "https://blogs.newardassociates.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=5)"
+    },
+    {
+      "name": "Martin Alderson",
+      "url": "https://martinalderson.com/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=5)"
+    },
+    {
+      "name": "Manager.dev Newsletter",
+      "url": "https://newsletter.manager.dev/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=5)"
+    },
+    {
+      "name": "System Design Classroom",
+      "url": "https://newsletter.systemdesignclassroom.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=5)"
+    },
+    {
+      "name": "Nolan Lawson",
+      "url": "https://nolanlawson.com/feed/",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=5)"
+    },
+    {
+      "name": "Sunil Pai",
+      "url": "https://sunilpai.dev/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=5)"
+    },
+    {
+      "name": "swyx",
+      "url": "https://swyx.io/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=5)"
+    },
+    {
+      "name": "Adventures in Nodeland",
+      "url": "https://adventures.nodeland.dev/rss",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Aleksa Gordi\u0107",
+      "url": "https://www.aleksagordic.com/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Coding Confessions",
+      "url": "https://blog.codingconfessions.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "nilenso blog",
+      "url": "https://blog.nilenso.com/atom.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Moncef Boudjaoui",
+      "url": "https://cefboud.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "crawshaw",
+      "url": "https://crawshaw.io/atom.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Guillaume Laforge",
+      "url": "https://glaforge.dev/index.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Lalit Maganti",
+      "url": "https://lalitm.com/index.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Luca Dellanna",
+      "url": "https://luca-dellanna.com/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Mitchell Hashimoto",
+      "url": "https://mitchellh.com/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Safal Niveshak",
+      "url": "https://www.safalniveshak.com/feed/",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Terrible Software",
+      "url": "https://terriblesoftware.org/feed/",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Wait But Why",
+      "url": "https://waitbutwhy.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=4)"
+    },
+    {
+      "name": "Bassim Eledath",
+      "url": "https://www.bassimeledath.com/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "bharath.sh",
+      "url": "https://bharath.sh/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Alex Ewerl\u00f6f",
+      "url": "https://blog.alexewerlof.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Korny",
+      "url": "https://blog.korny.info/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Pete Hodgson",
+      "url": "https://blog.thepete.net/index.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Marc Brooker",
+      "url": "https://brooker.co.za/blog/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "High Agency Essays",
+      "url": "https://essays.highagency.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Gian Segato",
+      "url": "https://giansegato.com/rss",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Haskell for all",
+      "url": "https://haskellforall.com/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Indragie Karunaratne",
+      "url": "https://www.indragie.com/rss",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Ink & Switch",
+      "url": "https://www.inkandswitch.com/index.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "iximiuz",
+      "url": "https://iximiuz.com/feed.atom",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Joseph Thacker",
+      "url": "https://josephthacker.com/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Julia Evans",
+      "url": "https://jvns.ca/atom.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "kalomaze",
+      "url": "https://kalomaze.bearblog.dev/feed/",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Lee Han Chung",
+      "url": "https://leehanchung.github.io/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Lilian Weng (Lil'Log)",
+      "url": "https://lilianweng.github.io/index.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Marginal Revolution",
+      "url": "https://marginalrevolution.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "matklad",
+      "url": "https://matklad.github.io/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Michael Livshin",
+      "url": "https://michaellivs.com/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "SemiAnalysis",
+      "url": "https://newsletter.semianalysis.com/feed",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "paddo",
+      "url": "https://paddo.dev/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Skylar Payne",
+      "url": "https://skylarbpayne.com/rss.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Stay SaaSy",
+      "url": "https://staysaasy.com/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Steve Klabnik",
+      "url": "https://steveklabnik.com/feed.xml",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Stratechery",
+      "url": "https://stratechery.com/feed/",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    },
+    {
+      "name": "Tim Ferriss",
+      "url": "https://tim.blog/feed/",
+      "enabled": true,
+      "description": "From Raindrop bookmarks (saves=3)"
+    }
+  ],
+  "source": "web-recap/data/rss/feeds.json (raindrop-derived + existing)",
+  "updatedAt": "2026-08-01T00:00:00.000Z"
+}

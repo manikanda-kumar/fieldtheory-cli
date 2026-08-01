@@ -25,6 +25,8 @@ import { followingCachePath } from './following/paths.js';
 import { isFollowingSnapshotComplete } from './following/db.js';
 import type { FollowingRecord } from './following/types.js';
 import type { ListMemberRecord, XListMembersDigest } from './x-list-members.js';
+import { rssItemsCachePath } from './rss/paths.js';
+import type { RssItemRecord } from './rss/types.js';
 
 export interface CanonicalRebuildResult {
   dbPath: string;
@@ -491,6 +493,45 @@ export function githubStarsSourceFromRecord(record: GitHubStarRecord): Canonical
   };
 }
 
+export function rssSourceFromRecord(record: RssItemRecord): CanonicalSourceInput | null {
+  let dedupeKey: string;
+  try {
+    dedupeKey = dedupeKeyForUrl(record.link);
+  } catch {
+    return null;
+  }
+
+  return {
+    id: `rss:${record.id}`,
+    source: 'rss',
+    profile: record.feedUrl,
+    sourceItemId: record.id,
+    sourceUrl: record.link,
+    targetUrl: null,
+    dedupeKey,
+    title: record.title,
+    text: compactText([
+      record.title,
+      record.summary,
+      record.author,
+      record.feedName,
+    ]),
+    authorHandle: record.author ?? record.feedName ?? null,
+    // publishedAt drives "new since last digest"; fall back to first sync time.
+    savedAt: record.publishedAt ?? record.syncedAt,
+    createdAt: record.publishedAt,
+    modifiedAt: record.syncedAt,
+    folderPath: record.feedName ? ['RSS', record.feedName] : ['RSS'],
+    links: [record.link, record.feedUrl].filter(Boolean),
+    contentPath: null,
+    metadata: {
+      feedUrl: record.feedUrl,
+      feedName: record.feedName,
+      guid: record.guid,
+    },
+  };
+}
+
 function isNormalizedGithubRepoUrl(value: string | undefined): value is string {
   if (!value) return false;
   return /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/i.test(value);
@@ -882,6 +923,15 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
       const githubStarRecords = await readJsonLines<GitHubStarRecord>(githubStarsPath);
       const normalized = githubStarRecords
         .map(githubStarsSourceFromRecord)
+        .filter((row): row is CanonicalSourceInput => row !== null);
+      sourceRows.push(...normalized);
+    }
+
+    const rssItemsPath = rssItemsCachePath();
+    if (await pathExists(rssItemsPath)) {
+      const rssRecords = await readJsonLines<RssItemRecord>(rssItemsPath);
+      const normalized = rssRecords
+        .map(rssSourceFromRecord)
         .filter((row): row is CanonicalSourceInput => row !== null);
       sourceRows.push(...normalized);
     }

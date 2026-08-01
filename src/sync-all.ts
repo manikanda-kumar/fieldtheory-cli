@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-export type SyncAllSource = 'following' | 'x' | 'tweetsmash' | 'x-list' | 'raindrop' | 'github-stars' | 'projects' | 'youtube';
+export type SyncAllSource = 'following' | 'x' | 'tweetsmash' | 'x-list' | 'raindrop' | 'github-stars' | 'rss' | 'projects' | 'youtube';
 
 export interface SyncAllOptions {
   dryRun?: boolean;
@@ -46,7 +46,7 @@ export interface SyncAllRunner {
   run(command: string[]): Promise<{ exitCode: number | null }>;
 }
 
-const ALL_SOURCES: SyncAllSource[] = ['following', 'x', 'tweetsmash', 'x-list', 'raindrop', 'github-stars', 'projects', 'youtube'];
+const ALL_SOURCES: SyncAllSource[] = ['following', 'x', 'tweetsmash', 'x-list', 'raindrop', 'github-stars', 'rss', 'projects', 'youtube'];
 
 export function parseSyncAllSources(value: string | undefined): Set<SyncAllSource> | null {
   if (!value?.trim()) return null;
@@ -133,6 +133,14 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       source: 'github-stars',
       command: ['sync-github-stars', ...(classify ? ['--classify'] : [])],
       enabled: enabled('github-stars'),
+      retryable: true,
+    },
+    {
+      id: 'rss',
+      label: 'Sync RSS/Atom blog feeds',
+      source: 'rss',
+      command: ['sync-rss'],
+      enabled: enabled('rss'),
       retryable: true,
     },
     {

@@ -47,6 +47,11 @@ import { syncRaindropBookmarks } from './raindrop/sync.js';
 import type { SyncRaindropOptions } from './raindrop/sync.js';
 import { syncGitHubStars } from './github-stars/sync.js';
 import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
+import { syncRss } from './rss/sync.js';
+import type { SyncRssOptions } from './rss/sync.js';
+import { readRssFeeds, upsertRssFeeds } from './rss/feeds.js';
+import type { RssFeedConfig } from './rss/types.js';
+import { rssFeedsPath, rssItemsCachePath } from './rss/paths.js';
 import { collectDaily } from './daily/collect.js';
 import { connectDailyItems } from './daily/connect.js';
 import { enrichBackfill, enrichThinItems, mergeEnrichmentSummaries } from './daily/enrich.js';
@@ -739,6 +744,7 @@ function requireUnifiedIndex(): boolean {
 
   Run one of:
     ft sync-github-stars
+    ft sync-rss
     ft sync-projects
     ft sync-raindrop
     ft sync
@@ -1322,7 +1328,7 @@ export function buildCli() {
     .option('--x-list <id>', 'Include a 24h X list digest refresh')
     .option('--playlist <url-or-id>', 'Include a capped YouTube playlist sync')
     .option('--youtube-limit <n>', 'Max YouTube videos to process when --playlist is set', (v: string) => Number(v), 8)
-    .option('--skip <sources>', 'Comma-separated sources to skip: following,x,x-list,raindrop,github-stars,projects,youtube', collectCsvOption, [])
+    .option('--skip <sources>', 'Comma-separated sources to skip: following,x,x-list,raindrop,github-stars,rss,projects,youtube', collectCsvOption, [])
     .option('--only <sources>', 'Comma-separated sources to run before the required canonical rebuild')
     .option('--no-synthesis', 'Skip canonical Markdown export after rebuilding the unified index')
     .option('--classify', 'Pass --classify to source commands that support it', false)
@@ -1477,6 +1483,149 @@ export function buildCli() {
         const classifyResult = await classifyCanonicalBookmarks();
         console.log(`  ✓ Classified ${classifyResult.classified}/${classifyResult.total} bookmarks`);
       }
+    }));
+
+  // ── sync-rss ───────────────────────────────────────────────────────────
+
+  program
+    .command('sync-rss')
+    .description('Sync subscribed RSS/Atom blog feeds into the canonical bookmark index')
+    .option('--dry-run', 'Fetch and report without writing cache files or rebuilding the canonical index')
+    .option('--limit <n>', 'Max feeds to fetch (useful for testing)', (v: string) => Number(v))
+    .option('--only <query>', 'Only feeds whose name or URL contains this string')
+    .option('--concurrency <n>', 'Parallel feed fetches (default: 4)', (v: string) => Number(v), 4)
+    .option('--max-age-days <n>', 'Drop cached items older than N days', (v: string) => Number(v))
+    .option('--classify', 'Run regex classification after rebuilding the canonical index')
+    .action(safe(async (options) => {
+      ensureDataDir();
+
+      const feeds = await readRssFeeds();
+      if (!feeds.length) {
+        console.log('  No RSS feeds configured.');
+        console.log(`  Add feeds with: ft rss add --url <feed-url> --name "Blog"`);
+        console.log(`  Or seed defaults: ft rss seed`);
+        return;
+      }
+
+      const syncOptions: SyncRssOptions = {
+        dryRun: Boolean(options.dryRun),
+        limit: typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : undefined,
+        only: typeof options.only === 'string' ? options.only : undefined,
+        concurrency: typeof options.concurrency === 'number' && Number.isFinite(options.concurrency)
+          ? Math.max(1, Math.floor(options.concurrency))
+          : 4,
+        maxItemAgeDays: typeof options.maxAgeDays === 'number' && Number.isFinite(options.maxAgeDays)
+          ? options.maxAgeDays
+          : undefined,
+        onFeed: ({ index, total, feed, ok, itemCount, error }) => {
+          if (ok) console.log(`  [${index}/${total}] ✓ ${feed.name} (${itemCount} items)`);
+          else console.log(`  [${index}/${total}] ✗ ${feed.name}: ${error}`);
+        },
+      };
+
+      const result = await syncRss(syncOptions);
+
+      console.log(`  RSS sync complete:`);
+      console.log(`    feeds: ${result.feedsFetched}/${result.feedsConfigured} ok` +
+        (result.feedsFailed ? ` (${result.feedsFailed} failed)` : ''));
+      console.log(`    items fetched: ${result.itemsFetched}`);
+      console.log(`    added: ${result.itemsAdded}`);
+      console.log(`    updated: ${result.itemsUpdated}`);
+      console.log(`    total cached: ${result.totalItems}`);
+      console.log(`    data: ${result.cachePath}`);
+
+      if (options.dryRun) {
+        console.log(`    Canonical index not rebuilt (dry run)`);
+        return;
+      }
+
+      await rebuildCanonicalIndex();
+      console.log(`  ✓ Canonical index rebuilt`);
+
+      if (options.classify) {
+        const classifyResult = await classifyCanonicalBookmarks();
+        console.log(`  ✓ Classified ${classifyResult.classified}/${classifyResult.total} bookmarks`);
+      }
+    }));
+
+  // ── rss (manage feed list) ─────────────────────────────────────────────
+
+  const rssCmd = program
+    .command('rss')
+    .description('Manage the local RSS/Atom feed subscription list');
+
+  rssCmd
+    .command('list')
+    .description('List configured RSS feeds')
+    .action(safe(async () => {
+      ensureDataDir();
+      const feeds = await readRssFeeds({ seed: false });
+      if (!feeds.length) {
+        console.log('  (no feeds — run `ft rss seed` or `ft rss add`)');
+        console.log(`  config: ${rssFeedsPath()}`);
+        return;
+      }
+      console.log(`  ${feeds.length} feeds  (${rssFeedsPath()})`);
+      for (const feed of feeds) {
+        const flag = feed.enabled === false ? 'off' : 'on';
+        console.log(`  [${flag}] ${feed.name}`);
+        console.log(`         ${feed.url}`);
+      }
+    }));
+
+  rssCmd
+    .command('seed')
+    .description('Merge packaged default feeds (from Raindrop blog list) into feeds.json')
+    .option('--replace', 'Replace existing feeds instead of merging')
+    .action(safe(async (options) => {
+      ensureDataDir();
+      const { readDefaultRssFeeds } = await import('./rss/feeds.js');
+      const defaults = await readDefaultRssFeeds();
+      if (!defaults.length) {
+        console.error('  Packaged default-feeds.json is empty or missing.');
+        process.exitCode = 1;
+        return;
+      }
+      const result = await upsertRssFeeds(defaults, {
+        source: 'packaged default-feeds.json',
+        replace: Boolean(options.replace),
+      });
+      console.log(`  ✓ ${result.total} feeds in ${result.path}` +
+        (options.replace ? ' (replaced)' : ` (+${result.added} new)`));
+    }));
+
+  rssCmd
+    .command('add')
+    .description('Add one RSS/Atom feed URL')
+    .requiredOption('--url <url>', 'Feed URL')
+    .option('--name <name>', 'Display name')
+    .option('--home <url>', 'Blog homepage')
+    .action(safe(async (options) => {
+      ensureDataDir();
+      const url = String(options.url).trim();
+      if (!/^https?:\/\//i.test(url)) {
+        console.error('  --url must be an http(s) URL');
+        process.exitCode = 1;
+        return;
+      }
+      const feed: RssFeedConfig = {
+        name: (options.name ? String(options.name) : new URL(url).hostname).trim(),
+        url,
+        home: options.home ? String(options.home) : undefined,
+        enabled: true,
+      };
+      const result = await upsertRssFeeds([feed], { source: 'ft rss add' });
+      console.log(`  ✓ ${result.total} feeds (+${result.added} new)`);
+      console.log(`    ${feed.name}: ${feed.url}`);
+      console.log(`    data: ${result.path}`);
+    }));
+
+  rssCmd
+    .command('path')
+    .description('Print RSS data paths')
+    .action(safe(async () => {
+      console.log(`  feeds: ${rssFeedsPath()}`);
+      console.log(`  items: ${rssItemsCachePath()}`);
     }));
 
   // ── daily ─────────────────────────────────────────────────────────────
@@ -4693,7 +4842,7 @@ export function buildCli() {
 
   const bookmarksAlias = program.command('bookmarks').description('(alias) Bookmark commands').helpOption(false);
   for (const cmd of ['sync', 'search', 'list', 'show', 'stats', 'viz', 'classify', 'classify-domains',
-    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media', 'sync-raindrop', 'sync-github-stars', 'sync-projects']) {
+    'categories', 'domains', 'folders', 'model', 'index', 'auth', 'status', 'path', 'sample', 'fetch-media', 'sync-raindrop', 'sync-github-stars', 'sync-rss', 'sync-projects']) {
     bookmarksAlias.command(cmd).description(`Alias for: ft ${cmd}`).allowUnknownOption(true)
       .action(async () => {
         const args = ['node', 'ft', cmd, ...process.argv.slice(4)];

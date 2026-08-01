@@ -509,7 +509,7 @@ export function renderDigestMarkdown(
   lines.push('<summary>Coverage and source freshness</summary>');
   lines.push('');
   lines.push('Source freshness:');
-  for (const source of ['x', 'raindrop', 'github-stars', 'youtube', 'projects'] as const) {
+  for (const source of ['x', 'raindrop', 'github-stars', 'rss', 'youtube', 'projects'] as const) {
     lines.push(`- ${source}: ${coverage.freshness[source]}`);
   }
   lines.push('- X profiles: following and X-list members are indexed for reference, but have no save date and are excluded from this activity window.');

@@ -12,6 +12,7 @@ import { latestBookmarkSyncAt } from '../bookmarks.js';
 import { twitterBookmarksMetaPath, youtubeStatePath } from '../paths.js';
 import { projectsMetaPath } from '../projects/paths.js';
 import { raindropMetaPath } from '../raindrop/paths.js';
+import { rssMetaPath } from '../rss/paths.js';
 import type { BookmarkCacheMeta } from '../types.js';
 
 export type CoverageFreshness = string | 'never synced' | 'unknown';
@@ -32,7 +33,7 @@ export interface DailyCoverageCounts {
 }
 
 export interface DailyCoverage {
-  freshness: Record<'x' | 'raindrop' | 'github-stars' | 'youtube' | 'projects', CoverageFreshness>;
+  freshness: Record<'x' | 'raindrop' | 'github-stars' | 'rss' | 'youtube' | 'projects', CoverageFreshness>;
   counts: DailyCoverageCounts;
 }
 
@@ -77,12 +78,13 @@ async function probeX(): Promise<CoverageFreshness> {
 }
 
 export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
-  const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+  const [x, raindrop, githubStars, rss, youtube, projects] = await Promise.all([
     probeX(),
     probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
     probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+    probeMeta(rssMetaPath(), (meta) => meta.lastSyncAt),
     probeYoutube(),
     probeMeta(projectsMetaPath(), (meta) => meta.lastSyncedAt),
   ]);
-  return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+  return { freshness: { x, raindrop, 'github-stars': githubStars, rss, youtube, projects }, counts };
 }

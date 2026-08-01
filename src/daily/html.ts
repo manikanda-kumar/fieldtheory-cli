@@ -209,7 +209,7 @@ export function renderDigestHtml(
     renderHtmlPanel('Ponder', `<p class="quote">${ponder}</p><p class="footnote">Answer this before opening more links — the point is to connect the material to your own work.</p>`),
   ].join('');
 
-  const freshness = (['x', 'raindrop', 'github-stars', 'youtube', 'projects'] as const)
+  const freshness = (['x', 'raindrop', 'github-stars', 'rss', 'youtube', 'projects'] as const)
     .map((source) => `<li>${htmlEscape(source)}: ${htmlEscape(coverage.freshness[source])}</li>`)
     .join('');
   const counts = [

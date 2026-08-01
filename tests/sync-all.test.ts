@@ -30,6 +30,7 @@ function runPlanAssertions(): void {
     'x-list',
     'raindrop',
     'github-stars',
+    'rss',
     'projects',
     'youtube',
     'canonical-index',
@@ -160,12 +161,13 @@ test('runSyncAll retries a thrown runner error too', async () => {
   assert.equal(result.steps.find((step) => step.id === 'github-stars')?.attempts, 2);
 });
 
-test('buildSyncAllPlan places projects after GitHub stars and before YouTube', () => {
+test('buildSyncAllPlan places projects after RSS and before YouTube', () => {
   const plan = buildSyncAllPlan({ playlist: 'PL1', noSynthesis: true });
   assert.deepEqual(
-    plan.filter((step) => ['github-stars', 'projects', 'youtube'].includes(step.id)).map((step) => [step.id, step.command[0]]),
+    plan.filter((step) => ['github-stars', 'rss', 'projects', 'youtube'].includes(step.id)).map((step) => [step.id, step.command[0]]),
     [
       ['github-stars', 'sync-github-stars'],
+      ['rss', 'sync-rss'],
       ['projects', 'sync-projects'],
       ['youtube', 'sync-youtube'],
     ],
