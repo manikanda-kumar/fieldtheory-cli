@@ -19,7 +19,7 @@ import { parseTimestampMs, toIsoDate } from './date-utils.js';
 import { slug } from './md.js';
 import {
   listCanonicalBookmarks,
-  getCanonicalBookmarkSources,
+  getAllCanonicalBookmarkSources,
   type CanonicalBookmarkListResult,
   type CanonicalSourceRow,
 } from './canonical-bookmarks-db.js';
@@ -490,6 +490,7 @@ export async function exportCanonicalBookmarks(
   }
 
   progress(`Exporting canonical bookmarks to ${outputDir}...`);
+  const sourcesByCanonicalId = await getAllCanonicalBookmarkSources();
 
   let exported = 0;
   let offset = 0;
@@ -509,7 +510,7 @@ export async function exportCanonicalBookmarks(
     if (canonicals.length === 0) break;
 
     for (const c of canonicals) {
-      const sources = await getCanonicalBookmarkSources(c.id);
+      const sources = sourcesByCanonicalId.get(c.id) ?? [];
       const raindropRecord = findRaindropRecord(sources, raindropMap);
       const githubStarRecord = findGitHubStarRecord(sources, githubStarsMap);
       const content = buildCanonicalBookmarkMd(c, sources, raindropRecord, githubStarRecord);

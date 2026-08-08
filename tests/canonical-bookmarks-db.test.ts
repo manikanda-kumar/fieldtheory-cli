@@ -7,8 +7,10 @@ import { writeJson, writeJsonLines } from '../src/fs.js';
 import {
   classifyCanonicalBookmarks,
   formatCanonicalSearchResults,
+  getAllCanonicalBookmarkSources,
   getCanonicalBookmarksSince,
   getCanonicalBookmarkById,
+  getCanonicalBookmarkSources,
   listCanonicalBookmarks,
   rebuildCanonicalIndex,
   searchCanonicalBookmarks,
@@ -210,6 +212,42 @@ test('rebuildCanonicalIndex stores raindrop source rows with null target_url', a
     } finally {
       db.close();
     }
+  });
+});
+
+test('getAllCanonicalBookmarkSources groups active source rows and omits empty canonicals', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const url = 'https://github.com/example/tool';
+    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [{
+      id: 'x-1',
+      tweetId: '1',
+      url: 'https://x.com/alice/status/1',
+      text: `Interesting repo ${url}`,
+      links: [url],
+      syncedAt: '2026-05-10T00:00:00.000Z',
+    }]);
+    await writeGitHubStars(dir, [githubStarRecord({ htmlUrl: url })]);
+
+    await rebuildCanonicalIndex();
+    const listed = await listCanonicalBookmarks({ source: 'github-stars', limit: 10 });
+    assert.equal(listed.length, 1);
+
+    const allSources = await getAllCanonicalBookmarkSources();
+    assert.deepEqual(
+      allSources.get(listed[0].id)?.map((source) => source.source).sort(),
+      ['github-stars', 'x'],
+    );
+
+    const db = await openDb(twitterBookmarksIndexPath());
+    try {
+      db.run('UPDATE bookmark_sources SET active = 0 WHERE canonical_id = ?', [listed[0].id]);
+      saveDb(db, twitterBookmarksIndexPath());
+    } finally {
+      db.close();
+    }
+
+    assert.deepEqual(await getCanonicalBookmarkSources(listed[0].id), []);
+    assert.equal((await getAllCanonicalBookmarkSources()).has(listed[0].id), false);
   });
 });
 

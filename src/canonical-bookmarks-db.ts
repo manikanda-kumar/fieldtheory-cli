@@ -1376,6 +1376,31 @@ export interface CanonicalSourceRow {
   metadata: Record<string, unknown> | null;
 }
 
+function mapCanonicalSourceRow(row: unknown[]): CanonicalSourceRow {
+  return {
+    id: row[0] as string,
+    source: row[1] as string,
+    profile: (row[2] as string) ?? null,
+    sourceItemId: row[3] as string,
+    sourceUrl: row[4] as string,
+    targetUrl: (row[5] as string) ?? null,
+    title: (row[6] as string) ?? null,
+    text: (row[7] as string) ?? null,
+    authorHandle: (row[8] as string) ?? null,
+    savedAt: (row[9] as string) ?? null,
+    createdAt: (row[10] as string) ?? null,
+    modifiedAt: (row[11] as string) ?? null,
+    folderPath: parseJsonStringArray(row[12]),
+    links: parseJsonStringArray(row[13]),
+    contentPath: (row[14] as string) ?? null,
+    metadata: parseJsonObject(row[15]),
+  };
+}
+
+function mapCanonicalSourceRows(rows: unknown[][]): CanonicalSourceRow[] {
+  return rows.map(mapCanonicalSourceRow);
+}
+
 export async function getCanonicalBookmarkSources(canonicalId: string): Promise<CanonicalSourceRow[]> {
   const db = await openDb(twitterBookmarksIndexPath());
   try {
@@ -1388,24 +1413,31 @@ export async function getCanonicalBookmarkSources(canonicalId: string): Promise<
        WHERE canonical_id = ? AND active = 1`,
       [canonicalId],
     );
-    return (rows[0]?.values ?? []).map((row) => ({
-      id: row[0] as string,
-      source: row[1] as string,
-      profile: (row[2] as string) ?? null,
-      sourceItemId: row[3] as string,
-      sourceUrl: row[4] as string,
-      targetUrl: (row[5] as string) ?? null,
-      title: (row[6] as string) ?? null,
-      text: (row[7] as string) ?? null,
-      authorHandle: (row[8] as string) ?? null,
-      savedAt: (row[9] as string) ?? null,
-      createdAt: (row[10] as string) ?? null,
-      modifiedAt: (row[11] as string) ?? null,
-      folderPath: parseJsonStringArray(row[12]),
-      links: parseJsonStringArray(row[13]),
-      contentPath: (row[14] as string) ?? null,
-      metadata: parseJsonObject(row[15]),
-    }));
+    return mapCanonicalSourceRows(rows[0]?.values ?? []);
+  } finally {
+    db.close();
+  }
+}
+
+export async function getAllCanonicalBookmarkSources(): Promise<Map<string, CanonicalSourceRow[]>> {
+  const db = await openDb(twitterBookmarksIndexPath());
+  try {
+    initCanonicalSchema(db);
+    const rows = db.exec(
+      `SELECT id, source, profile, source_item_id, source_url, target_url,
+              title, text, author_handle, saved_at, created_at, modified_at,
+              folder_path_json, links_json, content_path, metadata_json, canonical_id
+       FROM bookmark_sources
+       WHERE active = 1 AND canonical_id IS NOT NULL`,
+    );
+    const sourcesByCanonicalId = new Map<string, CanonicalSourceRow[]>();
+    for (const row of rows[0]?.values ?? []) {
+      const canonicalId = row[16] as string;
+      const sources = sourcesByCanonicalId.get(canonicalId) ?? [];
+      sources.push(mapCanonicalSourceRow(row));
+      sourcesByCanonicalId.set(canonicalId, sources);
+    }
+    return sourcesByCanonicalId;
   } finally {
     db.close();
   }
