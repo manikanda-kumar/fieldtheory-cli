@@ -1,0 +1,175 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: FT
+      - generic [ref=e6]:
+        - generic [ref=e7]: Field Theory
+        - generic [ref=e8]: Bookmarks and list digests
+    - navigation "Field Theory sections" [ref=e9]:
+      - button "Home" [ref=e10] [cursor=pointer]
+      - button "Today" [ref=e11] [cursor=pointer]
+      - button "Analyze" [active] [ref=e12] [cursor=pointer]
+      - button "Map" [ref=e13] [cursor=pointer]
+      - button "Sources" [ref=e14] [cursor=pointer]
+      - button "Discuss" [ref=e15] [cursor=pointer]
+      - button "Bookmarks" [ref=e16] [cursor=pointer]
+    - generic [ref=e17]:
+      - generic [ref=e37]:
+        - strong [ref=e38]: "9884"
+        - text: Total bookmarks
+      - generic [ref=e39]: Last sync 2026-06-24T02:40:38.645Z
+    - generic [ref=e18]:
+      - button "technique · 3078" [ref=e40] [cursor=pointer]
+      - button "opinion · 2202" [ref=e41] [cursor=pointer]
+      - button "launch · 1286" [ref=e42] [cursor=pointer]
+      - button "tool · 1174" [ref=e43] [cursor=pointer]
+      - button "research · 295" [ref=e44] [cursor=pointer]
+      - button "unknown · 231" [ref=e45] [cursor=pointer]
+      - button "security · 213" [ref=e46] [cursor=pointer]
+      - button "career · 182" [ref=e47] [cursor=pointer]
+      - button "culture · 131" [ref=e48] [cursor=pointer]
+      - button "commerce · 124" [ref=e49] [cursor=pointer]
+      - button "finance · 122" [ref=e50] [cursor=pointer]
+      - button "personal-story · 73" [ref=e51] [cursor=pointer]
+      - button "ai · 5587" [ref=e52] [cursor=pointer]
+      - button "web-dev · 890" [ref=e53] [cursor=pointer]
+      - button "devops · 626" [ref=e54] [cursor=pointer]
+      - button "unknown · 548" [ref=e55] [cursor=pointer]
+      - button "education · 301" [ref=e56] [cursor=pointer]
+      - button "startups · 258" [ref=e57] [cursor=pointer]
+      - button "media · 239" [ref=e58] [cursor=pointer]
+      - button "security · 215" [ref=e59] [cursor=pointer]
+      - button "finance · 212" [ref=e60] [cursor=pointer]
+      - button "design · 115" [ref=e61] [cursor=pointer]
+      - button "health · 102" [ref=e62] [cursor=pointer]
+      - button "career · 65" [ref=e63] [cursor=pointer]
+    - button "Light theme" [ref=e20] [cursor=pointer]
+  - main [ref=e21]:
+    - generic [ref=e24]:
+      - heading "Analyze" [level=1] [ref=e64]
+      - paragraph [ref=e26]: Link types, domains, and author breakdown
+    - generic [ref=e27]:
+      - generic [ref=e28]:
+        - generic [ref=e29]: X List ID
+        - textbox "X List ID" [ref=e30]: "1979812953135497678"
+      - generic [ref=e31]:
+        - generic [ref=e32]: ⌕
+        - searchbox "Search bookmarks, articles, links…" [ref=e33]
+        - button "Search" [ref=e34] [cursor=pointer]
+      - status [ref=e35]: Analysis loaded
+      - generic [ref=e65]:
+        - article [ref=e66]:
+          - heading "Link types" [level=2] [ref=e67]
+          - generic [ref=e68]:
+            - generic [ref=e69]: x.com
+            - strong [ref=e71]: "25"
+          - generic [ref=e72]:
+            - generic [ref=e73]: github
+            - strong [ref=e75]: "16"
+          - generic [ref=e76]:
+            - generic [ref=e77]: arxiv
+            - strong [ref=e79]: "7"
+          - generic [ref=e80]:
+            - generic [ref=e81]: youtube
+            - strong [ref=e83]: "7"
+          - generic [ref=e84]:
+            - generic [ref=e85]: agentos-sdk.dev
+            - strong [ref=e87]: "3"
+          - generic [ref=e88]:
+            - generic [ref=e89]: langchain.com
+            - strong [ref=e91]: "3"
+          - generic [ref=e92]:
+            - generic [ref=e93]: luma.com
+            - strong [ref=e95]: "3"
+          - generic [ref=e96]:
+            - generic [ref=e97]: openrouter.ai
+            - strong [ref=e99]: "3"
+          - generic [ref=e100]:
+            - generic [ref=e101]: blog
+            - strong [ref=e103]: "2"
+          - generic [ref=e104]:
+            - generic [ref=e105]: danielmiessler.com
+            - strong [ref=e107]: "2"
+          - generic [ref=e108]:
+            - generic [ref=e109]: every.to
+            - strong [ref=e111]: "2"
+          - generic [ref=e112]:
+            - generic [ref=e113]: letta.com
+            - strong [ref=e115]: "2"
+        - article [ref=e116]:
+          - heading "Domains" [level=2] [ref=e117]
+          - generic [ref=e118]:
+            - generic [ref=e119]: x.com
+            - strong [ref=e121]: "25"
+          - generic [ref=e122]:
+            - generic [ref=e123]: github.com
+            - strong [ref=e125]: "16"
+          - generic [ref=e126]:
+            - generic [ref=e127]: arxiv.org
+            - strong [ref=e129]: "7"
+          - generic [ref=e130]:
+            - generic [ref=e131]: youtube.com
+            - strong [ref=e133]: "6"
+          - generic [ref=e134]:
+            - generic [ref=e135]: agentos-sdk.dev
+            - strong [ref=e137]: "3"
+          - generic [ref=e138]:
+            - generic [ref=e139]: langchain.com
+            - strong [ref=e141]: "3"
+          - generic [ref=e142]:
+            - generic [ref=e143]: luma.com
+            - strong [ref=e145]: "3"
+          - generic [ref=e146]:
+            - generic [ref=e147]: openrouter.ai
+            - strong [ref=e149]: "3"
+          - generic [ref=e150]:
+            - generic [ref=e151]: danielmiessler.com
+            - strong [ref=e153]: "2"
+          - generic [ref=e154]:
+            - generic [ref=e155]: every.to
+            - strong [ref=e157]: "2"
+          - generic [ref=e158]:
+            - generic [ref=e159]: letta.com
+            - strong [ref=e161]: "2"
+          - generic [ref=e162]:
+            - generic [ref=e163]: manus.im
+            - strong [ref=e165]: "2"
+        - article [ref=e166]:
+          - heading "Authors" [level=2] [ref=e167]
+          - generic [ref=e168]:
+            - generic [ref=e169]: paularambles
+            - strong [ref=e171]: "1"
+          - generic [ref=e172]:
+            - generic [ref=e173]: yacineMTB
+            - strong [ref=e175]: "53"
+          - generic [ref=e176]:
+            - generic [ref=e177]: signulll
+            - strong [ref=e179]: "6"
+          - generic [ref=e180]:
+            - generic [ref=e181]: naval
+            - strong [ref=e183]: "3"
+          - generic [ref=e184]:
+            - generic [ref=e185]: stevibe
+            - strong [ref=e187]: "2"
+          - generic [ref=e188]:
+            - generic [ref=e189]: rudrank
+            - strong [ref=e191]: "14"
+          - generic [ref=e192]:
+            - generic [ref=e193]: melvynx
+            - strong [ref=e195]: "5"
+          - generic [ref=e196]:
+            - generic [ref=e197]: 0xSero
+            - strong [ref=e199]: "22"
+          - generic [ref=e200]:
+            - generic [ref=e201]: RhysSullivan
+            - strong [ref=e203]: "15"
+          - generic [ref=e204]:
+            - generic [ref=e205]: thsottiaux
+            - strong [ref=e207]: "4"
+          - generic [ref=e208]:
+            - generic [ref=e209]: jxnlco
+            - strong [ref=e211]: "31"
+          - generic [ref=e212]:
+            - generic [ref=e213]: OfficialLoganK
+            - strong [ref=e215]: "2"
+      - button "Load more" [ref=e36] [cursor=pointer]

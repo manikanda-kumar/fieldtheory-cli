@@ -1,0 +1,18 @@
+{
+  "harness": "amp",
+  "task": "review",
+  "mode": "high",
+  "model": null,
+  "write": false,
+  "complexity": null,
+  "routing_source": "mode-override",
+  "rationale": "User selected amp with mode override: high. review task recommends codex, amp.",
+  "prompt_strategy": "wrapped",
+  "fallbacks": [],
+  "writeIsolation": "none",
+  "lockRequired": false,
+  "budget": {
+    "mode": "default",
+    "fallbackReason": null
+  }
+}

@@ -1,0 +1,3 @@
+[     116ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8787/favicon.ico:0
+[    8244ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8787/api/link-preview?url=https%3A%2F%2Ft.co%2FF6Q04vapPr:0
+[    8245ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8787/api/link-preview?url=https%3A%2F%2Ft.co%2F74UgJM6FAN:0

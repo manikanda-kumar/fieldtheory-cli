@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "run_id": "codex-20260710T184713Z-8tgs6e",
+  "backend": "codex",
+  "task": "implement",
+  "status": "created",
+  "paths": {
+    "run_dir": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e",
+    "receipt": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/receipt.json",
+    "input": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/input.md",
+    "prompt": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/prompt.md",
+    "route": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/route.json",
+    "command": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/command.json",
+    "events": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/events.jsonl",
+    "transcript": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/transcript.md",
+    "stdout": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/stdout.log",
+    "stderr": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/stderr.log",
+    "bridge": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/bridge.json",
+    "result": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/result.json",
+    "summary": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/summary.md",
+    "aggregate": "/Users/manik/Github/fieldtheory-cli/.harness/runs/codex-20260710T184713Z-8tgs6e/aggregate.json"
+  }
+}

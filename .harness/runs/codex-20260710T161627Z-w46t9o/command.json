@@ -1,0 +1,22 @@
+{
+  "bin": "codex",
+  "args": [
+    "exec",
+    "--skip-git-repo-check",
+    "-o",
+    "/var/folders/zy/zrm8cltd7jn6n3ftg2k6_psw0000gn/T/codex-out-67858-1783700187560",
+    "--profile",
+    "edit",
+    "--model",
+    "gpt-5.6-terra",
+    "resume",
+    "019f4cc7-fbe1-7863-b09a-ce3b1b59f01f",
+    "-"
+  ],
+  "native": false,
+  "cwd": "/Users/manik/Github/fieldtheory-cli",
+  "model": "gpt-5.6-terra",
+  "mode": null,
+  "task": "implement",
+  "display": "codex exec --skip-git-repo-check -o /var/folders/zy/zrm8cltd7jn6n3ftg2k6_psw0000gn/T/codex-out-67858-1783700187560 --profile edit --model gpt-5.6-terra resume 019f4cc7-fbe1-7863-b09a-ce3b1b59f01f -"
+}

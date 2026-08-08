@@ -1,0 +1,187 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: FT
+      - generic [ref=e6]:
+        - generic [ref=e7]: Field Theory
+        - generic [ref=e8]: Bookmarks and list digests
+    - navigation "Field Theory sections" [ref=e9]:
+      - button "Home" [ref=e10] [cursor=pointer]
+      - button "Today" [ref=e11] [cursor=pointer]
+      - button "Analyze" [ref=e12] [cursor=pointer]
+      - button "Map" [ref=e13] [cursor=pointer]
+      - button "Sources" [ref=e14] [cursor=pointer]
+      - button "Discuss" [ref=e15] [cursor=pointer]
+      - button "Bookmarks" [ref=e16] [cursor=pointer]
+    - generic [ref=e17]:
+      - generic [ref=e37]:
+        - strong [ref=e38]: "9884"
+        - text: Total bookmarks
+      - generic [ref=e39]: Last sync 2026-06-24T02:40:38.645Z
+    - generic [ref=e18]:
+      - button "technique · 3078" [ref=e40] [cursor=pointer]
+      - button "opinion · 2202" [ref=e41] [cursor=pointer]
+      - button "launch · 1286" [ref=e42] [cursor=pointer]
+      - button "tool · 1174" [ref=e43] [cursor=pointer]
+      - button "research · 295" [ref=e44] [cursor=pointer]
+      - button "unknown · 231" [ref=e45] [cursor=pointer]
+      - button "security · 213" [ref=e46] [cursor=pointer]
+      - button "career · 182" [ref=e47] [cursor=pointer]
+      - button "culture · 131" [ref=e48] [cursor=pointer]
+      - button "commerce · 124" [ref=e49] [cursor=pointer]
+      - button "finance · 122" [ref=e50] [cursor=pointer]
+      - button "personal-story · 73" [ref=e51] [cursor=pointer]
+      - button "ai · 5587" [ref=e52] [cursor=pointer]
+      - button "web-dev · 890" [ref=e53] [cursor=pointer]
+      - button "devops · 626" [ref=e54] [cursor=pointer]
+      - button "unknown · 548" [ref=e55] [cursor=pointer]
+      - button "education · 301" [ref=e56] [cursor=pointer]
+      - button "startups · 258" [ref=e57] [cursor=pointer]
+      - button "media · 239" [ref=e58] [cursor=pointer]
+      - button "security · 215" [ref=e59] [cursor=pointer]
+      - button "finance · 212" [ref=e60] [cursor=pointer]
+      - button "design · 115" [ref=e61] [cursor=pointer]
+      - button "health · 102" [ref=e62] [cursor=pointer]
+      - button "career · 65" [ref=e63] [cursor=pointer]
+    - button "Light theme" [ref=e20] [cursor=pointer]
+  - main [ref=e21]:
+    - generic [ref=e24]:
+      - heading "Home" [level=1] [ref=e25]
+      - paragraph [ref=e26]: Overview from your X list digest
+    - generic [ref=e27]:
+      - generic [ref=e28]:
+        - generic [ref=e29]: X List ID
+        - textbox "X List ID" [ref=e30]: "1979812953135497678"
+      - generic [ref=e31]:
+        - generic [ref=e32]: ⌕
+        - searchbox "Search bookmarks, articles, links…" [ref=e33]
+        - button "Search" [ref=e34] [cursor=pointer]
+      - status [ref=e35]: Home loaded from X List 1979812953135497678
+      - generic [ref=e64]:
+        - article [ref=e65]:
+          - heading "Today from list 1979812953135497678" [level=2] [ref=e66]
+          - generic [ref=e67]:
+            - generic [ref=e68]: 26 Jun, 9:00
+            - generic [ref=e69]: 992 tweets
+            - generic [ref=e70]: 12 page(s)
+            - generic [ref=e71]: 24h window
+        - article [ref=e72]:
+          - generic [ref=e73]:
+            - generic [ref=e74]:
+              - strong [ref=e75]: “paula”
+              - generic [ref=e76]: "@paularambles"
+            - time [ref=e77]: 25 Jun, 23:51
+          - paragraph [ref=e78]: you think you’ve mastered restaurant etiquette and then the waiter asks how you want your salmon cooked
+          - generic [ref=e80]: conversation-context
+          - generic [ref=e81]:
+            - generic [ref=e82]: 13K likes
+            - generic [ref=e83]: 68 reposts
+            - generic [ref=e84]: 99 replies
+            - generic [ref=e85]: 41 quotes
+            - generic [ref=e86]: 543K views
+          - generic [ref=e87]:
+            - button "Details" [ref=e88] [cursor=pointer]
+            - link "Open on X" [ref=e89] [cursor=pointer]:
+              - /url: https://x.com/paularambles/status/2070210766331052202
+        - article [ref=e90]:
+          - generic [ref=e91]:
+            - generic [ref=e92]:
+              - strong [ref=e93]: Naval
+              - generic [ref=e94]: "@naval"
+            - time [ref=e95]: 25 Jun, 9:30
+          - paragraph [ref=e96]: If AI is doing the writing, it should do the reading too.
+          - generic [ref=e98]: list-tweet
+          - generic [ref=e99]:
+            - generic [ref=e100]: 7.2K likes
+            - generic [ref=e101]: 378 reposts
+            - generic [ref=e102]: 681 replies
+            - generic [ref=e103]: 112 quotes
+            - generic [ref=e104]: 571K views
+          - generic [ref=e105]:
+            - button "Details" [ref=e106] [cursor=pointer]
+            - link "Open on X" [ref=e107] [cursor=pointer]:
+              - /url: https://x.com/naval/status/2069994029593543005
+        - article [ref=e108]:
+          - generic [ref=e109]:
+            - generic [ref=e110]:
+              - strong [ref=e111]: signüll
+              - generic [ref=e112]: "@signulll"
+            - time [ref=e113]: 25 Jun, 20:43
+          - paragraph [ref=e114]: we’re now in the timeline where hardware appreciates in value. which is pretty ridiculous.
+          - generic [ref=e116]: list-tweet
+          - generic [ref=e117]:
+            - generic [ref=e118]: 6.5K likes
+            - generic [ref=e119]: 265 reposts
+            - generic [ref=e120]: 69 replies
+            - generic [ref=e121]: 17 quotes
+            - generic [ref=e122]: 385K views
+          - generic [ref=e123]:
+            - button "Details" [ref=e124] [cursor=pointer]
+            - link "Open on X" [ref=e125] [cursor=pointer]:
+              - /url: https://x.com/signulll/status/2070163597775311244
+        - article [ref=e126]:
+          - generic [ref=e127]:
+            - generic [ref=e128]:
+              - strong [ref=e129]: stevibe
+              - generic [ref=e130]: "@stevibe"
+            - time [ref=e131]: 25 Jun, 19:46
+          - paragraph [ref=e132]: "RT @MKBHD: Memory price hikes have finally started hitting Apple. Today, they raised some base prices: Macbook Neo: $599 -&gt; $699 Macbook A…"
+          - generic [ref=e134]: list-tweet
+          - generic [ref=e135]:
+            - generic [ref=e136]: 0 likes
+            - generic [ref=e137]: 2.3K reposts
+            - generic [ref=e138]: 0 replies
+            - generic [ref=e139]: 0 quotes
+            - generic [ref=e140]: 241 views
+          - generic [ref=e141]:
+            - button "Details" [ref=e142] [cursor=pointer]
+            - link "Open on X" [ref=e143] [cursor=pointer]:
+              - /url: https://x.com/stevibe/status/2070149107822563597
+        - article [ref=e144]:
+          - generic [ref=e145]:
+            - generic [ref=e146]:
+              - strong [ref=e147]: Logan Kilpatrick
+              - generic [ref=e148]: "@OfficialLoganK"
+            - time [ref=e149]: 25 Jun, 21:54
+          - paragraph [ref=e150]: Gemma 4... intelligence for everyone on device! https://t.co/74UgJM6FAN
+          - generic [ref=e152]: conversation-context
+          - link [ref=e154] [cursor=pointer]:
+            - /url: https://x.com/OfficialLoganK/status/2070181261772210449/video/1
+            - figure [ref=e155]:
+              - img "Tweet media" [ref=e156]
+              - text: ▶
+          - generic [ref=e158]: Loading preview…
+          - generic [ref=e159]:
+            - generic [ref=e160]: 2.9K likes
+            - generic [ref=e161]: 137 reposts
+            - generic [ref=e162]: 108 replies
+            - generic [ref=e163]: 41 quotes
+            - generic [ref=e164]: 213K views
+          - generic [ref=e165]:
+            - button "Details" [ref=e166] [cursor=pointer]
+            - link "Open on X" [ref=e167] [cursor=pointer]:
+              - /url: https://x.com/OfficialLoganK/status/2070181261772210449
+        - article [ref=e168]:
+          - generic [ref=e169]:
+            - generic [ref=e170]:
+              - strong [ref=e171]: Melvyn • Builder
+              - generic [ref=e172]: "@melvynx"
+            - time [ref=e173]: 25 Jun, 15:50
+          - paragraph [ref=e174]: "RT @themileiaccount: https://t.co/F6Q04vapPr"
+          - generic [ref=e176]: list-tweet
+          - link [ref=e178] [cursor=pointer]:
+            - /url: https://x.com/themileiaccount/status/2069793042672873859/photo/1
+            - figure [ref=e179]:
+              - img "Tweet media" [ref=e180]
+          - generic [ref=e182]: Loading preview…
+          - generic [ref=e183]:
+            - generic [ref=e184]: 0 likes
+            - generic [ref=e185]: 1.2K reposts
+            - generic [ref=e186]: 0 replies
+            - generic [ref=e187]: 0 quotes
+            - generic [ref=e188]: 167 views
+          - generic [ref=e189]:
+            - button "Details" [ref=e190] [cursor=pointer]
+            - link "Open on X" [ref=e191] [cursor=pointer]:
+              - /url: https://x.com/melvynx/status/2070089855225250280
+      - button "Load more" [ref=e36] [cursor=pointer]

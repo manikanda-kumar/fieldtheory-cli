@@ -1,0 +1,2483 @@
+Reading additional input from stdin...
+2026-07-10T17:01:32.943968Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T17:01:32.943993Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T17:01:32.943995Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/cli-printing-press/testdata/golden/fixtures/dogfood-novel-doc-sync/cli/SKILL.md: missing YAML frontmatter delimited by ---
+OpenAI Codex v0.144.1
+--------
+workdir: /Users/manik/Github/fieldtheory-cli
+model: gpt-5.6-terra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f4cfa-2ef5-7be1-81ca-e23ee0387bfe
+--------
+user
+# Harness Worker Packet
+
+## Contract
+
+You are an internal worker for the use-harness router.
+Return a concise report to the router; do not address the end user directly.
+Do not claim success unless validation evidence is included.
+
+## Assignment
+
+- Run ID: codex-20260710T170131Z-ut9a4p
+- Backend: codex
+- Task type: review
+- Workspace: /Users/manik/Github/fieldtheory-cli
+- Permission mode: read-only-by-default
+- Model: gpt-5.6-terra
+
+## Objective
+
+Review the uncommitted coverage-footer changes: src/daily/coverage.ts (new), plus related edits in src/daily/synthesize.ts, src/daily/collect.ts, src/canonical-bookmarks-db.ts, tests/daily.test.ts. Context: R8-R11 of docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md — mechanical Coverage footer (per-source freshness, dark sources note, run counts), frontmatter machine-readable counts, graceful degradation, undateable count. Hunt for: (1) any probe path that can throw and kill digest generation (R9 — malformed JSON, permission errors), (2) footer counts not reconciling with actual render (collected != themed + alsoSaved cases), (3) frontmatter YAML validity when counts present, (4) the undateable metric mislabeled (it counts full canonical index, not window — footer text must say so honestly), (5) freshness probe reading wrong field or wrong file per source, (6) meta writes in synthesize interfering with coverage reads ordering, (7) dark-sources line accuracy. file:line findings ranked; 'no findings' if clean. Do not edit.
+
+## Scope
+
+Use the objective and named files as scope. Do not broaden unless required.
+
+## Constraints
+
+- Match existing repo patterns.
+- Do not commit changes.
+- If changing files, report exact files changed.
+- If validation cannot run, say why.
+
+## Expected deliverable
+
+1. Summary
+2. Evidence
+3. Files changed
+4. Commands run
+5. Verification status
+6. Blockers
+
+## Result shape
+
+summary: string
+evidence: string[]
+files_changed: string[]
+commands_run: { command: string, exit_code: number | null, summary: string }[]
+verification: { status: "passed" | "failed" | "not_run", details: string }
+blockers: string[]
+warning: Exceeded skills context budget of 2%. All skill descriptions were removed and 186 additional skills were not included in the model-visible skills list.
+codex
+I’ll inspect the specified uncommitted changes and trace their render/write paths, then run focused validation where available.
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/manik/.agents/skills/tool-use/SKILL.md && git status --short && git diff -- src/daily/coverage.ts src/daily/synthesize.ts src/daily/collect.ts src/canonical-bookmarks-db.ts tests/daily.test.ts" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+---
+name: agent-harness
+description: General-purpose self-extending primitive library for AI agents. Use when you need shell, HTTP, cache, checkpoints, or task skills. Extend helpers.ts when a needed function is missing.
+---
+
+# agent-harness
+
+Thin, self-extending primitive library for AI agents. The agent writes what's missing. The harness compounds what's learned.
+
+**Pitch:** give a raw LLM (API call, no tools attached) the ability to do anything — and remember what it figured out.
+
+## Fast start
+
+Read `helpers.ts` first — every function is there with its signature.
+
+```bash
+agent-harness <<'TS'
+const r = shell("git log --oneline -5")
+console.log(r.stdout)
+TS
+```
+
+All helpers are pre-imported. Top-level `await` works.
+
+## Core primitives
+
+### Shell
+```typescript
+const r = shell("git status")
+console.log(r.stdout, r.stderr, r.returncode)
+
+const r2 = shell("npm test", { cwd: "/path/to/project", timeout: 120 })
+```
+
+### HTTP
+```typescript
+const text = await httpGet("https://api.github.com/repos/owner/repo")
+const data = JSON.parse(text)
+
+const resp = await httpPost("https://api.example.com/action", {
+  json: { key: "value" },
+  headers: { Authorization: "Bearer TOKEN" },
+})
+
+// paginated APIs (GitHub-style)
+const repos = await paginate<Repo>("https://api.github.com/orgs/vercel/repos")
+```
+
+### Cache — makes helpers worth writing
+```typescript
+// won't re-fetch if already cached within ttl
+const users = await cache("gh-users", () =>
+  httpGet("https://api.github.com/users").then(JSON.parse), 3600)
+
+cacheClear("gh-users")  // one key
+cacheClear()            // everything
+```
+
+### Checkpoints — pick up where you crashed
+```typescript
+let records = restore<Record[]>("raw_records")
+if (!records) {
+  records = await fetchAllRecords()   // slow / rate-limited
+  checkpoint("raw_records", records)  // safe from here
+}
+for (const r of records) process(r)
+
+checkpoints()               // ['raw_records', 'step_2']
+checkpointClear("raw_records")
+```
+
+### Skills — accumulated knowledge
+```typescript
+skill("github/pagination")   // print skill into context
+listSkills()                 // see what's available
+```
+
+### Log
+```typescript
+log("starting fetch")
+log("rate limited", "WARN")
+console.log(readLog(20))
+```
+
+## Self-extension pattern
+
+When a function is missing, add it to `helpers.ts` using `HELPERS_TS`:
+
+```typescript
+const src = require("fs").readFileSync(HELPERS_TS, "utf8")
+if (!src.includes("export async function myHelper")) {
+  require("fs").writeFileSync(HELPERS_TS, src.trimEnd() + `
+export async function myHelper(arg: string): Promise<string> {
+  // ...
+}
+`)
+  console.log("[helpers.ts] wrote myHelper()")
+}
+```
+
+The function is there on the next run too. This is the core loop.
+
+## Skill contribution
+
+When you learn something non-obvious, save it before finishing:
+
+```typescript
+saveSkill("github/pagination", `
+GitHub public API: 60 req/hr unauthenticated, 5000 req/hr authenticated.
+paginate() handles pagination automatically — stops when response.length < perPage.
+`)
+```
+
+Search before reinventing:
+```bash
+agent-harness --skills
+```
+
+## Architecture
+
+```
+agent-harness <<'TS' ... TS
+       ↓
+   run.ts          prepends helpers import, writes /tmp/_agent_run.ts, bun run
+       ↓
+   helpers.ts      shell / http / cache / checkpoint / skill / log
+       ↓
+task-[REDACTED]/       agent-written .md files — accumulated knowledge
+.cache/            file-based cache (JSON)
+.checkpoints/      task state (JSON)
+```
+
+## Design constraints
+
+- **No daemon.** No persistent process. Bun executes a temp file per run.
+- **No framework.** No tool registry, no retry logic, no config system.
+- **helpers.ts is yours.** Short typed functions. The agent extends it mid-task.
+- **task-[REDACTED]/ is agent-generated.** Don't hand-author — let the agent write what it actually learned.
+ M CONTINUITY.md
+ M src/canonical-bookmarks-db.ts
+ M src/daily/collect.ts
+ M src/daily/synthesize.ts
+ M src/x-list-html.ts
+ M tests/daily.test.ts
+ M tests/x-list-html.test.ts
+?? .harness/
+?? .playwright-mcp/
+?? birdclaw-home.png
+?? docs/ideation/
+?? docs/plans/2026-06-21-daily-sync-second-brain.md
+?? docs/plans/2026-06-24-bookmarks-web-interface.md
+?? docs/plans/2026-06-24-list-today-web-features.md
+?? docs/plans/2026-06-24-today-graphql-feed.md
+?? docs/plans/2026-07-07-companion-agent-daily-synthesis.md
+?? docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md
+?? docs/reviews/
+?? ft-analyze-birdclaw-style.png
+?? ft-home-birdclaw-style.png
+?? ft-home-redesign.png
+?? ft-today-birdclaw-style.png
+?? src/daily/coverage.ts
+diff --git a/src/canonical-bookmarks-db.ts b/src/canonical-bookmarks-db.ts
+index a1ea6ab..7e4ffa3 100644
+--- a/src/canonical-bookmarks-db.ts
++++ b/src/canonical-bookmarks-db.ts
+@@ -824,8 +824,14 @@ export function parseSavedAt(value: string | null | undefined): number | null {
+   return Number.isFinite(ms) ? ms : null;
+ }
+ 
+-export async function getCanonicalBookmarksSince(sinceIso: string, limit = 200): Promise<CanonicalRecentItem[]> {
++export async function getCanonicalBookmarksSince(
++  sinceIso: string,
++  limit?: number,
++  untilIso?: string,
++  afterId?: string,
++): Promise<CanonicalRecentItem[]> {
+   const sinceMs = Date.parse(sinceIso);
++  const untilMs = untilIso ? Date.parse(untilIso) : NaN;
+   const db = await openDb(twitterBookmarksIndexPath());
+   try {
+     initCanonicalSchema(db);
+@@ -838,9 +844,15 @@ export async function getCanonicalBookmarksSince(sinceIso: string, limit = 200):
+     return (rows[0]?.values ?? [])
+       .filter((row) => {
+         const ms = parseSavedAt(row[5] == null ? null : String(row[5]));
+-        return ms != null && ms >= sinceMs;
++        if (ms == null || ms < sinceMs || (Number.isFinite(untilMs) && ms >= untilMs)) return false;
++        // A timestamp alone is not a sufficient cursor: busy syncs can save
++        // many rows in the same millisecond. The canonical id breaks that tie.
++        return !(afterId && ms === sinceMs && String(row[0]) <= afterId);
++      })
++      .sort((a, b) => {
++        const bySavedAt = (parseSavedAt(String(a[5])) ?? 0) - (parseSavedAt(String(b[5])) ?? 0);
++        return bySavedAt || String(a[0]).localeCompare(String(b[0]));
+       })
+-      .sort((a, b) => (parseSavedAt(String(b[5])) ?? 0) - (parseSavedAt(String(a[5])) ?? 0))
+       .slice(0, limit)
+       .map((row) => ({
+       id: String(row[0]),
+@@ -858,6 +870,22 @@ export async function getCanonicalBookmarksSince(sinceIso: string, limit = 200):
+   }
+ }
+ 
++/**
++ * Count rows the daily collector cannot place in any time window. This is an
++ * all-index metric (rather than an attempted-window metric) because malformed
++ * timestamps have no reliable window to which they can be attributed.
++ */
++export async function countCanonicalUndateableBookmarks(): Promise<number> {
++  const db = await openDb(twitterBookmarksIndexPath());
++  try {
++    initCanonicalSchema(db);
++    const rows = db.exec('SELECT first_saved_at FROM canonical_bookmarks');
++    return (rows[0]?.values ?? []).filter((row) => parseSavedAt(row[0] == null ? null : String(row[0])) == null).length;
++  } finally {
++    db.close();
++  }
++}
++
+ const RELATED_STOPWORDS = new Set([
+   'this', 'that', 'with', 'from', 'have', 'what', 'your', 'when', 'where', 'will',
+   'about', 'into', 'over', 'more', 'like', 'just', 'them', 'they', 'then', 'than',
+diff --git a/src/daily/collect.ts b/src/daily/collect.ts
+index 6ad6553..38f3cac 100644
+--- a/src/daily/collect.ts
++++ b/src/daily/collect.ts
+@@ -4,7 +4,7 @@
+  */
+ 
+ import { pathExists, readJson, readJsonLines } from '../fs.js';
+-import { getCanonicalBookmarksSince, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
++import { countCanonicalUndateableBookmarks, getCanonicalBookmarksSince, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+ import { projectsCachePath } from '../projects/paths.js';
+ import type { ProjectRecord } from '../projects/types.js';
+ import { dailyMetaPath } from './paths.js';
+@@ -15,6 +15,8 @@ const MAX_ITEMS = 200;
+ 
+ export interface DailyMeta {
+   lastRunAt?: string;
++  /** Canonical-id tie-breaker for an overflow watermark timestamp. */
++  lastRunItemId?: string;
+   lastDigestDate?: string;
+ }
+ 
+@@ -28,7 +30,17 @@ export interface DailyCollection {
+   date: string;
+   sinceIso: string;
+   untilIso: string;
++  /** True when this is a historical `--date` digest rather than a rolling run. */
++  isExplicitDate: boolean;
+   items: CanonicalRecentItem[];
++  /** Items left in this window after the capped oldest-first batch. */
++  carriedOver: number;
++  /** All canonical rows excluded because first_saved_at is null or unparseable. */
++  undateableExcluded: number;
++  /** Watermark to persist after this batch; never moves past carried-over rows. */
++  nextWatermark: string;
++  /** Tie-breaker paired with nextWatermark when overflow occurs. */
++  nextWatermarkItemId?: string;
+   projectDeltas: DailyProjectDelta[];
+ }
+ 
+@@ -39,6 +51,8 @@ export interface CollectDailyOptions {
+   windowHours?: number;
+   /** Stable clock injection for tests. */
+   now?: Date;
++  /** Test seam for the production collection cap. */
++  maxItems?: number;
+ }
+ 
+ export async function readDailyMeta(): Promise<DailyMeta> {
+@@ -110,10 +124,42 @@ async function collectProjectDeltas(sinceIso: string, untilIso: string): Promise
+ export async function collectDaily(options: CollectDailyOptions = {}): Promise<DailyCollection> {
+   const meta = await readDailyMeta();
+   const { date, sinceIso, untilIso } = windowFor(options, meta);
+-
+-  const items = (await getCanonicalBookmarksSince(sinceIso, MAX_ITEMS))
+-    .filter((item) => withinWindow(item.firstSavedAt ?? undefined, sinceIso, untilIso));
++  const maxItems = options.maxItems ?? MAX_ITEMS;
++  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
++  const useOverflowCursor = !options.date
++    && Boolean(meta.lastRunItemId)
++    // windowFor normalizes dates, so compare instants rather than ISO strings.
++    && Number.isFinite(persistedWatermarkMs)
++    && Date.parse(sinceIso) === persistedWatermarkMs;
++  // Oldest-first means each capped rolling batch drains the backlog before
++  // newer arrivals; the timestamp+id cursor below prevents equal timestamps
++  // from causing a permanent tie at the watermark.
++  const windowItems = await getCanonicalBookmarksSince(
++    sinceIso,
++    undefined,
++    untilIso,
++    useOverflowCursor ? meta.lastRunItemId : undefined,
++  );
++  const items = windowItems.slice(0, maxItems);
++  const carriedOver = windowItems.length - items.length;
++  const lastCollected = items.at(-1);
++  const nextWatermark = carriedOver > 0 && lastCollected?.firstSavedAt
++    ? lastCollected.firstSavedAt
++    : untilIso;
++  const nextWatermarkItemId = carriedOver > 0 ? lastCollected?.id : undefined;
+   const projectDeltas = await collectProjectDeltas(sinceIso, untilIso);
+-
+-  return { date, sinceIso, untilIso, items, projectDeltas };
++  const undateableExcluded = await countCanonicalUndateableBookmarks();
++
++  return {
++    date,
++    sinceIso,
++    untilIso,
++    isExplicitDate: Boolean(options.date),
++    items,
++    carriedOver,
++    undateableExcluded,
++    nextWatermark,
++    nextWatermarkItemId,
++    projectDeltas,
++  };
+ }
+diff --git a/src/daily/synthesize.ts b/src/daily/synthesize.ts
+index d64a706..e624d35 100644
+--- a/src/daily/synthesize.ts
++++ b/src/daily/synthesize.ts
+@@ -12,8 +12,9 @@ import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunPro
+ import { extractJsonArray } from '../bookmark-classify-llm.js';
+ import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+ import { loadYoutubeState } from '../youtube/state.js';
+-import type { DailyCollection } from './collect.js';
++import { readDailyMeta, type DailyCollection } from './collect.js';
+ import type { ConnectedItem, RelatedRef } from './connect.js';
++import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
+ import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+ 
+ const SNIPPET_CHARS = 240;
+@@ -40,6 +41,8 @@ export interface SynthesizeDailyResult {
+   themes: DailyTheme[];
+   usedLlm: boolean;
+   droppedCitations: number;
++  themedCount: number;
++  alsoSavedCount: number;
+   skipped: boolean;
+ }
+ 
+@@ -106,6 +109,7 @@ export function buildDailyPrompt(collection: DailyCollection, connected: Connect
+ 
+ export function validateThemes(raw: unknown, collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): { themes: DailyTheme[]; dropped: number } {
+   const repos = new Set(collection.projectDeltas.map((delta) => delta.repo));
++  const citedItems = new Set<string>();
+   const themes: DailyTheme[] = [];
+   let dropped = 0;
+ 
+@@ -142,16 +146,20 @@ export function validateThemes(raw: unknown, collection: DailyCollection, connec
+     };
+ 
+     const items = mapAliases(candidate.itemIds, aliases.items);
++    const uniqueItems = items.kept.filter((id) => {
++      if (citedItems.has(id)) return false;
++      citedItems.add(id);
++      return true;
++    });
+     const related = mapAliases(candidate.relatedIds, aliases.related);
+     const projects = keepRepos(candidate.projects);
+     dropped += items.removed + related.removed + projects.removed;
+ 
+-    if (items.kept.length === 0) {
+-      dropped += 1;
++    if (uniqueItems.length === 0) {
+       continue;
+     }
+ 
+-    themes.push({ title, summary, itemIds: items.kept, relatedIds: related.kept, projects: projects.kept });
++    themes.push({ title, summary, itemIds: uniqueItems, relatedIds: related.kept, projects: projects.kept });
+   }
+ 
+   return { themes, dropped };
+@@ -212,12 +220,14 @@ export async function buildYoutubeNotesLinks(
+   return links;
+ }
+ 
+-function renderDigestMarkdown(
++export function renderDigestMarkdown(
+   collection: DailyCollection,
+   connected: ConnectedItem[],
+   themes: DailyTheme[],
++  alsoSavedIds: string[],
+   usedLlm: boolean,
+   youtubeNotes: Map<string, string> = new Map(),
++  coverage: DailyCoverage,
+ ): string {
+   const notesSuffix = (url: string | null | undefined): string => {
+     const videoId = extractYoutubeVideoId(url);
+@@ -231,6 +241,12 @@ function renderDigestMarkdown(
+     for (const ref of related) relatedById.set(ref.id, ref);
+   }
+   const sources = [...new Set(collection.items.flatMap((item) => item.sources))].sort();
++  const renderItem = (item: CanonicalRecentItem, id: string): string => {
++    const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
++    const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
++    const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
++    return `- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`;
++  };
+ 
+   const lines: string[] = [];
+   lines.push('---');
+@@ -239,6 +255,12 @@ function renderDigestMarkdown(
+   lines.push(`sources: [${sources.join(', ')}]`);
+   lines.push(`themes: ${themes.length}`);
+   lines.push(`synthesis: ${usedLlm ? 'llm' : 'mechanical'}`);
++  lines.push(`collected: ${coverage.counts.collected}`);
++  lines.push(`themed: ${coverage.counts.themed}`);
++  lines.push(`also_saved: ${coverage.counts.alsoSaved}`);
++  lines.push(`carried_over: ${coverage.counts.carriedOver}`);
++  lines.push(`citations_dropped: ${coverage.counts.citationsDropped}`);
++  lines.push(`undateable_excluded: ${coverage.counts.undateableExcluded}`);
+   lines.push('---');
+   lines.push('');
+   lines.push(`# Daily Digest — ${collection.date}`);
+@@ -252,10 +274,7 @@ function renderDigestMarkdown(
+     for (const id of theme.itemIds) {
+       const item = itemById.get(id);
+       if (!item) continue;
+-      const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
+-      const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
+-      const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
+-      lines.push(`- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`);
++      lines.push(renderItem(item, id));
+     }
+     if (theme.relatedIds.length > 0) {
+       lines.push('');
+@@ -274,6 +293,17 @@ function renderDigestMarkdown(
+     lines.push('');
+   }
+ 
++  if (alsoSavedIds.length > 0) {
++    lines.push('## Also saved');
++    lines.push('');
++    for (const id of alsoSavedIds) {
++      const item = itemById.get(id);
++      if (!item) continue;
++      lines.push(renderItem(item, id));
++    }
++    lines.push('');
++  }
++
+   if (collection.projectDeltas.length > 0) {
+     lines.push('## Project activity');
+     lines.push('');
+@@ -283,6 +313,16 @@ function renderDigestMarkdown(
+     lines.push('');
+   }
+ 
++  lines.push('## Coverage');
++  lines.push('');
++  lines.push('Source freshness:');
++  for (const source of ['x', 'raindrop', 'github-stars', 'youtube', 'projects'] as const) {
++    lines.push(`- ${source}: ${coverage.freshness[source]}`);
++  }
++  lines.push('- Dark sources: x-list and following are not yet in the canonical index.');
++  lines.push(`- This run: collected ${coverage.counts.collected}; themed ${coverage.counts.themed}; also-saved ${coverage.counts.alsoSaved}; carried-over ${coverage.counts.carriedOver}; citations dropped ${coverage.counts.citationsDropped}; undateable excluded (canonical total) ${coverage.counts.undateableExcluded}; synthesis ${coverage.counts.synthesis}.`);
++  lines.push('');
++
+   return lines.join('\n');
+ }
+ 
+@@ -301,7 +341,15 @@ export async function synthesizeDaily(
+   const digestPath = dailyDigestPath(collection.date);
+ 
+   if (collection.items.length === 0 && collection.projectDeltas.length === 0) {
+-    return { digestPath, themes: [], usedLlm: false, droppedCitations: 0, skipped: true };
++    return {
++      digestPath,
++      themes: [],
++      usedLlm: false,
++      droppedCitations: 0,
++      themedCount: 0,
++      alsoSavedCount: 0,
++      skipped: true,
++    };
+   }
+ 
+   let themes: DailyTheme[] = [];
+@@ -326,6 +374,11 @@ export async function synthesizeDaily(
+     if (themes.length === 0) themes = mechanicalThemes(collection);
+   }
+ 
++  const themedIds = new Set(themes.flatMap((theme) => theme.itemIds));
++  const alsoSavedIds = collection.items
++    .filter((item) => !themedIds.has(item.id))
++    .map((item) => item.id);
++
+   const youtubeNotes = await buildYoutubeNotesLinks(
+     [
+       ...collection.items.map((item) => item.canonicalUrl),
+@@ -333,8 +386,36 @@ export async function synthesizeDaily(
+     ],
+     digestPath,
+   );
+-  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, usedLlm, youtubeNotes));
+-  await writeJson(dailyMetaPath(), { lastRunAt: collection.untilIso, lastDigestDate: collection.date });
++  const coverage = await collectDailyCoverage({
++    collected: collection.items.length,
++    themed: themedIds.size,
++    alsoSaved: alsoSavedIds.length,
++    carriedOver: collection.carriedOver,
++    citationsDropped: droppedCitations,
++    undateableExcluded: collection.undateableExcluded,
++    synthesis: usedLlm ? 'llm' : 'mechanical',
++  });
++  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage));
++  if (!collection.isExplicitDate) {
++    const meta = await readDailyMeta();
++    const { lastRunItemId: _lastRunItemId, ...metaWithoutCursor } = meta;
++    await writeJson(dailyMetaPath(), {
++      ...metaWithoutCursor,
++      lastRunAt: collection.nextWatermark,
++      ...(collection.nextWatermarkItemId ? { lastRunItemId: collection.nextWatermarkItemId } : {}),
++      lastDigestDate: collection.date,
++    });
++  }
++  // Historical --date renders are deliberately read-only for daily metadata:
++  // lastDigestDate reflects the most recent rolling digest, just like lastRunAt.
+ 
+-  return { digestPath, themes, usedLlm, droppedCitations, skipped: false };
++  return {
++    digestPath,
++    themes,
++    usedLlm,
++    droppedCitations,
++    themedCount: themedIds.size,
++    alsoSavedCount: alsoSavedIds.length,
++    skipped: false,
++  };
+ }
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 92e9f22..eecfc65 100644
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -108,20 +108,91 @@ test('daily: collect windows on first_saved_at and gathers project deltas', asyn
+ test('daily: collect uses watermark when no date given and caps at 7 days', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
++      starRecord({ id: 0, fullName: 'a/clamped-boundary', starredAt: '2026-06-30T00:00:00.000Z' }),
+       starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
+       starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
+     ]);
+     await rebuildCanonicalIndex();
+ 
+     ensureDailyDir();
+-    await writeJson(dailyMetaPath(), { lastRunAt: '2026-05-01T00:00:00.000Z' });
++    await writeJson(dailyMetaPath(), {
++      lastRunAt: '2026-05-01T00:00:00.000Z',
++      // This stale cursor must not be applied to the clamped 2026-06-30 boundary.
++      lastRunItemId: 'zzzzzzzz',
++    });
+ 
+     const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+ 
+     // Watermark is older than the 7-day cap, so the window is clamped.
+     assert.equal(collection.sinceIso, '2026-06-30T00:00:00.000Z');
+-    assert.equal(collection.items.length, 1);
+-    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/new-tool');
++    assert.equal(collection.items.length, 2);
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/clamped-boundary'));
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/new-tool'));
++  });
++});
++
++test('daily: overflow advances only through the oldest collected items and drains on the next run', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, Array.from({ length: 5 }, (_, index) => starRecord({
++      id: index + 1,
++      fullName: `overflow/item-${index + 1}`,
++      starredAt: `2026-07-06T0${index}:00:00.000Z`,
++    })));
++    await rebuildCanonicalIndex();
++
++    const first = await collectDaily({
++      now: new Date('2026-07-07T00:00:00.000Z'),
++      windowHours: 24,
++      maxItems: 3,
++    });
++    assert.equal(first.items.length, 3);
++    assert.equal(first.carriedOver, 2);
++    assert.equal(first.nextWatermark, '2026-07-06T02:00:00.000Z');
++
++    await synthesizeDaily(first, [], { invoke: async () => { throw new Error('offline'); } });
++    const firstDigest = await readFileText(dailyDigestPath(first.date));
++    assert.match(firstDigest, /collected: 3/);
++    assert.match(firstDigest, /themed: 3/);
++    assert.match(firstDigest, /also_saved: 0/);
++    assert.match(firstDigest, /carried_over: 2/);
++    assert.match(firstDigest, /This run: collected 3; themed 3; also-saved 0; carried-over 2;/);
++    const meta = JSON.parse(await readFileText(dailyMetaPath()));
++    assert.equal(meta.lastRunAt, '2026-07-06T02:00:00.000Z');
++    assert.ok(meta.lastRunItemId);
++
++    const second = await collectDaily({
++      now: new Date('2026-07-07T00:00:00.000Z'),
++      maxItems: 3,
++    });
++    assert.equal(second.items.length, 2);
++    assert.equal(second.carriedOver, 0);
++    assert.deepEqual(second.items.map((item) => item.canonicalUrl), [
++      'https://github.com/overflow/item-4',
++      'https://github.com/overflow/item-5',
++    ]);
++  });
++});
++
++test('daily: explicit date synthesis does not move the rolling watermark', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [
++      starRecord({ id: 1, fullName: 'history/item', starredAt: '2026-07-01T12:00:00.000Z' }),
++    ]);
++    await rebuildCanonicalIndex();
++    ensureDailyDir();
++    await writeJson(dailyMetaPath(), {
++      lastRunAt: '2026-07-10T00:00:00.000Z',
++      lastDigestDate: '2026-07-10',
++    });
++
++    const historical = await collectDaily({ date: '2026-07-01' });
++    await synthesizeDaily(historical, [], { invoke: async () => { throw new Error('offline'); }, force: true });
++
++    const meta = JSON.parse(await readFileText(dailyMetaPath()));
++    assert.deepEqual(meta, {
++      lastRunAt: '2026-07-10T00:00:00.000Z',
++      lastDigestDate: '2026-07-10',
++    });
+   });
+ });
+ 
+@@ -184,7 +255,7 @@ test('daily: digest path validates date shape', () => {
+   assert.match(dailyDigestPath('2026-07-07'), /daily[/\\]2026-07-07\.md$/);
+ });
+ 
+-test('daily: synthesize validates citations, writes digest, and advances watermark', async () => {
++test('daily: synthesize validates citations, writes digest, and advances the rolling watermark', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
+       starRecord({ id: 1, fullName: 'a/agent-runner', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent runner harness' }),
+@@ -192,7 +263,7 @@ test('daily: synthesize validates citations, writes digest, and advances waterma
+     ]);
+     await rebuildCanonicalIndex();
+ 
+-    const collection = await collectDaily({ date: '2026-07-06' });
++    const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+     const connected = await connectDailyItems(collection);
+     const newId = collection.items[0].id;
+     const hasRelated = (connected[0].related.length ?? 0) > 0;
+@@ -217,13 +288,14 @@ test('daily: synthesize validates citations, writes digest, and advances waterma
+     assert.ok(result.droppedCitations >= 3);
+ 
+     const digest = await readFileText(result.digestPath);
+-    assert.match(digest, /# Daily Digest — 2026-07-06/);
++    assert.match(digest, /# Daily Digest — 2026-07-07/);
+     assert.match(digest, /agent-runner/);
+     assert.match(digest, /synthesis: llm/);
+     assert.ok(!digest.includes('hallucinated'));
++    assert.ok(!digest.includes('## Also saved'));
+ 
+     const meta = JSON.parse(await readFileText(dailyMetaPath()));
+-    assert.equal(meta.lastDigestDate, '2026-07-06');
++    assert.equal(meta.lastDigestDate, '2026-07-07');
+     assert.ok(meta.lastRunAt);
+   });
+ });
+@@ -246,6 +318,128 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
+     assert.match(result.themes[0].title, /github-stars/);
+     const digest = await readFileText(result.digestPath);
+     assert.match(digest, /synthesis: mechanical/);
++    assert.match(digest, /## Coverage/);
++    assert.match(digest, /- raindrop: never synced/);
++  });
++});
++
++test('daily: coverage counts canonical rows excluded for undateable first_saved_at', async () => {
++  await withIsolatedDataDir(async () => {
++    await writeStars(process.env.FT_DATA_DIR!, Array.from({ length: 4 }, (_, index) => starRecord({
++      id: index + 1,
++      fullName: `undateable/item-${index + 1}`,
++      starredAt: '2026-07-06T12:00:00.000Z',
++    })));
++    await rebuildCanonicalIndex();
++
++    const { openDb, saveDb } = await import('../src/db.js');
++    const { twitterBookmarksIndexPath } = await import('../src/paths.js');
++    const db = await openDb(twitterBookmarksIndexPath());
++    const rows = db.exec('SELECT id, canonical_url FROM canonical_bookmarks ORDER BY id ASC')[0]?.values ?? [];
++    const ids = rows.map((row) => String(row[0]));
++    const excludedUrls = rows.slice(0, 3).map((row) => String(row[1]));
++    db.run('UPDATE canonical_bookmarks SET first_saved_at = NULL WHERE id = ?', [ids[0]]);
++    db.run("UPDATE canonical_bookmarks SET first_saved_at = 'not a date' WHERE id = ?", [ids[1]]);
++    db.run("UPDATE canonical_bookmarks SET first_saved_at = 'also not a date' WHERE id = ?", [ids[2]]);
++    await saveDb(db, twitterBookmarksIndexPath());
++    db.close();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    assert.equal(collection.items.length, 1);
++    assert.equal(collection.undateableExcluded, 3);
++    const result = await synthesizeDaily(collection, [], { invoke: async () => { throw new Error('offline'); } });
++    const digest = await readFileText(result.digestPath);
++    assert.match(digest, /undateable_excluded: 3/);
++    assert.match(digest, /undateable excluded \(canonical total\) 3/);
++    for (const url of excludedUrls) assert.ok(!digest.includes(url));
++  });
++});
++
++test('daily: synthesize suppresses duplicate valid citations without counting them as dropped', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [
++      starRecord({ id: 1, fullName: 'duplicate/item', starredAt: '2026-07-06T12:00:00.000Z' }),
++    ]);
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async () => JSON.stringify([
++        { title: 'First', summary: 'The saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++        { title: 'Duplicate', summary: 'The same saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++      ]),
++    });
++
++    assert.equal(result.droppedCitations, 0);
++    assert.equal(result.themedCount, 1);
++    assert.equal(result.alsoSavedCount, 0);
++    const digest = await readFileText(result.digestPath);
++    assert.equal(digest.match(/^- \[/gm)?.length, 1);
++  });
++});
++
++test('daily: synthesize renders uncited items under Also saved', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, Array.from({ length: 11 }, (_, index) => starRecord({
++      id: index + 1,
++      fullName: `saved/item-${index + 1}`,
++      starredAt: '2026-07-06T12:00:00.000Z',
++    })));
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async () => JSON.stringify([
++        { title: 'First', summary: 'The first three saved items.', itemIds: ['i1', 'i2', 'i3'], relatedIds: [], projects: [] },
++        ...Array.from({ length: 6 }, (_, index) => ({
++          title: `Theme ${index + 2}`,
++          summary: `Saved item ${index + 4}.`,
++          itemIds: [`i${index + 4}`],
++          relatedIds: [],
++          projects: [],
++        })),
++      ]),
++    });
++
++    assert.equal(result.themedCount, 9);
++    assert.equal(result.alsoSavedCount, 2);
++    const digest = await readFileText(result.digestPath);
++    const alsoSaved = digest.split('## Also saved\n\n')[1];
++    assert.ok(alsoSaved);
++    for (const item of collection.items.slice(9)) {
++      assert.ok(alsoSaved.includes(item.canonicalUrl ?? item.id));
++    }
++  });
++});
++
++test('daily: synthesize renders items from themes dropped by the cap under Also saved', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, Array.from({ length: 9 }, (_, index) => starRecord({
++      id: index + 1,
++      fullName: `overflow/item-${index + 1}`,
++      starredAt: '2026-07-06T12:00:00.000Z',
++    })));
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async () => JSON.stringify(Array.from({ length: 9 }, (_, index) => ({
++        title: `Theme ${index + 1}`,
++        summary: `Saved item ${index + 1}.`,
++        itemIds: [`i${index + 1}`],
++        relatedIds: [],
++        projects: [],
++      }))),
++    });
++
++    assert.equal(result.themedCount, 7);
++    assert.equal(result.alsoSavedCount, 2);
++    const digest = await readFileText(result.digestPath);
++    const alsoSaved = digest.split('## Also saved\n\n')[1];
++    assert.ok(alsoSaved);
++    for (const item of collection.items.slice(7)) {
++      assert.ok(alsoSaved.includes(item.canonicalUrl ?? item.id));
++    }
+   });
+ });
+ 
+
+exec
+/bin/zsh -lc "sed -n '1,280p' src/daily/coverage.ts && rg -n -C 3 'R8|R9|R10|R11|Coverage|freshness|dark sources|undateable' docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md && rg -n \"function readJson|export async function readJson|function writeJson|export async function writeJson|function pathExists\" src/fs.ts && sed -n '1,180p' src/fs.ts && rg -n \"lastRunAt|dailyMetaPath|collectDailyCoverage|renderDigestMarkdown\" src tests" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+/**
+ * Mechanical coverage accounting for daily digests.  Freshness deliberately
+ * uses each source's own sync metadata instead of canonical-index mtimes:
+ * X uses bookmarks-meta's incremental/full sync timestamps; Raindrop,
+ * GitHub stars, and projects store their last sync in meta.json; YouTube's
+ * per-playlist lastSyncedAt is the only stored sync timestamp in state.json.
+ */
+
+import { pathExists, readJson } from '../fs.js';
+import { githubStarsMetaPath } from '../github-stars/paths.js';
+import { twitterBookmarksMetaPath, youtubeStatePath } from '../paths.js';
+import { projectsMetaPath } from '../projects/paths.js';
+import { raindropMetaPath } from '../raindrop/paths.js';
+
+export type CoverageFreshness = string | 'never synced' | 'unknown';
+
+export interface DailyCoverageCounts {
+  collected: number;
+  themed: number;
+  alsoSaved: number;
+  carriedOver: number;
+  citationsDropped: number;
+  /** Counted across the full canonical index, not just this digest window. */
+  undateableExcluded: number;
+  synthesis: 'llm' | 'mechanical';
+}
+
+export interface DailyCoverage {
+  freshness: Record<'x' | 'raindrop' | 'github-stars' | 'youtube' | 'projects', CoverageFreshness>;
+  counts: DailyCoverageCounts;
+}
+
+function timestamp(value: unknown): CoverageFreshness {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return 'unknown';
+  return value;
+}
+
+async function probeMeta(path: string, pick: (value: Record<string, unknown>) => unknown): Promise<CoverageFreshness> {
+  try {
+    if (!(await pathExists(path))) return 'never synced';
+    return timestamp(pick(await readJson<Record<string, unknown>>(path)));
+  } catch {
+    // A corrupt/unreadable per-source state must never prevent a digest.
+    return 'unknown';
+  }
+}
+
+async function probeYoutube(): Promise<CoverageFreshness> {
+  try {
+    if (!(await pathExists(youtubeStatePath()))) return 'never synced';
+    const state = await readJson<{ playlists?: Record<string, { lastSyncedAt?: unknown }> }>(youtubeStatePath());
+    const values = Object.values(state.playlists ?? {})
+      .map((playlist) => playlist.lastSyncedAt)
+      .filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)));
+    return values.length ? values.sort().at(-1)! : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+  const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
+    probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
+    probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+    probeYoutube(),
+    probeMeta(projectsMetaPath(), (meta) => meta.lastSyncedAt),
+  ]);
+  return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+}
+
+23-
+24-### Summary
+25-
+26:Harden the `ft daily` pipeline so the digest becomes a complete, auditable record of a window: uncited items render in a mechanical "Also saved" section, overflow carries to the next digest instead of vanishing behind the watermark, and a mechanical coverage footer reports per-source freshness, dark sources, and this run's counts.
+27-
+28-### Problem Frame
+29-
+--
+35-
+36-- **Mechanical "Also saved" section over a second LLM placement pass.** Deterministic guarantee at zero LLM cost; honest about being uncurated. A retry pass could also fail and would still need a mechanical fallback.
+37-- **Carry-over on overflow over a "+N more" summary line.** Nothing is lost; a large backfill digests over several days rather than producing one unusable mega-digest or dropping items.
+38:- **Full coverage footer now, not counts-only.** Per-source freshness and dark-source flags land in this pass, accepting that it pulls per-source sync-state reading into scope.
+39-- **Dark sources are a deliberate, persistent nag.** x-list and following show as "not indexed" in every digest until their ingest ships — visible debt, not hidden debt.
+40:- **Footer is mechanical, never LLM-generated.** Coverage reporting is only useful if it is ground truth.
+41-
+42-### Requirements
+43-
+--
+54-- R6. Carried-over items are not reordered into permanent starvation: repeated overflow windows must still drain oldest carry-overs eventually.
+55-- R7. A digest generated for an explicit past date (`--date`) must not move the live rolling watermark.
+56-
+57:**Coverage footer**
+58-
+59:- R8. Every digest ends with a mechanically generated coverage footer reporting: per-source last-sync freshness (or "never synced"), sources known to exist but absent from canonical ingest (currently x-list, following), and this run's counts — collected, themed, also-saved, carried-over, citations dropped, undateable items excluded, synthesis mode.
+60:- R9. The footer degrades gracefully: a missing or unreadable source state yields "unknown" or "never synced" and never fails digest generation.
+61:- R10. Digest frontmatter carries the same counts as machine-readable fields for downstream tooling.
+62:- R11. Items excluded for missing or unparseable save dates remain excluded from rendering, but are counted in the footer.
+63-
+64-### Acceptance Examples
+65-
+66-- AE1. **Covers R1, R3.** Given 11 collected items and the LLM cites 9 across its themes, when the digest renders, then the 2 uncited items appear under "Also saved" and the footer reports themed: 9, also-saved: 2.
+67-- AE2. **Covers R3.** Given the LLM returns 9 themes and the cap is 7, when validation slices to 7, then items cited only by the two dropped themes render under "Also saved".
+68:- AE3. **Covers R5, R8.** Given 250 new items in the window and a collection cap of 200, when the digest runs, then 200 items render, the footer reports carried-over: 50, the watermark does not pass the carried items, and the next digest includes them.
+69:- AE4. **Covers R8, R9.** Given Raindrop has never synced, when the digest renders, then the footer shows Raindrop as "never synced" and digest generation succeeds.
+70-- AE5. **Covers R7.** Given a live watermark at 2026-07-10 and a rerun of `ft daily --date 2026-07-01 --write --force`, when the historical digest is written, then the live watermark still reads 2026-07-10 and the next rolling digest window is unaffected.
+71:- AE6. **Covers R11.** Given 3 canonical items with unparseable save dates, when the digest renders, then those items do not appear in themes or "Also saved" and the footer reports undateable-excluded: 3.
+72-
+73-### Success Criteria
+74-
+--
+79-
+80-Deferred for later (flagged by the footer, filled by separate work):
+81-
+82:- Canonical ingest for x-list and following (the two dark sources; includes the unimplemented plan item of reading the latest x-list digest JSON at collection).
+83-- Per-source watermarks (late-landing syncs whose items predate the global watermark).
+84-- Re-engagement surfacing (earliest-date merge masks new activity on already-known URLs).
+85:- Rescuing undateable items (assigning fallback dates so they can ever appear).
+86-- Synthesis-quality improvements: related-link dedup and ranking, single-item theme suppression, and the ideation doc's ideas #1–#8.
+87-
+88-### Outstanding Questions
+--
+90-Deferred to planning:
+91-
+92-- Collection order under overflow (which 200 of 250 render first) — any order satisfies R5/R6; pick at planning time.
+93:- Where each source's last-sync freshness is read from (each source keeps its own state/meta file).
+94-
+95-### Sources
+96-
+12:export async function pathExists(filePath: string): Promise<boolean> {
+59:export async function writeJson(filePath: string, value: unknown, options: WriteOptions = {}): Promise<void> {
+63:export async function readJson<T>(filePath: string): Promise<T> {
+68:export async function writeJsonLines(filePath: string, rows: unknown[], options: WriteOptions = {}): Promise<void> {
+73:export async function readJsonLines<T>(filePath: string): Promise<T[]> {
+import { access, appendFile, mkdir, readFile, readdir, writeFile, rename, open } from 'node:fs/promises';
+import path from 'node:path';
+
+interface WriteOptions {
+  mode?: number;
+}
+
+export async function ensureDir(dirPath: string): Promise<void> {
+  await mkdir(dirPath, { recursive: true });
+}
+
+export async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function listFiles(dirPath: string): Promise<string[]> {
+  try {
+    return await readdir(dirPath);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Crash-durable atomic write: write to tmp → fsync file → rename → fsync parent dir.
+ * On power loss, the target file either has the old content or the full new content —
+ * never zero-byte or partially-written.
+ */
+async function writeFileDurable(filePath: string, content: string, mode: number): Promise<void> {
+  const tmp = filePath + '.tmp';
+  const handle = await open(tmp, 'w', mode);
+  try {
+    await handle.writeFile(content, 'utf8');
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await rename(tmp, filePath);
+  // fsync the parent directory so the rename itself is durable.
+  const parent = path.dirname(filePath);
+  try {
+    const dirHandle = await open(parent, 'r');
+    try {
+      await dirHandle.sync();
+    } finally {
+      await dirHandle.close();
+    }
+  } catch {
+    // Some platforms (Windows) can't open a dir for fsync. The file fsync
+    // above is still the critical durability guarantee.
+  }
+}
+
+export async function writeJson(filePath: string, value: unknown, options: WriteOptions = {}): Promise<void> {
+  await writeFileDurable(filePath, JSON.stringify(value, null, 2), options.mode ?? 0o600);
+}
+
+export async function readJson<T>(filePath: string): Promise<T> {
+  const raw = await readFile(filePath, 'utf8');
+  return JSON.parse(raw) as T;
+}
+
+export async function writeJsonLines(filePath: string, rows: unknown[], options: WriteOptions = {}): Promise<void> {
+  const content = rows.map((row) => JSON.stringify(row)).join('\n') + (rows.length ? '\n' : '');
+  await writeFileDurable(filePath, content, options.mode ?? 0o600);
+}
+
+export async function readJsonLines<T>(filePath: string): Promise<T[]> {
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    return raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as T);
+  } catch {
+    return [];
+  }
+}
+
+// ── Markdown helpers ─────────────────────────────────────────────────────
+
+export async function writeMd(filePath: string, content: string): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFileDurable(filePath, content, 0o644);
+}
+
+export async function readMd(filePath: string): Promise<string> {
+  return readFile(filePath, 'utf8');
+}
+
+export async function appendLine(filePath: string, line: string): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const nl = line.endsWith('\n') ? line : line + '\n';
+  await appendFile(filePath, nl, 'utf8');
+}
+tests/daily.test.ts:12:import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+tests/daily.test.ts:118:    await writeJson(dailyMetaPath(), {
+tests/daily.test.ts:119:      lastRunAt: '2026-05-01T00:00:00.000Z',
+tests/daily.test.ts:159:    const meta = JSON.parse(await readFileText(dailyMetaPath()));
+tests/daily.test.ts:160:    assert.equal(meta.lastRunAt, '2026-07-06T02:00:00.000Z');
+tests/daily.test.ts:183:    await writeJson(dailyMetaPath(), {
+tests/daily.test.ts:184:      lastRunAt: '2026-07-10T00:00:00.000Z',
+tests/daily.test.ts:191:    const meta = JSON.parse(await readFileText(dailyMetaPath()));
+tests/daily.test.ts:193:      lastRunAt: '2026-07-10T00:00:00.000Z',
+tests/daily.test.ts:297:    const meta = JSON.parse(await readFileText(dailyMetaPath()));
+tests/daily.test.ts:299:    assert.ok(meta.lastRunAt);
+src/graphql-bookmarks.ts:554:  input: { added: number; seenIds: string[]; stopReason: string; lastRunAt?: string; lastCursor?: string }
+src/graphql-bookmarks.ts:558:    lastRunAt: input.lastRunAt ?? new Date().toISOString(),
+src/graphql-bookmarks.ts:815:    lastRunAt: syncedAt,
+tests/bookmarks-status.test.ts:20:      lastRunAt: '2026-04-05T12:34:56Z',
+tests/bookmarks-status.test.ts:58:      lastRunAt: '2026-04-05T12:34:56Z',
+tests/bookmarks-status.test.ts:89:      lastRunAt: '2026-04-05T12:34:56Z',
+tests/bookmarks-service.test.ts:109:      lastRunAt: '2026-04-05T12:34:56Z',
+src/daily/collect.ts:10:import { dailyMetaPath } from './paths.js';
+src/daily/collect.ts:17:  lastRunAt?: string;
+src/daily/collect.ts:59:  const metaPath = dailyMetaPath();
+src/daily/collect.ts:83:  const watermark = meta.lastRunAt ? new Date(meta.lastRunAt) : null;
+src/daily/collect.ts:128:  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
+src/bookmarks.ts:277:    state?.lastRunAt && (!metaUpdatedAt || Date.parse(state.lastRunAt) > Date.parse(metaUpdatedAt))
+src/bookmarks.ts:286:      lastIncrementalSyncAt: state?.lastRunAt ?? meta?.lastIncrementalSyncAt,
+src/types.ts:129:  lastRunAt?: string;
+src/daily/synthesize.ts:17:import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
+src/daily/synthesize.ts:18:import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+src/daily/synthesize.ts:223:export function renderDigestMarkdown(
+src/daily/synthesize.ts:389:  const coverage = await collectDailyCoverage({
+src/daily/synthesize.ts:398:  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage));
+src/daily/synthesize.ts:402:    await writeJson(dailyMetaPath(), {
+src/daily/synthesize.ts:404:      lastRunAt: collection.nextWatermark,
+src/daily/synthesize.ts:410:  // lastDigestDate reflects the most recent rolling digest, just like lastRunAt.
+src/daily/coverage.ts:61:export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+src/daily/paths.ts:23:export function dailyMetaPath(): string {
+
+exec
+/bin/zsh -lc "rg -n -C 3 \"lastIncrementalSyncAt|lastFullSyncAt|lastSyncedAt|lastSyncAt|playlists\" src/{bookmarks.ts,github-stars,raindrop,projects,youtube} src/paths.ts src/github-stars/paths.ts src/raindrop/paths.ts src/projects/paths.ts && sed -n '1,150p' src/daily/collect.ts && sed -n '1,180p' src/daily/synthesize.ts && sed -n '330,440p' src/daily/synthesize.ts && cat package.json" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+src/bookmarks.ts-230-  const meta: BookmarkCacheMeta = {
+src/bookmarks.ts-231-    provider: 'twitter',
+src/bookmarks.ts-232-    schemaVersion: 1,
+src/bookmarks.ts:233:    lastFullSyncAt: mode === 'full' ? now : previousMeta?.lastFullSyncAt,
+src/bookmarks.ts:234:    lastIncrementalSyncAt: mode === 'incremental' ? now : previousMeta?.lastIncrementalSyncAt,
+src/bookmarks.ts-235-    totalBookmarks: merged.length,
+src/bookmarks.ts-236-  };
+src/bookmarks.ts-237-  await writeJson(metaPath, meta);
+--
+src/bookmarks.ts-246-}
+src/bookmarks.ts-247-
+src/bookmarks.ts-248-export function latestBookmarkSyncAt(
+src/bookmarks.ts:249:  meta?: Pick<BookmarkCacheMeta, 'lastIncrementalSyncAt' | 'lastFullSyncAt'> | null,
+src/bookmarks.ts-250-): string | null {
+src/bookmarks.ts-251-  let latestValue: string | null = null;
+src/bookmarks.ts-252-  let latestTs = Number.NEGATIVE_INFINITY;
+src/bookmarks.ts-253-
+src/bookmarks.ts:254:  for (const candidate of [meta?.lastIncrementalSyncAt, meta?.lastFullSyncAt]) {
+src/bookmarks.ts-255-    if (!candidate) continue;
+src/bookmarks.ts-256-    const parsed = Date.parse(candidate);
+src/bookmarks.ts-257-    if (!Number.isFinite(parsed) || parsed <= latestTs) continue;
+--
+src/bookmarks.ts-282-    return {
+src/bookmarks.ts-283-      provider: 'twitter',
+src/bookmarks.ts-284-      schemaVersion: meta?.schemaVersion ?? 1,
+src/bookmarks.ts:285:      lastFullSyncAt: meta?.lastFullSyncAt,
+src/bookmarks.ts:286:      lastIncrementalSyncAt: state?.lastRunAt ?? meta?.lastIncrementalSyncAt,
+src/bookmarks.ts-287-      totalBookmarks,
+src/bookmarks.ts-288-      cachePath,
+src/bookmarks.ts-289-      metaPath,
+--
+src/projects/sync.ts-13-export interface ProjectsStatusView {
+src/projects/sync.ts-14-  count: number;
+src/projects/sync.ts-15-  withPrompts: number;
+src/projects/sync.ts:16:  lastSyncedAt: string | null;
+src/projects/sync.ts-17-  cachePath: string;
+src/projects/sync.ts-18-}
+src/projects/sync.ts-19-
+--
+src/projects/sync.ts-106-  await writeJsonLines(cachePath, records);
+src/projects/sync.ts-107-
+src/projects/sync.ts-108-  const meta: ProjectsMeta = {
+src/projects/sync.ts:109:    lastSyncedAt: scanResult.scannedAt,
+src/projects/sync.ts-110-    scanRoot: scanResult.scanRoot,
+src/projects/sync.ts-111-    repoCount: records.length,
+src/projects/sync.ts-112-    errors: scanResult.errors,
+--
+src/projects/sync.ts-131-  const metaPath = projectsMetaPath();
+src/projects/sync.ts-132-  if (!(await pathExists(cachePath)) && !(await pathExists(metaPath))) return null;
+src/projects/sync.ts-133-
+src/projects/sync.ts:134:  let lastSyncedAt: string | null = null;
+src/projects/sync.ts-135-  let count = 0;
+src/projects/sync.ts-136-  try {
+src/projects/sync.ts-137-    const meta = await readJson<ProjectsMeta>(metaPath);
+src/projects/sync.ts:138:    lastSyncedAt = meta.lastSyncedAt ?? null;
+src/projects/sync.ts-139-    count = meta.repoCount ?? 0;
+src/projects/sync.ts-140-  } catch {
+src/projects/sync.ts-141-    // Cache can still provide counts when meta is absent or malformed.
+--
+src/projects/sync.ts-144-  const records = await readJsonLines<ProjectRecord>(cachePath);
+src/projects/sync.ts-145-  if (records.length > 0) count = records.length;
+src/projects/sync.ts-146-  const withPrompts = records.filter((record) => (record.recentPrompts?.length ?? 0) > 0).length;
+src/projects/sync.ts:147:  return { count, withPrompts, lastSyncedAt, cachePath };
+src/projects/sync.ts-148-}
+--
+src/raindrop/sync.ts-279-
+src/raindrop/sync.ts-280-  // Write meta
+src/raindrop/sync.ts-281-  const meta: RaindropMeta = {
+src/raindrop/sync.ts:282:    lastSyncedAt: new Date().toISOString(),
+src/raindrop/sync.ts-283-    syncedCount: sortedRecords.length,
+src/raindrop/sync.ts-284-    collectionsSyncedAt: new Date().toISOString(),
+src/raindrop/sync.ts-285-    collectionMap: Object.fromEntries(
+--
+src/youtube/index-html.ts-69-/**
+src/youtube/index-html.ts-70- * Write a playlist-scoped index (`index-<playlistId>.html`) containing only the
+src/youtube/index-html.ts-71- * videos recorded as members of that playlist in state. Shared notes/markdown
+src/youtube/index-html.ts:72: * are untouched; a video in multiple playlists appears in each playlist index.
+src/youtube/index-html.ts-73- * Returns null when the playlist has no members with notes yet.
+src/youtube/index-html.ts-74- */
+src/youtube/index-html.ts-75-export async function writeYoutubePlaylistIndex(
+--
+src/youtube/index-html.ts-78-): Promise<string | null> {
+src/youtube/index-html.ts-79-  await reconcileYoutubeStateFromLibrary();
+src/youtube/index-html.ts-80-  const state = await loadYoutubeState();
+src/youtube/index-html.ts:81:  const videoIds = [...new Set(state.playlists[playlistId]?.videoIds ?? [])];
+src/youtube/index-html.ts-82-  const entries: YoutubeIndexEntry[] = videoIds
+src/youtube/index-html.ts-83-    .map((videoId) => [videoId, state.videos[videoId]] as const)
+src/youtube/index-html.ts-84-    .filter((pair): pair is readonly [string, YoutubeVideoState] => Boolean(pair[1]?.artifacts.notesPath))
+--
+src/projects/types.ts-65-}
+src/projects/types.ts-66-
+src/projects/types.ts-67-export interface ProjectsMeta {
+src/projects/types.ts:68:  lastSyncedAt: string;
+src/projects/types.ts-69-  scanRoot: string;
+src/projects/types.ts-70-  repoCount: number;
+src/projects/types.ts-71-  errors: ProjectScanError[];
+--
+src/github-stars/sync.ts-99-    await mkdir(githubStarsDir(), { recursive: true });
+src/github-stars/sync.ts-100-    await writeJsonLines(cachePath, sortedRecords);
+src/github-stars/sync.ts-101-    await writeJson(metaPath, {
+src/github-stars/sync.ts:102:      lastSyncAt: new Date().toISOString(),
+src/github-stars/sync.ts-103-      lastStarredAt: newestStarredAt,
+src/github-stars/sync.ts-104-      totalStars: sortedRecords.length,
+src/github-stars/sync.ts-105-    } satisfies GitHubStarsMeta);
+--
+src/raindrop/types.ts-70-}
+src/raindrop/types.ts-71-
+src/raindrop/types.ts-72-export interface RaindropMeta {
+src/raindrop/types.ts:73:  lastSyncedAt?: string;
+src/raindrop/types.ts-74-  totalCount?: number;
+src/raindrop/types.ts-75-  syncedCount?: number;
+src/raindrop/types.ts-76-  collectionsSyncedAt?: string;
+--
+src/github-stars/types.ts-49-}
+src/github-stars/types.ts-50-
+src/github-stars/types.ts-51-export interface GitHubStarsMeta {
+src/github-stars/types.ts:52:  lastSyncAt: string;
+src/github-stars/types.ts-53-  lastStarredAt: string | null;
+src/github-stars/types.ts-54-  totalStars: number;
+src/github-stars/types.ts-55-}
+--
+src/youtube/state.ts-6-const LOCK_STALE_MS = 10 * 60 * 1000;
+src/youtube/state.ts-7-
+src/youtube/state.ts-8-export interface YoutubePlaylistState {
+src/youtube/state.ts:9:  lastSyncedAt?: string;
+src/youtube/state.ts-10-  videoIds?: string[];
+src/youtube/state.ts-11-}
+src/youtube/state.ts-12-
+--
+src/youtube/state.ts-35-
+src/youtube/state.ts-36-export interface YoutubeState {
+src/youtube/state.ts-37-  version: 1;
+src/youtube/state.ts:38:  playlists: Record<string, YoutubePlaylistState>;
+src/youtube/state.ts-39-  videos: Record<string, YoutubeVideoState>;
+src/youtube/state.ts-40-}
+src/youtube/state.ts-41-
+--
+src/youtube/state.ts-44-};
+src/youtube/state.ts-45-
+src/youtube/state.ts-46-export function emptyYoutubeState(): YoutubeState {
+src/youtube/state.ts:47:  return { version: 1, playlists: {}, videos: {} };
+src/youtube/state.ts-48-}
+src/youtube/state.ts-49-
+src/youtube/state.ts-50-export async function loadYoutubeState(): Promise<YoutubeState> {
+--
+src/youtube/state.ts-68-
+src/youtube/state.ts-69-  return {
+src/youtube/state.ts-70-    version: 1,
+src/youtube/state.ts:71:    playlists: state.playlists ?? {},
+src/youtube/state.ts-72-    videos,
+src/youtube/state.ts-73-  };
+src/youtube/state.ts-74-}
+--
+src/youtube/state.ts-260-  videoIds: string[],
+src/youtube/state.ts-261-  syncedAt = new Date().toISOString(),
+src/youtube/state.ts-262-): YoutubeState {
+src/youtube/state.ts:263:  state.playlists[playlistId] = {
+src/youtube/state.ts:264:    ...(state.playlists[playlistId] ?? {}),
+src/youtube/state.ts:265:    lastSyncedAt: syncedAt,
+src/youtube/state.ts-266-    videoIds,
+src/youtube/state.ts-267-  };
+src/youtube/state.ts-268-  return state;
+/**
+ * Daily synthesis collection: gather everything new since the last digest —
+ * canonical bookmark rows across all sources plus project activity deltas.
+ */
+
+import { pathExists, readJson, readJsonLines } from '../fs.js';
+import { countCanonicalUndateableBookmarks, getCanonicalBookmarksSince, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+import { projectsCachePath } from '../projects/paths.js';
+import type { ProjectRecord } from '../projects/types.js';
+import { dailyMetaPath } from './paths.js';
+
+const DEFAULT_WINDOW_HOURS = 24;
+const MAX_WINDOW_HOURS = 24 * 7;
+const MAX_ITEMS = 200;
+
+export interface DailyMeta {
+  lastRunAt?: string;
+  /** Canonical-id tie-breaker for an overflow watermark timestamp. */
+  lastRunItemId?: string;
+  lastDigestDate?: string;
+}
+
+export interface DailyProjectDelta {
+  repo: string;
+  commits: { date: string; subject: string }[];
+  prompts: { timestamp: string; text: string }[];
+}
+
+export interface DailyCollection {
+  date: string;
+  sinceIso: string;
+  untilIso: string;
+  /** True when this is a historical `--date` digest rather than a rolling run. */
+  isExplicitDate: boolean;
+  items: CanonicalRecentItem[];
+  /** Items left in this window after the capped oldest-first batch. */
+  carriedOver: number;
+  /** All canonical rows excluded because first_saved_at is null or unparseable. */
+  undateableExcluded: number;
+  /** Watermark to persist after this batch; never moves past carried-over rows. */
+  nextWatermark: string;
+  /** Tie-breaker paired with nextWatermark when overflow occurs. */
+  nextWatermarkItemId?: string;
+  projectDeltas: DailyProjectDelta[];
+}
+
+export interface CollectDailyOptions {
+  /** Explicit digest date (YYYY-MM-DD); window becomes that UTC day. */
+  date?: string;
+  /** Window size when no date and no watermark is available. Default: 24. */
+  windowHours?: number;
+  /** Stable clock injection for tests. */
+  now?: Date;
+  /** Test seam for the production collection cap. */
+  maxItems?: number;
+}
+
+export async function readDailyMeta(): Promise<DailyMeta> {
+  const metaPath = dailyMetaPath();
+  if (!(await pathExists(metaPath))) return {};
+  try {
+    return await readJson<DailyMeta>(metaPath);
+  } catch {
+    return {};
+  }
+}
+
+function windowFor(options: CollectDailyOptions, meta: DailyMeta): { date: string; sinceIso: string; untilIso: string } {
+  const now = options.now ?? new Date();
+
+  if (options.date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(options.date)) {
+      throw new Error(`Invalid --date (expected YYYY-MM-DD): ${options.date}`);
+    }
+    const start = new Date(`${options.date}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime())) throw new Error(`Invalid --date: ${options.date}`);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    return { date: options.date, sinceIso: start.toISOString(), untilIso: end.toISOString() };
+  }
+
+  const windowHours = Math.min(options.windowHours ?? DEFAULT_WINDOW_HOURS, MAX_WINDOW_HOURS);
+  const fallbackSince = new Date(now.getTime() - windowHours * 60 * 60 * 1000);
+  const watermark = meta.lastRunAt ? new Date(meta.lastRunAt) : null;
+  const oldestAllowed = new Date(now.getTime() - MAX_WINDOW_HOURS * 60 * 60 * 1000);
+
+  let since = watermark && !Number.isNaN(watermark.getTime()) ? watermark : fallbackSince;
+  if (since.getTime() < oldestAllowed.getTime()) since = oldestAllowed;
+  if (since.getTime() > now.getTime()) since = fallbackSince;
+
+  return { date: now.toISOString().slice(0, 10), sinceIso: since.toISOString(), untilIso: now.toISOString() };
+}
+
+function withinWindow(iso: string | undefined, sinceIso: string, untilIso: string): boolean {
+  if (!iso) return false;
+  // Timestamps come in mixed formats (ISO with offsets, Twitter-style) —
+  // compare parsed epochs, never raw strings.
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return false;
+  return ms >= Date.parse(sinceIso) && ms < Date.parse(untilIso);
+}
+
+async function collectProjectDeltas(sinceIso: string, untilIso: string): Promise<DailyProjectDelta[]> {
+  const cachePath = projectsCachePath();
+  if (!(await pathExists(cachePath))) return [];
+
+  const records = await readJsonLines<ProjectRecord>(cachePath);
+  const deltas: DailyProjectDelta[] = [];
+
+  for (const record of records) {
+    const commits = record.recentCommits
+      .filter((commit) => withinWindow(commit.date, sinceIso, untilIso))
+      .map((commit) => ({ date: commit.date, subject: commit.subject }));
+    const prompts = (record.recentPrompts ?? [])
+      .filter((prompt) => withinWindow(prompt.timestamp, sinceIso, untilIso))
+      .map((prompt) => ({ timestamp: prompt.timestamp, text: prompt.text }));
+    if (commits.length > 0 || prompts.length > 0) {
+      deltas.push({ repo: record.repo, commits, prompts });
+    }
+  }
+
+  return deltas.sort((a, b) => (b.commits.length + b.prompts.length) - (a.commits.length + a.prompts.length));
+}
+
+export async function collectDaily(options: CollectDailyOptions = {}): Promise<DailyCollection> {
+  const meta = await readDailyMeta();
+  const { date, sinceIso, untilIso } = windowFor(options, meta);
+  const maxItems = options.maxItems ?? MAX_ITEMS;
+  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
+  const useOverflowCursor = !options.date
+    && Boolean(meta.lastRunItemId)
+    // windowFor normalizes dates, so compare instants rather than ISO strings.
+    && Number.isFinite(persistedWatermarkMs)
+    && Date.parse(sinceIso) === persistedWatermarkMs;
+  // Oldest-first means each capped rolling batch drains the backlog before
+  // newer arrivals; the timestamp+id cursor below prevents equal timestamps
+  // from causing a permanent tie at the watermark.
+  const windowItems = await getCanonicalBookmarksSince(
+    sinceIso,
+    undefined,
+    untilIso,
+    useOverflowCursor ? meta.lastRunItemId : undefined,
+  );
+  const items = windowItems.slice(0, maxItems);
+  const carriedOver = windowItems.length - items.length;
+  const lastCollected = items.at(-1);
+  const nextWatermark = carriedOver > 0 && lastCollected?.firstSavedAt
+    ? lastCollected.firstSavedAt
+    : untilIso;
+  const nextWatermarkItemId = carriedOver > 0 ? lastCollected?.id : undefined;
+  const projectDeltas = await collectProjectDeltas(sinceIso, untilIso);
+/**
+ * Daily synthesis: turn the collected + connected material into a themed
+ * markdown digest via the LLM engine chain, with citation validation so the
+ * digest can never reference items that were not actually collected.
+ */
+
+import path from 'node:path';
+
+import { pathExists, writeJson } from '../fs.js';
+import { writeMd } from '../fs.js';
+import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunProfile } from '../engine.js';
+import { extractJsonArray } from '../bookmark-classify-llm.js';
+import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+import { loadYoutubeState } from '../youtube/state.js';
+import { readDailyMeta, type DailyCollection } from './collect.js';
+import type { ConnectedItem, RelatedRef } from './connect.js';
+import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
+import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+
+const SNIPPET_CHARS = 240;
+const MAX_THEMES = 7;
+
+export interface DailyTheme {
+  title: string;
+  summary: string;
+  itemIds: string[];
+  relatedIds: string[];
+  projects: string[];
+}
+
+export interface SynthesizeDailyOptions {
+  profile?: EngineRunProfile;
+  /** Test seam: replaces engine resolution + invocation. */
+  invoke?: (prompt: string) => Promise<string>;
+  /** Overwrite an existing digest for the same date. */
+  force?: boolean;
+}
+
+export interface SynthesizeDailyResult {
+  digestPath: string;
+  themes: DailyTheme[];
+  usedLlm: boolean;
+  droppedCitations: number;
+  themedCount: number;
+  alsoSavedCount: number;
+  skipped: boolean;
+}
+
+function snippet(item: CanonicalRecentItem): string {
+  return item.searchText.replace(/\s+/g, ' ').slice(0, SNIPPET_CHARS);
+}
+
+export interface DailyAliases {
+  /** Short prompt alias (i1, r2, ...) → real canonical id. */
+  items: Map<string, string>;
+  related: Map<string, string>;
+}
+
+/** Long canonical hash ids get mangled by smaller models; the prompt uses
+ *  short ordinal aliases (i1/r1) and citations are mapped back locally. */
+export function buildDailyAliases(collection: DailyCollection, connected: ConnectedItem[]): DailyAliases {
+  const items = new Map<string, string>();
+  collection.items.forEach((item, index) => items.set(`i${index + 1}`, item.id));
+
+  const related = new Map<string, string>();
+  const seen = new Set<string>();
+  let counter = 0;
+  for (const { related: refs } of connected) {
+    for (const ref of refs) {
+      if (seen.has(ref.id)) continue;
+      seen.add(ref.id);
+      counter += 1;
+      related.set(`r${counter}`, ref.id);
+    }
+  }
+  return { items, related };
+}
+
+export function buildDailyPrompt(collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): string {
+  const itemAlias = new Map([...aliases.items.entries()].map(([alias, id]) => [id, alias]));
+  const relatedAlias = new Map([...aliases.related.entries()].map(([alias, id]) => [id, alias]));
+
+  const lines: string[] = [];
+  lines.push(`Date: ${collection.date}`);
+  lines.push('');
+  lines.push('NEW ITEMS (saved today):');
+  for (const { item, related } of connected) {
+    lines.push(`- id=${itemAlias.get(item.id)} source=${item.sources.join(',')} title=${JSON.stringify(item.displayTitle ?? item.canonicalUrl ?? item.id)}`);
+    lines.push(`  snippet: ${snippet(item)}`);
+    for (const ref of related) {
+      lines.push(`  related: id=${relatedAlias.get(ref.id)} title=${JSON.stringify(ref.title ?? ref.url ?? ref.id)}`);
+    }
+  }
+  lines.push('');
+  lines.push('PROJECT ACTIVITY (repos worked on in this window):');
+  for (const delta of collection.projectDeltas) {
+    const subjects = delta.commits.slice(0, 5).map((commit) => commit.subject).join('; ');
+    const questions = delta.prompts.slice(0, 3).map((prompt) => prompt.text.slice(0, 120)).join(' | ');
+    lines.push(`- repo=${delta.repo} commits=[${subjects}] questions=[${questions}]`);
+  }
+  lines.push('');
+  lines.push(`TASK: Group the new items into 3-${MAX_THEMES} themes. Respond with ONLY a JSON array:`);
+  lines.push('[{"title": "...", "summary": "2-4 sentences on what is new and why it matters together",');
+  lines.push('  "itemIds": ["<id like i1 from NEW ITEMS>"], "relatedIds": ["<id like r1 from related lines>"], "projects": ["<repo from PROJECT ACTIVITY>"]}]');
+  lines.push('Rules: cite only the short ids (i1, i2, r1, ...) and repo names that appear verbatim above. Mention a project only when a theme genuinely connects to that repo\'s activity. Do not invent items, ids, or repos.');
+
+  return withSystemOverride('personal knowledge-synthesis engine that groups newly saved reading material into themes', lines.join('\n'));
+}
+
+export function validateThemes(raw: unknown, collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): { themes: DailyTheme[]; dropped: number } {
+  const repos = new Set(collection.projectDeltas.map((delta) => delta.repo));
+  const citedItems = new Set<string>();
+  const themes: DailyTheme[] = [];
+  let dropped = 0;
+
+  if (!Array.isArray(raw)) return { themes, dropped };
+
+  for (const entry of raw.slice(0, MAX_THEMES)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const candidate = entry as Record<string, unknown>;
+    const title = typeof candidate.title === 'string' ? candidate.title.trim() : '';
+    const summary = typeof candidate.summary === 'string' ? candidate.summary.trim() : '';
+    if (!title || !summary) continue;
+
+    const mapAliases = (value: unknown, aliasMap: Map<string, string>): { kept: string[]; removed: number } => {
+      if (!Array.isArray(value)) return { kept: [], removed: 0 };
+      const kept: string[] = [];
+      let removed = 0;
+      for (const alias of value) {
+        const real = typeof alias === 'string' ? aliasMap.get(alias.trim()) : undefined;
+        if (real && !kept.includes(real)) kept.push(real);
+        else removed += 1;
+      }
+      return { kept, removed };
+    };
+
+    const keepRepos = (value: unknown): { kept: string[]; removed: number } => {
+      if (!Array.isArray(value)) return { kept: [], removed: 0 };
+      const kept: string[] = [];
+      let removed = 0;
+      for (const repo of value) {
+        if (typeof repo === 'string' && repos.has(repo) && !kept.includes(repo)) kept.push(repo);
+        else removed += 1;
+      }
+      return { kept, removed };
+    };
+
+    const items = mapAliases(candidate.itemIds, aliases.items);
+    const uniqueItems = items.kept.filter((id) => {
+      if (citedItems.has(id)) return false;
+      citedItems.add(id);
+      return true;
+    });
+    const related = mapAliases(candidate.relatedIds, aliases.related);
+    const projects = keepRepos(candidate.projects);
+    dropped += items.removed + related.removed + projects.removed;
+
+    if (uniqueItems.length === 0) {
+      continue;
+    }
+
+    themes.push({ title, summary, itemIds: uniqueItems, relatedIds: related.kept, projects: projects.kept });
+  }
+
+  return { themes, dropped };
+}
+
+function mechanicalThemes(collection: DailyCollection): DailyTheme[] {
+  const bySource = new Map<string, string[]>();
+  for (const item of collection.items) {
+    const key = item.sources[0] ?? 'other';
+    const list = bySource.get(key) ?? [];
+    list.push(item.id);
+    bySource.set(key, list);
+  }
+  return [...bySource.entries()].map(([source, ids]) => ({
+    title: `New from ${source}`,
+    summary: `${ids.length} item(s) saved from ${source} in this window.`,
+    itemIds: ids,
+    relatedIds: [],
+  const engine = await resolveEngine(profile);
+  return invokeEngineAsync(engine, prompt);
+}
+
+export async function synthesizeDaily(
+  collection: DailyCollection,
+  connected: ConnectedItem[],
+  options: SynthesizeDailyOptions = {},
+): Promise<SynthesizeDailyResult> {
+  ensureDailyDir();
+  ensureDailyLibraryDir();
+  const digestPath = dailyDigestPath(collection.date);
+
+  if (collection.items.length === 0 && collection.projectDeltas.length === 0) {
+    return {
+      digestPath,
+      themes: [],
+      usedLlm: false,
+      droppedCitations: 0,
+      themedCount: 0,
+      alsoSavedCount: 0,
+      skipped: true,
+    };
+  }
+
+  let themes: DailyTheme[] = [];
+  let usedLlm = false;
+  let droppedCitations = 0;
+
+  if (collection.items.length > 0) {
+    try {
+      const aliases = buildDailyAliases(collection, connected);
+      const invoke = options.invoke ?? ((prompt: string) => defaultInvoke(options.profile ?? {}, prompt));
+      const raw = await invoke(buildDailyPrompt(collection, connected, aliases));
+      const jsonText = extractJsonArray(raw);
+      if (jsonText) {
+        const validated = validateThemes(JSON.parse(jsonText), collection, connected, aliases);
+        themes = validated.themes;
+        droppedCitations = validated.dropped;
+        usedLlm = themes.length > 0;
+      }
+    } catch {
+      // LLM unavailable or invalid output — fall back to mechanical grouping.
+    }
+    if (themes.length === 0) themes = mechanicalThemes(collection);
+  }
+
+  const themedIds = new Set(themes.flatMap((theme) => theme.itemIds));
+  const alsoSavedIds = collection.items
+    .filter((item) => !themedIds.has(item.id))
+    .map((item) => item.id);
+
+  const youtubeNotes = await buildYoutubeNotesLinks(
+    [
+      ...collection.items.map((item) => item.canonicalUrl),
+      ...connected.flatMap(({ related }) => related.map((ref) => ref.url)),
+    ],
+    digestPath,
+  );
+  const coverage = await collectDailyCoverage({
+    collected: collection.items.length,
+    themed: themedIds.size,
+    alsoSaved: alsoSavedIds.length,
+    carriedOver: collection.carriedOver,
+    citationsDropped: droppedCitations,
+    undateableExcluded: collection.undateableExcluded,
+    synthesis: usedLlm ? 'llm' : 'mechanical',
+  });
+  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage));
+  if (!collection.isExplicitDate) {
+    const meta = await readDailyMeta();
+    const { lastRunItemId: _lastRunItemId, ...metaWithoutCursor } = meta;
+    await writeJson(dailyMetaPath(), {
+      ...metaWithoutCursor,
+      lastRunAt: collection.nextWatermark,
+      ...(collection.nextWatermarkItemId ? { lastRunItemId: collection.nextWatermarkItemId } : {}),
+      lastDigestDate: collection.date,
+    });
+  }
+  // Historical --date renders are deliberately read-only for daily metadata:
+  // lastDigestDate reflects the most recent rolling digest, just like lastRunAt.
+
+  return {
+    digestPath,
+    themes,
+    usedLlm,
+    droppedCitations,
+    themedCount: themedIds.size,
+    alsoSavedCount: alsoSavedIds.length,
+    skipped: false,
+  };
+}
+{
+  "name": "fieldtheory",
+  "version": "1.3.20",
+  "description": "Field Theory CLI. Self-custody for your X/Twitter bookmarks. Local sync, full-text search, classification, and terminal dashboards.",
+  "type": "module",
+  "bin": {
+    "ft": "bin/ft.mjs",
+    "fieldtheory": "bin/ft.mjs"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test tests/**/*.test.ts",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/afar1/fieldtheory-cli.git"
+  },
+  "keywords": [
+    "bookmarks",
+    "twitter",
+    "x",
+    "search",
+    "fts5",
+    "sqlite",
+    "local-first",
+    "self-custody",
+    "cli"
+  ],
+  "dependencies": {
+    "commander": "^14.0.3",
+    "dotenv": "^17.3.1",
+    "sql.js": "^1.14.1",
+    "sql.js-fts5": "^1.4.0",
+    "undici": "^6.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/sql.js": "^1.4.11",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
+
+exec
+/bin/zsh -lc "rg -n \"sources:\\s*\\[|sources:\\s|sources\\.push|sources:.*\\[|source: '\" src | head -240 && sed -n '1,130p' src/paths.ts && sed -n '1,110p' src/github-stars/paths.ts && sed -n '1,110p' src/raindrop/paths.ts && sed -n '1,90p' src/projects/paths.ts && sed -n '1,115p' src/youtube/state.ts && rg -n \"function buildYoutubeNotesLinks|async function buildYoutubeNotesLinks|loadYoutubeState\" -C 4 src/daily/synthesize.ts" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+src/adjacent/pipeline.ts:131:      source: 'adjacent',
+src/adjacent/pipeline.ts:149:    source: 'adjacent',
+src/adjacent/pipeline.ts:186:    source: 'adjacent',
+src/adjacent/pipeline.ts:216:      source: 'adjacent',
+src/adjacent/pipeline.ts:254:    source: 'adjacent',
+src/adjacent/pipeline.ts:301:    source: 'adjacent',
+src/adjacent/pipeline.ts:369:      source: 'adjacent',
+src/canonical-bookmarks-db.ts:30:  sources: string[];
+src/canonical-bookmarks-db.ts:42:  sources: string[];
+src/canonical-bookmarks-db.ts:89:  sources: string[];
+src/canonical-bookmarks-db.ts:283:    source: 'x',
+src/canonical-bookmarks-db.ts:329:    source: 'raindrop',
+src/canonical-bookmarks-db.ts:358:    source: 'github-stars',
+src/canonical-bookmarks-db.ts:404:    source: 'project',
+src/canonical-bookmarks-db.ts:454:    source: 'youtube',
+src/canonical-bookmarks-db.ts:503:function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[]): CanonicalGroup {
+src/canonical-bookmarks-db.ts:536:    sources: sourceLabels,
+src/canonical-bookmarks-db.ts:640:    sources: parseSources(row[5]),
+src/canonical-bookmarks-db.ts:654:    sources: parseSources(row[7]),
+src/canonical-bookmarks-db.ts:811:  sources: string[];
+src/canonical-bookmarks-db.ts:862:      sources: parseSources(row[4]),
+src/graphql-bookmarks.ts:1605:        return { snapshot: null, status: 'error', source: 'graphql' };
+src/graphql-bookmarks.ts:1612:        return { snapshot: null, status: 'not_found', source: 'graphql' };
+src/graphql-bookmarks.ts:1616:      if (!snapshot) return { snapshot: null, article, status: article ? 'ok' : 'empty', source: 'graphql' };
+src/graphql-bookmarks.ts:1617:      return { snapshot, article, status: 'ok', source: 'graphql' };
+src/graphql-bookmarks.ts:1629:      return { snapshot: null, status: 'not_found', httpStatus: 404, source: 'graphql' };
+src/graphql-bookmarks.ts:1632:      return { snapshot: null, status: 'forbidden', httpStatus: response.status, source: 'graphql' };
+src/graphql-bookmarks.ts:1635:    return { snapshot: null, status: 'error', httpStatus: response.status, source: 'graphql' };
+src/graphql-bookmarks.ts:1637:  return { snapshot: null, status: 'rate_limited', source: 'graphql' };
+src/graphql-bookmarks.ts:1650:      if (!data?.text) return { snapshot: null, status: 'empty', source: 'syndication' };
+src/graphql-bookmarks.ts:1655:        source: 'syndication',
+src/graphql-bookmarks.ts:1685:    return { snapshot: null, status, httpStatus: response.status, source: 'syndication' };
+src/graphql-bookmarks.ts:1687:  return { snapshot: null, status: 'rate_limited', source: 'syndication' };
+src/research.ts:11:  sources: string[];
+src/research.ts:50:    sources: row.sources,
+src/ideas.ts:494:    source: 'adjacent',
+src/md-export.ts:228:  sources: CanonicalSourceRow[],
+src/md-export.ts:244:  sources: CanonicalSourceRow[],
+src/md-export.ts:275:  sources: CanonicalSourceRow[],
+src/web/server.ts:53:  sources: string[];
+src/web/server.ts:121:    sources: row.sources,
+src/web/server.ts:263:    sendJson(res, 200, { sources: deriveTodaySources(digest) });
+src/web/app-shell.ts:1071:  sources: { title:'Sources', subtitle:'Operational sync details and shared links live here, not on Home.' },
+src/daily/synthesize.ts:255:  lines.push(`sources: [${sources.join(', ')}]`);
+src/daily/synthesize.ts:322:  lines.push('- Dark sources: x-list and following are not yet in the canonical index.');
+src/seeds-save.ts:45:      source: 'field_theory',
+src/sync-all.ts:71:      source: 'following',
+src/sync-all.ts:78:      source: 'x',
+src/sync-all.ts:85:      source: 'x-list',
+src/sync-all.ts:93:      source: 'raindrop',
+src/sync-all.ts:100:      source: 'github-stars',
+src/sync-all.ts:107:      source: 'projects',
+src/sync-all.ts:114:      source: 'youtube',
+src/ideas-seeds.ts:150:    source: 'field_theory',
+src/youtube/captions.ts:14:  source: 'youtubei' | 'captionTracks';
+src/youtube/captions.ts:197:  return segments.length > 0 ? { segments, source: 'youtubei' } : null;
+src/youtube/captions.ts:327:  return segments.length > 0 ? { segments, source: 'captionTracks' } : null;
+import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs';
+
+export function dataDir(): string {
+  const override = process.env.FT_DATA_DIR;
+  if (override) return override;
+  const canonical = path.join(os.homedir(), '.fieldtheory', 'bookmarks');
+  const legacy = path.join(os.homedir(), '.ft-bookmarks');
+  if (fs.existsSync(canonical) || !fs.existsSync(legacy)) return canonical;
+  return legacy;
+}
+
+export function fieldTheoryDir(): string {
+  return path.join(os.homedir(), '.fieldtheory');
+}
+
+export function legacyDataDir(): string {
+  return path.join(os.homedir(), '.ft-bookmarks');
+}
+
+export function canonicalDataDir(): string {
+  return process.env.FT_DATA_DIR ?? path.join(fieldTheoryDir(), 'bookmarks');
+}
+
+export function canonicalLibraryDir(): string {
+  return process.env.FT_LIBRARY_DIR ?? path.join(fieldTheoryDir(), 'library');
+}
+
+export function canonicalCommandsDir(): string {
+  return process.env.FT_COMMANDS_DIR ?? path.join(fieldTheoryDir(), 'commands');
+}
+
+export function libraryDir(): string {
+  const override = process.env.FT_LIBRARY_DIR;
+  if (override) return override;
+  if (process.env.FT_DATA_DIR) return path.join(process.env.FT_DATA_DIR, 'md');
+  const canonical = path.join(os.homedir(), '.fieldtheory', 'library');
+  const legacy = path.join(os.homedir(), '.ft-bookmarks', 'md');
+  if (fs.existsSync(canonical) || !fs.existsSync(legacy)) return canonical;
+  return legacy;
+}
+
+export function commandsDir(): string {
+  return canonicalCommandsDir();
+}
+
+/**
+ * Root for all Field Theory ideas / librarian-adjacent data. Lives alongside
+ * the Mac app's existing `~/.fieldtheory/librarian/` root so both apps share
+ * a single `~/.fieldtheory/` home. In tests, FT_DATA_DIR overrides both the
+ * bookmarks root and this root to the same temp dir — bookmark data lands at
+ * <tmp>/bookmarks.db and ideas data lands at <tmp>/ideas/.
+ */
+export function fieldTheoryRoot(): string {
+  const override = process.env.FT_DATA_DIR;
+  if (override) return override;
+  return fieldTheoryDir();
+}
+
+function ensureDirSync(dir: string): void {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+}
+
+export function ensureDataDir(): string {
+  const dir = dataDir();
+  ensureDirSync(dir);
+  return dir;
+}
+
+export function twitterBookmarksCachePath(): string {
+  return path.join(dataDir(), 'bookmarks.jsonl');
+}
+
+export function twitterBookmarksMetaPath(): string {
+  return path.join(dataDir(), 'bookmarks-meta.json');
+}
+
+export function youtubeDir(): string {
+  return path.join(dataDir(), 'youtube');
+}
+
+export function youtubeStatePath(): string {
+  return path.join(youtubeDir(), 'state.json');
+}
+
+export function youtubeArtifactsDir(videoId: string): string {
+  return path.join(youtubeDir(), 'artifacts', safePathSegment(videoId, 'youtube video id'));
+}
+
+export function youtubeSlidesDir(videoId: string): string {
+  return path.join(youtubeArtifactsDir(videoId), 'slides');
+}
+
+export function youtubeLibraryDir(): string {
+  return path.join(libraryDir(), 'youtube');
+}
+
+export function youtubeLibraryIndexHtmlPath(playlistId?: string): string {
+  if (playlistId) {
+    return path.join(youtubeLibraryDir(), `index-${safePathSegment(playlistId, 'youtube playlist id')}.html`);
+  }
+  return path.join(youtubeLibraryDir(), 'index.html');
+}
+
+export function youtubeNotePath(videoId: string, published?: string | null, existingPath?: string): string {
+  if (existingPath) return existingPath;
+  return path.join(youtubeLibraryDir(), youtubeMonthSegment(published), `${safePathSegment(videoId, 'youtube video id')}.md`);
+}
+
+function youtubeMonthSegment(published?: string | null): string {
+  if (published) {
+    const compact = published.match(/^(\d{4})(\d{2})\d{2}$/);
+    if (compact) return `${compact[1]}-${compact[2]}`;
+    const iso = published.match(/^(\d{4})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}`;
+  }
+  return 'undated';
+}
+
+function safePathSegment(value: string, label: string): string {
+  if (!value || value === '.' || value === '..' || path.isAbsolute(value) || value.includes('/') || value.includes('\\')) {
+    throw new Error(`Invalid ${label}: ${value}`);
+  }
+  return value;
+}
+
+export function twitterOauthTokenPath(): string {
+import path from 'node:path';
+import { dataDir } from '../paths.js';
+
+export function githubStarsDir(): string {
+  return path.join(dataDir(), 'github-stars');
+}
+
+export function githubStarsCachePath(): string {
+  return path.join(githubStarsDir(), 'stars.jsonl');
+}
+
+export function githubStarsMetaPath(): string {
+  return path.join(githubStarsDir(), 'meta.json');
+}
+import path from 'node:path';
+import { dataDir } from '../paths.js';
+
+export function raindropBookmarksDir(): string {
+  return path.join(dataDir(), 'raindrop');
+}
+
+export function raindropBookmarksCachePath(): string {
+  return path.join(raindropBookmarksDir(), 'bookmarks.jsonl');
+}
+
+export function raindropMetaPath(): string {
+  return path.join(raindropBookmarksDir(), 'meta.json');
+}
+
+export function raindropBackfillStatePath(): string {
+  return path.join(raindropBookmarksDir(), 'backfill-state.json');
+}
+import fs from 'node:fs';
+import path from 'node:path';
+import { dataDir, libraryDir } from '../paths.js';
+
+function ensureDirSync(dir: string): void {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+}
+
+function safePathSegment(value: string, label: string): string {
+  if (!value || value === '.' || value === '..' || path.isAbsolute(value) || value.includes('/') || value.includes('\\')) {
+    throw new Error(`Invalid ${label}: ${value}`);
+  }
+  return value;
+}
+
+/** Root for local project scanner data: ~/.fieldtheory/bookmarks/projects/. */
+export function projectsDir(): string {
+  return path.join(dataDir(), 'projects');
+}
+
+export function ensureProjectsDir(): string {
+  const dir = projectsDir();
+  ensureDirSync(dir);
+  return dir;
+}
+
+/** JSONL cache of scanned project records. */
+export function projectsCachePath(): string {
+  return path.join(projectsDir(), 'projects.jsonl');
+}
+
+/** Sync metadata for the local project scanner. */
+export function projectsMetaPath(): string {
+  return path.join(projectsDir(), 'meta.json');
+}
+
+/** Markdown output directory for per-project pages. */
+export function projectsLibraryDir(): string {
+  return path.join(libraryDir(), 'projects');
+}
+
+export function ensureProjectsLibraryDir(): string {
+  const dir = projectsLibraryDir();
+  ensureDirSync(dir);
+  return dir;
+}
+
+export function projectMarkdownPath(repo: string): string {
+  return path.join(projectsLibraryDir(), `${safePathSegment(repo, 'project repo')}.md`);
+}
+
+export function projectsActiveMarkdownPath(): string {
+  return path.join(libraryDir(), 'projects-active.md');
+}
+import path from 'node:path';
+import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { readJson, writeJson, pathExists } from '../fs.js';
+import { youtubeLibraryDir, youtubeStatePath } from '../paths.js';
+
+const LOCK_STALE_MS = 10 * 60 * 1000;
+
+export interface YoutubePlaylistState {
+  lastSyncedAt?: string;
+  videoIds?: string[];
+}
+
+export interface YoutubeVideoArtifacts {
+  notesPath?: string;
+  audioPath?: string;
+  videoPath?: string;
+  thumbnailPath?: string;
+  [key: string]: string | undefined;
+}
+
+export interface YoutubeVideoState {
+  status: string;
+  contentHash?: string;
+  title?: string;
+  channel?: string;
+  durationSec?: number;
+  published?: string | null;
+  videoType?: string;
+  tldr?: string;
+  topics?: string[];
+  artifacts: YoutubeVideoArtifacts;
+  error?: string;
+  updatedAt: string;
+}
+
+export interface YoutubeState {
+  version: 1;
+  playlists: Record<string, YoutubePlaylistState>;
+  videos: Record<string, YoutubeVideoState>;
+}
+
+export type YoutubeVideoPatch = Partial<Omit<YoutubeVideoState, 'updatedAt' | 'artifacts'>> & {
+  artifacts?: Partial<YoutubeVideoArtifacts>;
+};
+
+export function emptyYoutubeState(): YoutubeState {
+  return { version: 1, playlists: {}, videos: {} };
+}
+
+export async function loadYoutubeState(): Promise<YoutubeState> {
+  const statePath = youtubeStatePath();
+  if (!(await pathExists(statePath))) return emptyYoutubeState();
+
+  const state = await readJson<Partial<YoutubeState>>(statePath);
+  if (state.version !== 1) {
+    throw new Error(`Unsupported YouTube state version: ${String(state.version)}`);
+  }
+
+  const videos: Record<string, YoutubeVideoState> = {};
+  for (const [videoId, video] of Object.entries(state.videos ?? {})) {
+    videos[videoId] = {
+      ...video,
+      status: video.status,
+      artifacts: video.artifacts ?? {},
+      updatedAt: video.updatedAt,
+    };
+  }
+
+  return {
+    version: 1,
+    playlists: state.playlists ?? {},
+    videos,
+  };
+}
+
+export async function saveYoutubeState(state: YoutubeState): Promise<void> {
+  const statePath = youtubeStatePath();
+  await mkdir(path.dirname(statePath), { recursive: true });
+  await writeJson(statePath, state);
+}
+
+export async function updateYoutubeState<T>(mutate: (state: YoutubeState) => T | Promise<T>): Promise<T> {
+  const release = await acquireYoutubeStateLock();
+  try {
+    const state = await loadYoutubeState();
+    const result = await mutate(state);
+    await saveYoutubeState(state);
+    return result;
+  } finally {
+    await release();
+  }
+}
+
+export function markVideo(
+  state: YoutubeState,
+  videoId: string,
+  patch: YoutubeVideoPatch,
+  updatedAt = new Date().toISOString(),
+): YoutubeState {
+  const existing = state.videos[videoId];
+  const next: YoutubeVideoState = {
+    ...existing,
+    ...patch,
+    status: patch.status ?? existing?.status ?? 'pending',
+    artifacts: {
+      ...(existing?.artifacts ?? {}),
+      ...(patch.artifacts ?? {}),
+    },
+    updatedAt,
+  };
+  // Clear stale error from prior failed attempts when the video reaches a
+  // successful terminal status, unless the patch explicitly carries one.
+  if ((next.status === 'done' || next.status === 'partial') && !('error' in patch)) {
+    delete next.error;
+  }
+10-import { writeMd } from '../fs.js';
+11-import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunProfile } from '../engine.js';
+12-import { extractJsonArray } from '../bookmark-classify-llm.js';
+13-import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+14:import { loadYoutubeState } from '../youtube/state.js';
+15-import { readDailyMeta, type DailyCollection } from './collect.js';
+16-import type { ConnectedItem, RelatedRef } from './connect.js';
+17-import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
+18-import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+--
+192-}
+193-
+194-/** Map videoId → digest-relative link to its library notes .md, for every
+195- *  YouTube URL among the digest's items and related refs. */
+196:export async function buildYoutubeNotesLinks(
+197-  urls: Array<string | null | undefined>,
+198-  digestPath: string,
+199-): Promise<Map<string, string>> {
+200-  const links = new Map<string, string>();
+--
+206-  if (videoIds.size === 0) return links;
+207-
+208-  let state;
+209-  try {
+210:    state = await loadYoutubeState();
+211-  } catch {
+212-    return links;
+213-  }
+214-  const digestDir = path.dirname(digestPath);
+
+codex
+I’m applying the repository’s harness guidance for the inspection and am now validating the affected test suite and TypeScript build.
+exec
+/bin/zsh -lc 'npm test -- tests/daily.test.ts && npm run build' in /Users/manik/Github/fieldtheory-cli
+ exited 1 in 109ms:
+node:net:2145
+      const error = new UVExceptionWithHostPort(rval, 'listen', address, port);
+                    ^
+
+Error: listen EPERM: operation not permitted /var/folders/zy/zrm8cltd7jn6n3ftg2k6_psw0000gn/T/tsx-501/16671.pipe
+    at Server.setupListenHandle [as _listen2] (node:net:2145:21)
+    at listenInCluster (node:net:2224:12)
+    at Server.listen (node:net:2361:5)
+    at file:///Users/manik/Github/fieldtheory-cli/node_modules/tsx/dist/cli.mjs:53:31537
+    at new Promise (<anonymous>)
+    at createIpcServer (file:///Users/manik/Github/fieldtheory-cli/node_modules/tsx/dist/cli.mjs:53:31515)
+    at async file:///Users/manik/Github/fieldtheory-cli/node_modules/tsx/dist/cli.mjs:55:459 {
+  code: 'EPERM',
+  errno: -1,
+  syscall: 'listen',
+  address: '/var/folders/zy/zrm8cltd7jn6n3ftg2k6_psw0000gn/T/tsx-501/16671.pipe',
+  port: -1
+}
+
+Node.js v26.4.0
+
+exec
+/bin/zsh -lc "npm run build && git diff --check && nl -ba src/daily/coverage.ts | sed -n '35,80p' && nl -ba src/daily/synthesize.ts | sed -n '245,335p' && nl -ba src/daily/synthesize.ts | sed -n '370,420p'" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 1116ms:
+    35	  return value;
+    36	}
+    37	
+    38	async function probeMeta(path: string, pick: (value: Record<string, unknown>) => unknown): Promise<CoverageFreshness> {
+    39	  try {
+    40	    if (!(await pathExists(path))) return 'never synced';
+    41	    return timestamp(pick(await readJson<Record<string, unknown>>(path)));
+    42	  } catch {
+    43	    // A corrupt/unreadable per-source state must never prevent a digest.
+    44	    return 'unknown';
+    45	  }
+    46	}
+    47	
+    48	async function probeYoutube(): Promise<CoverageFreshness> {
+    49	  try {
+    50	    if (!(await pathExists(youtubeStatePath()))) return 'never synced';
+    51	    const state = await readJson<{ playlists?: Record<string, { lastSyncedAt?: unknown }> }>(youtubeStatePath());
+    52	    const values = Object.values(state.playlists ?? {})
+    53	      .map((playlist) => playlist.lastSyncedAt)
+    54	      .filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)));
+    55	    return values.length ? values.sort().at(-1)! : 'unknown';
+    56	  } catch {
+    57	    return 'unknown';
+    58	  }
+    59	}
+    60	
+    61	export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+    62	  const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+    63	    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
+    64	    probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
+    65	    probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+    66	    probeYoutube(),
+    67	    probeMeta(projectsMetaPath(), (meta) => meta.lastSyncedAt),
+    68	  ]);
+    69	  return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+    70	}
+    71	
+   245	    const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
+   246	    const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
+   247	    const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
+   248	    return `- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`;
+   249	  };
+   250	
+   251	  const lines: string[] = [];
+   252	  lines.push('---');
+   253	  lines.push(`date: "${collection.date}"`);
+   254	  lines.push(`new_items: ${collection.items.length}`);
+   255	  lines.push(`sources: [${sources.join(', ')}]`);
+   256	  lines.push(`themes: ${themes.length}`);
+   257	  lines.push(`synthesis: ${usedLlm ? 'llm' : 'mechanical'}`);
+   258	  lines.push(`collected: ${coverage.counts.collected}`);
+   259	  lines.push(`themed: ${coverage.counts.themed}`);
+   260	  lines.push(`also_saved: ${coverage.counts.alsoSaved}`);
+   261	  lines.push(`carried_over: ${coverage.counts.carriedOver}`);
+   262	  lines.push(`citations_dropped: ${coverage.counts.citationsDropped}`);
+   263	  lines.push(`undateable_excluded: ${coverage.counts.undateableExcluded}`);
+   264	  lines.push('---');
+   265	  lines.push('');
+   266	  lines.push(`# Daily Digest — ${collection.date}`);
+   267	  lines.push('');
+   268	
+   269	  for (const theme of themes) {
+   270	    lines.push(`## ${theme.title}`);
+   271	    lines.push('');
+   272	    lines.push(theme.summary);
+   273	    lines.push('');
+   274	    for (const id of theme.itemIds) {
+   275	      const item = itemById.get(id);
+   276	      if (!item) continue;
+   277	      lines.push(renderItem(item, id));
+   278	    }
+   279	    if (theme.relatedIds.length > 0) {
+   280	      lines.push('');
+   281	      lines.push('Connects to earlier saves:');
+   282	      for (const id of theme.relatedIds) {
+   283	        const ref = relatedById.get(id);
+   284	        if (!ref) continue;
+   285	        const label = linkLabel(ref.title ?? ref.url ?? id);
+   286	        lines.push(`- ${ref.url ? `[${label}](${ref.url})` : label}${notesSuffix(ref.url)}`);
+   287	      }
+   288	    }
+   289	    if (theme.projects.length > 0) {
+   290	      lines.push('');
+   291	      lines.push(`Active projects: ${theme.projects.map((repo) => `[[project:${repo}]]`).join(', ')}`);
+   292	    }
+   293	    lines.push('');
+   294	  }
+   295	
+   296	  if (alsoSavedIds.length > 0) {
+   297	    lines.push('## Also saved');
+   298	    lines.push('');
+   299	    for (const id of alsoSavedIds) {
+   300	      const item = itemById.get(id);
+   301	      if (!item) continue;
+   302	      lines.push(renderItem(item, id));
+   303	    }
+   304	    lines.push('');
+   305	  }
+   306	
+   307	  if (collection.projectDeltas.length > 0) {
+   308	    lines.push('## Project activity');
+   309	    lines.push('');
+   310	    for (const delta of collection.projectDeltas) {
+   311	      lines.push(`- [[project:${delta.repo}]] — ${delta.commits.length} commit(s), ${delta.prompts.length} agent prompt(s)`);
+   312	    }
+   313	    lines.push('');
+   314	  }
+   315	
+   316	  lines.push('## Coverage');
+   317	  lines.push('');
+   318	  lines.push('Source freshness:');
+   319	  for (const source of ['x', 'raindrop', 'github-stars', 'youtube', 'projects'] as const) {
+   320	    lines.push(`- ${source}: ${coverage.freshness[source]}`);
+   321	  }
+   322	  lines.push('- Dark sources: x-list and following are not yet in the canonical index.');
+   323	  lines.push(`- This run: collected ${coverage.counts.collected}; themed ${coverage.counts.themed}; also-saved ${coverage.counts.alsoSaved}; carried-over ${coverage.counts.carriedOver}; citations dropped ${coverage.counts.citationsDropped}; undateable excluded (canonical total) ${coverage.counts.undateableExcluded}; synthesis ${coverage.counts.synthesis}.`);
+   324	  lines.push('');
+   325	
+   326	  return lines.join('\n');
+   327	}
+   328	
+   329	async function defaultInvoke(profile: EngineRunProfile, prompt: string): Promise<string> {
+   330	  const engine = await resolveEngine(profile);
+   331	  return invokeEngineAsync(engine, prompt);
+   332	}
+   333	
+   334	export async function synthesizeDaily(
+   335	  collection: DailyCollection,
+   370	      }
+   371	    } catch {
+   372	      // LLM unavailable or invalid output — fall back to mechanical grouping.
+   373	    }
+   374	    if (themes.length === 0) themes = mechanicalThemes(collection);
+   375	  }
+   376	
+   377	  const themedIds = new Set(themes.flatMap((theme) => theme.itemIds));
+   378	  const alsoSavedIds = collection.items
+   379	    .filter((item) => !themedIds.has(item.id))
+   380	    .map((item) => item.id);
+   381	
+   382	  const youtubeNotes = await buildYoutubeNotesLinks(
+   383	    [
+   384	      ...collection.items.map((item) => item.canonicalUrl),
+   385	      ...connected.flatMap(({ related }) => related.map((ref) => ref.url)),
+   386	    ],
+   387	    digestPath,
+   388	  );
+   389	  const coverage = await collectDailyCoverage({
+   390	    collected: collection.items.length,
+   391	    themed: themedIds.size,
+   392	    alsoSaved: alsoSavedIds.length,
+   393	    carriedOver: collection.carriedOver,
+   394	    citationsDropped: droppedCitations,
+   395	    undateableExcluded: collection.undateableExcluded,
+   396	    synthesis: usedLlm ? 'llm' : 'mechanical',
+   397	  });
+   398	  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage));
+   399	  if (!collection.isExplicitDate) {
+   400	    const meta = await readDailyMeta();
+   401	    const { lastRunItemId: _lastRunItemId, ...metaWithoutCursor } = meta;
+   402	    await writeJson(dailyMetaPath(), {
+   403	      ...metaWithoutCursor,
+   404	      lastRunAt: collection.nextWatermark,
+   405	      ...(collection.nextWatermarkItemId ? { lastRunItemId: collection.nextWatermarkItemId } : {}),
+   406	      lastDigestDate: collection.date,
+   407	    });
+   408	  }
+   409	  // Historical --date renders are deliberately read-only for daily metadata:
+   410	  // lastDigestDate reflects the most recent rolling digest, just like lastRunAt.
+   411	
+   412	  return {
+   413	    digestPath,
+   414	    themes,
+   415	    usedLlm,
+   416	    droppedCitations,
+   417	    themedCount: themedIds.size,
+   418	    alsoSavedCount: alsoSavedIds.length,
+   419	    skipped: false,
+   420	  };
+
+exec
+/bin/zsh -lc 'node --import tsx --test tests/daily.test.ts' in /Users/manik/Github/fieldtheory-cli
+ succeeded in 674ms:
+(node:16728) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ daily: collect windows on first_saved_at and gathers project deltas (78.15975ms)
+✔ daily: collect uses watermark when no date given and caps at 7 days (32.322625ms)
+✔ daily: overflow advances only through the oldest collected items and drains on the next run (43.105917ms)
+✔ daily: explicit date synthesis does not move the rolling watermark (37.925125ms)
+✔ daily: connect links new items to older related items only (24.56825ms)
+✔ daily: collect handles Twitter-format and offset-ISO timestamps in first_saved_at (40.753791ms)
+✔ daily: relatedSeedTerms drops stopwords, short words, and numbers (0.187209ms)
+✔ daily: digest path validates date shape (0.188875ms)
+✔ daily: synthesize validates citations, writes digest, and advances the rolling watermark (39.276542ms)
+✔ daily: synthesize falls back to mechanical themes when the LLM fails (29.922166ms)
+✔ daily: coverage counts canonical rows excluded for undateable first_saved_at (39.962542ms)
+✔ daily: synthesize suppresses duplicate valid citations without counting them as dropped (28.75575ms)
+✔ daily: synthesize renders uncited items under Also saved (38.02125ms)
+✔ daily: synthesize renders items from themes dropped by the cap under Also saved (27.724542ms)
+✔ daily: interests classifies rising/steady/fading topics and finds active threads (47.361166ms)
+✔ daily: synthesize skips when the window is empty (11.454709ms)
+✔ daily: extractYoutubeVideoId handles watch, short, shorts, and embed URLs (0.123084ms)
+✔ daily: digest links youtube items to their library notes when notes exist (28.444791ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 656.523792
+
+codex
+summary: "Found 1 medium-severity issue: X freshness can report an older sync timestamp when both X sync fields exist. Other reviewed coverage/footer behavior is sound."
+evidence:
+  - "P2 — src/daily/coverage.ts:63: X freshness selects `lastIncrementalSyncAt ?? lastFullSyncAt`, not the newest valid timestamp. A later full sync will be hidden whenever an older incremental timestamp exists, producing an incorrect freshness footer. Use the maximum parsed timestamp (the existing `latestBookmarkSyncAt` helper is a likely fit)."
+  - "R9 probe paths are guarded: malformed JSON, unreadable files, and malformed YouTube state return `unknown`; missing paths return `never synced` (src/daily/coverage.ts:38-58)."
+  - "Counts reconcile: themed IDs are deduplicated, and every remaining collected item is rendered under Also saved (src/daily/synthesize.ts:377-380, 296-304)."
+  - "Frontmatter count fields are scalar numeric YAML fields (src/daily/synthesize.ts:258-263)."
+  - "Undateable wording is honest: footer explicitly says `canonical total` (src/daily/synthesize.ts:323)."
+  - "Coverage reads occur before daily metadata is written, and do not read that metadata (src/daily/synthesize.ts:389-407)."
+  - "Dark-source text matches current canonical source ingestion: x-list and following are absent; canonical sources are x, raindrop, github-stars, project, and youtube."
+files_changed: []
+commands_run:
+  - command: "git status --short && git diff -- src/daily/coverage.ts src/daily/synthesize.ts src/daily/collect.ts src/canonical-bookmarks-db.ts tests/daily.test.ts"
+    exit_code: 0
+    summary: "Inspected uncommitted scoped changes."
+  - command: "npm test -- tests/daily.test.ts && npm run build"
+    exit_code: 1
+    summary: "tsx CLI could not create its IPC pipe in the sandbox (EPERM); build was therefore not reached in this command."
+  - command: "npm run build && git diff --check"
+    exit_code: 0
+    summary: "TypeScript build and whitespace check passed."
+  - command: "node --import tsx --test tests/daily.test.ts"
+    exit_code: 0
+    summary: "Focused daily suite passed: 18 tests."
+verification:
+  status: "passed"
+  details: "Focused daily tests passed via Node's tsx import path; TypeScript build and diff check passed."
+blockers:
+  - "The standard `npm test` wrapper is blocked by sandbox IPC permissions, but the equivalent focused test command succeeded."
+hook: Stop
+hook: Stop Completed
+tokens used
+46,776

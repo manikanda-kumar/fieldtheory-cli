@@ -1,0 +1,2236 @@
+Reading additional input from stdin...
+2026-07-10T18:27:45.603792Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T18:27:45.603811Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T18:27:45.603812Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/cli-printing-press/testdata/golden/fixtures/dogfood-novel-doc-sync/cli/SKILL.md: missing YAML frontmatter delimited by ---
+OpenAI Codex v0.144.1
+--------
+workdir: /Users/manik/Github/fieldtheory-cli
+model: gpt-5.6-terra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f4d49-1c99-7dd2-b8fa-f34b66694427
+--------
+user
+# Harness Worker Packet
+
+## Contract
+
+You are an internal worker for the use-harness router.
+Return a concise report to the router; do not address the end user directly.
+Do not claim success unless validation evidence is included.
+
+## Assignment
+
+- Run ID: codex-20260710T182744Z-qwa9vn
+- Backend: codex
+- Task type: review
+- Workspace: /Users/manik/Github/fieldtheory-cli
+- Permission mode: read-only-by-default
+- Model: gpt-5.6-terra
+
+## Objective
+
+Review the uncommitted link-enrichment changes: src/llm/opencode-client.ts (new), src/daily/enrich.ts (new), plus edits in src/cli.ts, src/daily/synthesize.ts, src/daily/coverage.ts, tests. Context: thin bookmarks (bare links) get fetched + summarized via deepseek-v4-flash on OpenCode Zen Go, summary merged into searchText before connect/synthesis; failures fall back to the thin-skip path; cache table link_enrichment must survive rebuildCanonicalIndex. Hunt for: (1) any path where enrichment failure/timeout can fail or hang the digest (missing AbortController cleanup, unhandled rejection in the concurrency pool), (2) SSRF-ish or unbounded fetch issues: redirects to localhost/file, body read cap actually enforced, (3) cache correctness: failed rows retried only after 7d, ok rows never refetched, table untouched by canonical rebuild DELETEs, (4) searchText merge mutating shared objects unexpectedly (connect and synthesize see consistent view; digest snippet may leak 'summary:' prefix — acceptable?), (5) key handling: key never logged, (6) counts honest (enriched definition consistent between footer and frontmatter), (7) prompt-partition interaction: enriched item whose summary is still short stays thin — handled? file:line findings ranked; 'no findings' if clean. Do not edit.
+
+## Scope
+
+Use the objective and named files as scope. Do not broaden unless required.
+
+## Constraints
+
+- Match existing repo patterns.
+- Do not commit changes.
+- If changing files, report exact files changed.
+- If validation cannot run, say why.
+
+## Expected deliverable
+
+1. Summary
+2. Evidence
+3. Files changed
+4. Commands run
+5. Verification status
+6. Blockers
+
+## Result shape
+
+summary: string
+evidence: string[]
+files_changed: string[]
+commands_run: { command: string, exit_code: number | null, summary: string }[]
+verification: { status: "passed" | "failed" | "not_run", details: string }
+blockers: string[]
+warning: Exceeded skills context budget of 2%. All skill descriptions were removed and 186 additional skills were not included in the model-visible skills list.
+codex
+I’ll inspect the uncommitted implementation and relevant tests, then run focused validation without modifying files.
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/manik/.agents/skills/mattpocock-skills/skills/engineering/code-review/SKILL.md" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+---
+name: code-review
+description: Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/PRD asked for?). Runs both reviews in parallel sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to "review since X".
+---
+
+Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
+
+- **Standards** — does the code conform to this repo's documented coding standards?
+- **Spec** — does the code faithfully implement the originating issue / PRD / spec?
+
+Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
+
+The issue tracker should have been provided to you — run `/setup-matt-pocock-skills` if `docs/agents/issue-tracker.md` is missing.
+
+## Process
+
+### 1. Pin the fixed point
+
+Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, ask for it.
+
+Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
+
+Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here — not inside two parallel sub-agents.
+
+### 2. Identify the spec source
+
+Look for the originating spec, in this order:
+
+1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the workflow in `docs/agents/issue-tracker.md`.
+2. A path the user passed as an argument.
+3. A PRD/spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
+4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
+
+### 3. Identify the standards sources
+
+Anything in the repo that documents how code should be written, such as `CODING_STANDARDS.md` or `CONTRIBUTING.md`.
+
+On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below — a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
+
+- **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag, suppress the smell.
+- **Always a judgement call.** Each smell is a labelled heuristic ("possible Feature Envy"), never a hard violation — and, like any standard here, skip anything tooling already enforces.
+
+Each smell reads *what it is* → *how to fix*; match it against the diff:
+
+- **Mysterious Name** — a function, variable, or type whose name doesn't reveal what it does or holds. → rename it; if no honest name comes, the design's murky.
+- **Duplicated Code** — the same logic shape appears in more than one hunk or file in the change. → extract the shared shape, call it from both.
+- **Feature Envy** — a method that reaches into another object's data more than its own. → move the method onto the data it envies.
+- **Data Clumps** — the same few fields or params keep travelling together (a type wanting to be born). → bundle them into one type, pass that.
+- **Primitive Obsession** — a primitive or string standing in for a domain concept that deserves its own type. → give the concept its own small type.
+- **Repeated Switches** — the same `switch`/`if`-cascade on the same type recurs across the change. → replace with polymorphism, or one map both sites share.
+- **Shotgun Surgery** — one logical change forces scattered edits across many files in the diff. → gather what changes together into one module.
+- **Divergent Change** — one file or module is edited for several unrelated reasons. → split so each module changes for one reason.
+- **Speculative Generality** — abstraction, parameters, or hooks added for needs the spec doesn't have. → delete it; inline back until a real need shows.
+- **Message Chains** — long `a.b().c().d()` navigation the caller shouldn't depend on. → hide the walk behind one method on the first object.
+- **Middle Man** — a class or function that mostly just delegates onward. → cut it, call the real target direct.
+- **Refused Bequest** — a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
+
+### 4. Spawn both sub-agents in parallel
+
+Send a single message with two `Agent` tool calls. Use the `general-purpose` subagent for both.
+
+**Standards sub-agent prompt** — include:
+
+- The full diff command and commit list.
+- The list of standards-source files you found in step 3, **plus the smell baseline from step 3** pasted in full — the sub-agent has no other access to it.
+- The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls — documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
+
+**Spec sub-agent prompt** — include:
+
+- The diff command and commit list.
+- The path or fetched contents of the spec.
+- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
+
+If the spec is missing, skip the Spec sub-agent and note this in the final report.
+
+### 5. Aggregate
+
+Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings — the two axes are deliberately separate (see _Why two axes_).
+
+End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes — that's the reranking the separation exists to prevent.
+
+## Why two axes
+
+A change can pass one axis and fail the other:
+
+- Code that follows every standard but implements the wrong thing → **Standards pass, Spec fail.**
+- Code that does exactly what the issue asked but breaks the project's conventions → **Spec pass, Standards fail.**
+
+Reporting them separately stops one axis from masking the other.
+
+exec
+/bin/zsh -lc 'git status --short && git diff --stat && git diff -- src/llm/opencode-client.ts src/daily/enrich.ts src/cli.ts src/daily/synthesize.ts src/daily/coverage.ts tests' in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+ M CONTINUITY.md
+ M src/cli.ts
+ M src/daily/coverage.ts
+ M src/daily/synthesize.ts
+ M tests/daily.test.ts
+?? .harness/
+?? .playwright-mcp/
+?? birdclaw-home.png
+?? docs/plans/2026-06-21-daily-sync-second-brain.md
+?? docs/plans/2026-06-24-bookmarks-web-interface.md
+?? docs/plans/2026-06-24-list-today-web-features.md
+?? docs/plans/2026-06-24-today-graphql-feed.md
+?? docs/plans/2026-07-07-companion-agent-daily-synthesis.md
+?? docs/reviews/
+?? ft-analyze-birdclaw-style.png
+?? ft-home-birdclaw-style.png
+?? ft-home-redesign.png
+?? ft-today-birdclaw-style.png
+?? src/daily/enrich.ts
+?? src/llm/opencode-client.ts
+?? tests/opencode-client.test.ts
+ CONTINUITY.md           |   4 +-
+ src/cli.ts              |   8 +++
+ src/daily/coverage.ts   |   4 ++
+ src/daily/synthesize.ts |  51 ++++++++++++---
+ tests/daily.test.ts     | 166 ++++++++++++++++++++++++++++++++++++++++++++++--
+ 5 files changed, 218 insertions(+), 15 deletions(-)
+diff --git a/src/cli.ts b/src/cli.ts
+index 8967518..94db406 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -47,6 +47,7 @@ import { syncGitHubStars } from './github-stars/sync.js';
+ import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
+ import { collectDaily } from './daily/collect.js';
+ import { connectDailyItems } from './daily/connect.js';
++import { enrichThinItems, mergeEnrichmentSummaries } from './daily/enrich.js';
+ import { synthesizeDaily } from './daily/synthesize.js';
+ import { writeInterests } from './daily/interests.js';
+ import { dailyDigestPath } from './daily/paths.js';
+@@ -1344,6 +1345,10 @@ export function buildCli() {
+         date: stringOption(options.date),
+         windowHours: typeof options.windowHours === 'number' && Number.isFinite(options.windowHours) ? options.windowHours : 24,
+       });
++      const enrichment = await enrichThinItems(collection.items, {
++        onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
++      });
++      mergeEnrichmentSummaries(collection.items, enrichment.summaries);
+       const connected = await connectDailyItems(collection);
+ 
+       if (options.write) {
+@@ -1356,6 +1361,8 @@ export function buildCli() {
+         // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin a cheap
+         // engine without baking flags into the sync-all step list.
+         const result = await synthesizeDaily(collection, connected, {
++          enrichedCount: enrichment.enrichedCount,
++          enrichedItemIds: collection.items.filter((item) => item.canonicalUrl && enrichment.summaries.has(item.canonicalUrl)).map((item) => item.id),
+           profile: {
+             engine: stringOption(options.engine) ?? stringOption(process.env.FT_DAILY_ENGINE),
+             model: stringOption(options.model) ?? stringOption(process.env.FT_DAILY_MODEL),
+@@ -1368,6 +1375,7 @@ export function buildCli() {
+         }
+         console.log(`  ✓ Digest written: ${result.digestPath}`);
+         console.log(`    themes: ${result.themes.length} (${result.usedLlm ? 'llm' : 'mechanical'})`);
++        if (result.enrichedCount > 0) console.log(`    enriched links available: ${result.enrichedCount}`);
+         if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);
+         const interests = await writeInterests();
+         console.log(`  ✓ Interests updated: ${interests.path}`);
+diff --git a/src/daily/coverage.ts b/src/daily/coverage.ts
+index e1f8643..70cfa18 100644
+--- a/src/daily/coverage.ts
++++ b/src/daily/coverage.ts
+@@ -20,6 +20,10 @@ export interface DailyCoverageCounts {
+   collected: number;
+   themed: number;
+   alsoSaved: number;
++  /** Subset of alsoSaved: bare-link items omitted from the LLM prompt. */
++  thinSkipped: number;
++  /** Current digest items with an enrichment summary available (cached or fresh). */
++  enriched: number;
+   carriedOver: number;
+   citationsDropped: number;
+   /** Counted across the full canonical index, not just this digest window. */
+diff --git a/src/daily/synthesize.ts b/src/daily/synthesize.ts
+index e624d35..0a63842 100644
+--- a/src/daily/synthesize.ts
++++ b/src/daily/synthesize.ts
+@@ -19,6 +19,15 @@ import { dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir }
+ 
+ const SNIPPET_CHARS = 240;
+ const MAX_THEMES = 7;
++// Historically, 21% of X bookmarks and 29% of Raindrop items were bare link
++// shares. Excluding these saves prevents URL/title-word matching from wasting
++// synthesis context without discarding them from the digest.
++export const THIN_CONTENT_CHARS = 120;
++
++/** Length of meaningful saved text after URL-only content is removed. */
++export function contentLength(text: string): number {
++  return text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim().length;
++}
+ 
+ export interface DailyTheme {
+   title: string;
+@@ -34,6 +43,10 @@ export interface SynthesizeDailyOptions {
+   invoke?: (prompt: string) => Promise<string>;
+   /** Overwrite an existing digest for the same date. */
+   force?: boolean;
++  /** Current digest items supplied with a cached or fresh link enrichment. */
++  enrichedCount?: number;
++  /** Enriched items join the LLM partition even if a concise summary is under the normal text threshold. */
++  enrichedItemIds?: Iterable<string>;
+ }
+ 
+ export interface SynthesizeDailyResult {
+@@ -43,6 +56,9 @@ export interface SynthesizeDailyResult {
+   droppedCitations: number;
+   themedCount: number;
+   alsoSavedCount: number;
++  /** Thin items are a subset of alsoSavedCount, never a separate rendering path. */
++  thinSkipped: number;
++  enrichedCount: number;
+   skipped: boolean;
+ }
+ 
+@@ -258,6 +274,8 @@ export function renderDigestMarkdown(
+   lines.push(`collected: ${coverage.counts.collected}`);
+   lines.push(`themed: ${coverage.counts.themed}`);
+   lines.push(`also_saved: ${coverage.counts.alsoSaved}`);
++  lines.push(`thin_skipped: ${coverage.counts.thinSkipped}`);
++  lines.push(`enriched: ${coverage.counts.enriched}`);
+   lines.push(`carried_over: ${coverage.counts.carriedOver}`);
+   lines.push(`citations_dropped: ${coverage.counts.citationsDropped}`);
+   lines.push(`undateable_excluded: ${coverage.counts.undateableExcluded}`);
+@@ -320,7 +338,8 @@ export function renderDigestMarkdown(
+     lines.push(`- ${source}: ${coverage.freshness[source]}`);
+   }
+   lines.push('- Dark sources: x-list and following are not yet in the canonical index.');
+-  lines.push(`- This run: collected ${coverage.counts.collected}; themed ${coverage.counts.themed}; also-saved ${coverage.counts.alsoSaved}; carried-over ${coverage.counts.carriedOver}; citations dropped ${coverage.counts.citationsDropped}; undateable excluded (canonical total) ${coverage.counts.undateableExcluded}; synthesis ${coverage.counts.synthesis}.`);
++  // thinSkipped is included in alsoSaved, preserving collected = themed + also-saved.
++  lines.push(`- This run: collected ${coverage.counts.collected}; themed ${coverage.counts.themed}; also-saved ${coverage.counts.alsoSaved}; thin links skipped from synthesis ${coverage.counts.thinSkipped}; carried-over ${coverage.counts.carriedOver}; enriched links available to this digest ${coverage.counts.enriched}; citations dropped ${coverage.counts.citationsDropped}; undateable excluded (canonical total) ${coverage.counts.undateableExcluded}; synthesis ${coverage.counts.synthesis}.`);
+   lines.push('');
+ 
+   return lines.join('\n');
+@@ -348,6 +367,8 @@ export async function synthesizeDaily(
+       droppedCitations: 0,
+       themedCount: 0,
+       alsoSavedCount: 0,
++      thinSkipped: 0,
++      enrichedCount: options.enrichedCount ?? 0,
+       skipped: true,
+     };
+   }
+@@ -355,23 +376,33 @@ export async function synthesizeDaily(
+   let themes: DailyTheme[] = [];
+   let usedLlm = false;
+   let droppedCitations = 0;
+-
+-  if (collection.items.length > 0) {
++  let llmFailed = false;
++  const enrichedItemIds = new Set(options.enrichedItemIds ?? []);
++  const promptItems = collection.items.filter((item) => contentLength(item.searchText) >= THIN_CONTENT_CHARS || enrichedItemIds.has(item.id));
++  const thinSkipped = collection.items.length - promptItems.length;
++
++  if (promptItems.length > 0) {
++    const promptItemIds = new Set(promptItems.map((item) => item.id));
++    const promptCollection: DailyCollection = { ...collection, items: promptItems };
++    const promptConnected = connected.filter(({ item }) => promptItemIds.has(item.id));
+     try {
+-      const aliases = buildDailyAliases(collection, connected);
++      const aliases = buildDailyAliases(promptCollection, promptConnected);
+       const invoke = options.invoke ?? ((prompt: string) => defaultInvoke(options.profile ?? {}, prompt));
+-      const raw = await invoke(buildDailyPrompt(collection, connected, aliases));
++      const raw = await invoke(buildDailyPrompt(promptCollection, promptConnected, aliases));
+       const jsonText = extractJsonArray(raw);
+       if (jsonText) {
+-        const validated = validateThemes(JSON.parse(jsonText), collection, connected, aliases);
++        const validated = validateThemes(JSON.parse(jsonText), promptCollection, promptConnected, aliases);
+         themes = validated.themes;
+         droppedCitations = validated.dropped;
+         usedLlm = themes.length > 0;
+-      }
++      } else llmFailed = true;
+     } catch {
+       // LLM unavailable or invalid output — fall back to mechanical grouping.
++      llmFailed = true;
+     }
+-    if (themes.length === 0) themes = mechanicalThemes(collection);
++    // On an LLM failure the fallback intentionally covers all items, including
++    // thin links: it is a mechanical availability fallback, not synthesis.
++    if (llmFailed) themes = mechanicalThemes(collection);
+   }
+ 
+   const themedIds = new Set(themes.flatMap((theme) => theme.itemIds));
+@@ -390,6 +421,8 @@ export async function synthesizeDaily(
+     collected: collection.items.length,
+     themed: themedIds.size,
+     alsoSaved: alsoSavedIds.length,
++    thinSkipped,
++    enriched: options.enrichedCount ?? 0,
+     carriedOver: collection.carriedOver,
+     citationsDropped: droppedCitations,
+     undateableExcluded: collection.undateableExcluded,
+@@ -416,6 +449,8 @@ export async function synthesizeDaily(
+     droppedCitations,
+     themedCount: themedIds.size,
+     alsoSavedCount: alsoSavedIds.length,
++    thinSkipped,
++    enrichedCount: options.enrichedCount ?? 0,
+     skipped: false,
+   };
+ }
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 7994db8..b2a73d1 100644
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -9,7 +9,8 @@ import { readFile } from 'node:fs/promises';
+ import { collectDaily } from '../src/daily/collect.js';
+ import { connectDailyItems } from '../src/daily/connect.js';
+ import { collectDailyCoverage } from '../src/daily/coverage.js';
+-import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
++import { enrichThinItems, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
++import { contentLength, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+ import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+ 
+ async function readFileText(filePath: string): Promise<string> {
+@@ -37,7 +38,9 @@ function starRecord(overrides: Partial<GitHubStarRecord> & { id: number; fullNam
+     owner,
+     name,
+     htmlUrl: `https://github.com/${overrides.fullName}`,
+-    description: null,
++    // Most synthesis fixtures represent substantive saves; thin-link behavior
++    // is covered explicitly below with searchText overrides.
++    description: 'Detailed saved commentary about implementation tradeoffs, architecture, practical examples, and the reasons this resource is worth revisiting. '.repeat(2),
+     homepageUrl: null,
+     language: null,
+     topics: [],
+@@ -156,7 +159,7 @@ test('daily: overflow advances only through the oldest collected items and drain
+     assert.match(firstDigest, /themed: 3/);
+     assert.match(firstDigest, /also_saved: 0/);
+     assert.match(firstDigest, /carried_over: 2/);
+-    assert.match(firstDigest, /This run: collected 3; themed 3; also-saved 0; carried-over 2;/);
++    assert.match(firstDigest, /This run: collected 3; themed 3; also-saved 0; thin links skipped from synthesis 0; carried-over 2;/);
+     const meta = JSON.parse(await readFileText(dailyMetaPath()));
+     assert.equal(meta.lastRunAt, '2026-07-06T02:00:00.000Z');
+     assert.ok(meta.lastRunItemId);
+@@ -259,7 +262,7 @@ test('daily: digest path validates date shape', () => {
+ test('daily: synthesize validates citations, writes digest, and advances the rolling watermark', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
+-      starRecord({ id: 1, fullName: 'a/agent-runner', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent runner harness' }),
++      starRecord({ id: 1, fullName: 'a/agent-runner', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent runner harness with detailed notes on orchestration, evaluation, implementation choices, failure recovery, and practical usage patterns for teams. '.repeat(2) }),
+       starRecord({ id: 2, fullName: 'b/agent-primer', starredAt: '2026-06-10T00:00:00.000Z', description: 'primer on agent runner harnesses' }),
+     ]);
+     await rebuildCanonicalIndex();
+@@ -304,7 +307,7 @@ test('daily: synthesize validates citations, writes digest, and advances the rol
+ test('daily: synthesize falls back to mechanical themes when the LLM fails', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
+-      starRecord({ id: 1, fullName: 'a/solo-tool', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool' }),
++      starRecord({ id: 1, fullName: 'a/solo-tool', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool with detailed commentary about architecture, deployment tradeoffs, operational considerations, and practical implementation guidance. '.repeat(2) }),
+     ]);
+     await rebuildCanonicalIndex();
+ 
+@@ -334,6 +337,7 @@ test('daily: X coverage freshness uses the newest full or incremental sync times
+       collected: 0,
+       themed: 0,
+       alsoSaved: 0,
++      thinSkipped: 0,
+       carriedOver: 0,
+       citationsDropped: 0,
+       undateableExcluded: 0,
+@@ -463,6 +467,158 @@ test('daily: synthesize renders items from themes dropped by the cap under Also
+   });
+ });
+ 
++test('daily: thin bare links are excluded from synthesis and reconciled into Also saved', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [
++      starRecord({ id: 1, fullName: 'eligible/in-prompt', starredAt: '2026-07-06T12:00:00.000Z' }),
++      starRecord({ id: 2, fullName: 'thin/otherwise-ignored', starredAt: '2026-07-06T13:00:00.000Z' }),
++    ]);
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const item = collection.items.find((candidate) => candidate.canonicalUrl?.includes('thin/otherwise-ignored'))!;
++    item.displayTitle = 'Distinctive thin link title';
++    item.searchText = 'https://example.com/a/very/long/path/that/is/still/only/a/link a few words';
++    assert.ok(contentLength(item.searchText) < 120);
++    const connected = await connectDailyItems(collection);
++    let prompt = '';
++    const result = await synthesizeDaily(collection, connected, {
++      invoke: async (value) => {
++        prompt = value;
++        return JSON.stringify([{ title: 'Eligible', summary: 'The substantive item.', itemIds: ['i1'], relatedIds: [], projects: [] }]);
++      },
++    });
++
++    assert.equal(result.thinSkipped, 1);
++    assert.equal(result.themedCount + result.alsoSavedCount, collection.items.length);
++    assert.match(prompt, /id=i1 source=github-stars title="eligible\/in-prompt"/);
++    assert.ok(!prompt.includes('Distinctive thin link title'));
++    const digest = await readFileText(result.digestPath);
++    assert.match(digest, /## Also saved/);
++    assert.match(digest, /Distinctive thin link title/);
++    assert.match(digest, /thin_skipped: 1/);
++    assert.match(digest, /thin links skipped from synthesis 1/);
++  });
++});
++
++test('daily: URL plus substantial commentary remains eligible for synthesis', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [starRecord({ id: 1, fullName: 'commentary/eligible', starredAt: '2026-07-06T12:00:00.000Z' })]);
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    collection.items[0].displayTitle = 'Distinctive commentary title';
++    collection.items[0].searchText = `https://example.com/article ${'useful commentary '.repeat(10)}`;
++    assert.ok(contentLength(collection.items[0].searchText) >= 120);
++    let prompt = '';
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async (value) => {
++        prompt = value;
++        return JSON.stringify([{ title: 'Commentary', summary: 'Substantial saved commentary.', itemIds: ['i1'], relatedIds: [], projects: [] }]);
++      },
++    });
++
++    assert.equal(result.thinSkipped, 0);
++    assert.ok(prompt.includes('i1'));
++  });
++});
++
++test('daily: skips the LLM when every item is thin', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [
++      starRecord({ id: 1, fullName: 'thin/one', starredAt: '2026-07-06T12:00:00.000Z' }),
++      starRecord({ id: 2, fullName: 'thin/two', starredAt: '2026-07-06T13:00:00.000Z' }),
++    ]);
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    for (const item of collection.items) item.searchText = `${item.canonicalUrl} brief share`;
++    let invoked = false;
++    const result = await synthesizeDaily(collection, [], { invoke: async () => { invoked = true; return '[]'; } });
++
++    assert.equal(invoked, false);
++    assert.equal(result.usedLlm, false);
++    assert.equal(result.themes.length, 0);
++    assert.equal(result.thinSkipped, 2);
++    assert.equal(result.alsoSavedCount, 2);
++  });
++});
++
++test('daily: enriches a thin link into the prompt and reuses its durable cache', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [starRecord({ id: 75, fullName: 'a/enriched-link', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
++    await rebuildCanonicalIndex();
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const item = collection.items[0];
++    item.searchText = `${item.canonicalUrl} brief`;
++    let fetchCalls = 0;
++    const enrichment = await enrichThinItems(collection.items, {
++      fetch: async () => {
++        fetchCalls += 1;
++        return new Response('<html><title>Enriched page</title><meta name="description" content="A useful page."><body>Detailed article material for the digest.</body></html>');
++      },
++      llm: async () => 'This page explains a useful implementation technique with practical context.',
++    });
++    mergeEnrichmentSummaries(collection.items, enrichment.summaries);
++    assert.equal(enrichment.enrichedCount, 1);
++    assert.match(item.searchText, /summary: This page explains/);
++    let prompt = '';
++    const result = await synthesizeDaily(collection, await connectDailyItems(collection), {
++      enrichedCount: enrichment.enrichedCount,
++      enrichedItemIds: [item.id],
++      invoke: async (value) => {
++        prompt = value;
++        return '[{"title":"Useful technique","summary":"A connected implementation idea.","itemIds":["i1"],"relatedIds":[],"projects":[]}]';
++      },
++    });
++    assert.equal(result.usedLlm, true);
++    assert.match(prompt, /enriched-link/);
++    assert.equal(fetchCalls, 1);
++
++    await rebuildCanonicalIndex();
++    const cached = await enrichThinItems(collection.items, {
++      fetch: async () => { throw new Error('cache miss'); },
++      llm: async () => { throw new Error('cache miss'); },
++    });
++    assert.equal(cached.enrichedCount, 1);
++  });
++});
++
++test('daily: empty enrichment completion is cached as failed and leaves the item thin', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [starRecord({ id: 76, fullName: 'a/empty-enrichment', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
++    await rebuildCanonicalIndex();
++    const collection = await collectDaily({ date: '2026-07-06' });
++    collection.items[0].searchText = `${collection.items[0].canonicalUrl} brief`;
++    const enrichment = await enrichThinItems(collection.items, {
++      fetch: async () => new Response('<title>Page</title><body>body</body>'),
++      llm: async () => '',
++    });
++    mergeEnrichmentSummaries(collection.items, enrichment.summaries);
++    assert.equal(enrichment.enrichedCount, 0);
++    assert.ok(contentLength(collection.items[0].searchText) < 120);
++    const result = await synthesizeDaily(collection, [], { invoke: async () => { throw new Error('should not invoke'); } });
++    assert.equal(result.thinSkipped, 1);
++    assert.match(await readFileText(result.digestPath), /Also saved/);
++  });
++});
++
++test('daily: enrichment silently no-ops without an OpenCode key', async () => {
++  const previousGo = process.env.OPENCODE_GO_API_KEY;
++  const previousApi = process.env.OPENCODE_API_KEY;
++  delete process.env.OPENCODE_GO_API_KEY;
++  delete process.env.OPENCODE_API_KEY;
++  try {
++    const result = await enrichThinItems([{ id: 'thin', canonicalUrl: 'https://example.com/thin', displayTitle: 'thin', searchText: 'https://example.com/thin', sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null }]);
++    assert.equal(result.enrichedCount, 0);
++  } finally {
++    if (previousGo === undefined) delete process.env.OPENCODE_GO_API_KEY;
++    else process.env.OPENCODE_GO_API_KEY = previousGo;
++    if (previousApi === undefined) delete process.env.OPENCODE_API_KEY;
++    else process.env.OPENCODE_API_KEY = previousApi;
++  }
++});
++
+ test('daily: interests classifies rising/steady/fading topics and finds active threads', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     const now = new Date('2026-07-07T00:00:00.000Z');
+
+exec
+/bin/zsh -lc "sed -n '1,320p' src/daily/enrich.ts && sed -n '1,300p' src/llm/opencode-client.ts && rg -n -C 3 \"link_enrichment|rebuildCanonicalIndex|create.*table|canonical_index\" src tests package.json tsconfig.json" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+import type { Database } from 'sql.js';
+import { openDb, saveDb } from '../db.js';
+import { twitterBookmarksIndexPath } from '../paths.js';
+import { createOpenCodeClient, openCodeApiKey } from '../llm/opencode-client.js';
+import { THIN_CONTENT_CHARS, contentLength } from './synthesize.js';
+
+const FAILED_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+const BODY_LIMIT_BYTES = 200_000;
+const DEFAULT_LIMIT = 25;
+
+type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export interface LinkEnrichmentEntry {
+  url: string;
+  summary: string | null;
+  status: 'ok' | 'failed';
+  enrichedAt: string;
+}
+
+export interface EnrichThinItemsOptions {
+  fetch?: FetchFn;
+  llm?: (prompt: string) => Promise<string>;
+  limit?: number;
+  now?: Date;
+  onMissingKey?: () => void;
+}
+
+export interface EnrichThinItemsResult {
+  /** Items with a usable cached or newly generated summary in this digest. */
+  enrichedCount: number;
+  summaries: Map<string, string>;
+}
+
+/** Fetch/cache summaries for otherwise-thin daily items. This function never throws. */
+export async function enrichThinItems(items: CanonicalRecentItem[], options: EnrichThinItemsOptions = {}): Promise<EnrichThinItemsResult> {
+  const eligible = items.filter((item) => isEligible(item));
+  if (eligible.length === 0) return { enrichedCount: 0, summaries: new Map() };
+  if (!options.llm && !openCodeApiKey()) {
+    options.onMissingKey?.();
+    return { enrichedCount: 0, summaries: new Map() };
+  }
+
+  try {
+    const now = options.now ?? new Date();
+    const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
+    const summaries = usableSummaries(eligible, cached);
+    const limit = parseLimit(options.limit);
+    const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+    const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 600 })).text);
+    const updates = await mapConcurrent(misses, 4, async (item): Promise<LinkEnrichmentEntry> => {
+      const url = item.canonicalUrl!;
+      try {
+        const material = await extractPageMaterial(url, fetchFn);
+        const summary = (await llm(buildEnrichmentPrompt(material))).trim();
+        if (!summary) throw new Error('empty enrichment completion');
+        return { url, summary, status: 'ok', enrichedAt: now.toISOString() };
+      } catch {
+        return { url, summary: null, status: 'failed', enrichedAt: now.toISOString() };
+      }
+    });
+    if (updates.length) await writeCache(updates);
+    for (const update of updates) if (update.status === 'ok' && update.summary) cached.set(update.url, update);
+    const finalSummaries = usableSummaries(eligible, cached);
+    return { enrichedCount: finalSummaries.size, summaries: finalSummaries };
+  } catch {
+    return { enrichedCount: 0, summaries: new Map() };
+  }
+}
+
+/** Append summaries to only the current collection's in-memory search text. */
+export function mergeEnrichmentSummaries(items: CanonicalRecentItem[], summaries: Map<string, string>): void {
+  for (const item of items) {
+    const summary = item.canonicalUrl ? summaries.get(item.canonicalUrl) : undefined;
+    if (summary && !item.searchText.includes(` summary: ${summary}`)) item.searchText = `${item.searchText} summary: ${summary}`.trim();
+  }
+}
+
+function isEligible(item: CanonicalRecentItem): boolean {
+  if (contentLength(item.searchText) >= THIN_CONTENT_CHARS || !item.canonicalUrl) return false;
+  try {
+    const url = new URL(item.canonicalUrl);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !isTweetStatusUrl(url);
+  } catch {
+    return false;
+  }
+}
+
+function isTweetStatusUrl(url: URL): boolean {
+  return /(^|\.)((x|twitter)\.com)$/i.test(url.hostname) && /\/status\/\d+/i.test(url.pathname);
+}
+
+function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date): boolean {
+  if (!cached) return true;
+  if (cached.status === 'ok' && cached.summary?.trim()) return false;
+  return !Number.isFinite(Date.parse(cached.enrichedAt)) || Date.parse(cached.enrichedAt) <= now.getTime() - FAILED_RETRY_MS;
+}
+
+function parseLimit(value: number | undefined): number {
+  const raw = value ?? Number(process.env.FT_ENRICH_LIMIT ?? DEFAULT_LIMIT);
+  return Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : DEFAULT_LIMIT;
+}
+
+function usableSummaries(items: CanonicalRecentItem[], cache: Map<string, LinkEnrichmentEntry>, into = new Map<string, string>()): Map<string, string> {
+  for (const item of items) {
+    const entry = item.canonicalUrl ? cache.get(item.canonicalUrl) : undefined;
+    if (item.canonicalUrl && entry?.status === 'ok' && entry.summary?.trim()) into.set(item.canonicalUrl, entry.summary.trim());
+  }
+  return into;
+}
+
+async function readCache(urls: string[]): Promise<Map<string, LinkEnrichmentEntry>> {
+  const dbPath = twitterBookmarksIndexPath();
+  const db = await openDb(dbPath);
+  try {
+    initEnrichmentSchema(db);
+    const rows = db.exec(`SELECT url, summary, status, enriched_at FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
+    saveDb(db, dbPath);
+    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? '') }]));
+  } finally {
+    db.close();
+  }
+}
+
+async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
+  const dbPath = twitterBookmarksIndexPath();
+  const db = await openDb(dbPath);
+  try {
+    initEnrichmentSchema(db);
+    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at`);
+    try {
+      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt]);
+    } finally {
+      statement.free();
+    }
+    saveDb(db, dbPath);
+  } finally {
+    db.close();
+  }
+}
+
+function initEnrichmentSchema(db: Database): void {
+  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL)');
+}
+
+async function extractPageMaterial(url: string, fetchFn: FetchFn): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetchFn(url, { redirect: 'follow', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FieldTheoryDigest/1.0)' } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const html = await readLimitedBody(response, BODY_LIMIT_BYTES);
+    const title = firstMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
+    const description = firstMatch(html, /<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']*)["']/i)
+      ?? firstMatch(html, /<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["'](?:description|og:description)["']/i);
+    const visible = decodeHtml(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 1200);
+    return [`URL: ${url}`, title && `Title: ${decodeHtml(title)}`, description && `Description: ${decodeHtml(description)}`, visible && `Text: ${visible}`].filter(Boolean).join('\n');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildEnrichmentPrompt(material: string): string {
+  return `For a personal knowledge digest, summarize what this page is about in 2-3 plain sentences. No preamble.\n\n${material}`;
+}
+
+async function readLimitedBody(response: Response, limit: number): Promise<string> {
+  if (!response.body) return (await response.text()).slice(0, limit);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < limit) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = limit - size;
+      chunks.push(value.byteLength > remaining ? value.slice(0, remaining) : value);
+      size += Math.min(value.byteLength, remaining);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  const all = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.byteLength; }
+  return new TextDecoder().decode(all);
+}
+
+function firstMatch(text: string, pattern: RegExp): string | null {
+  return pattern.exec(text)?.[1]?.trim() || null;
+}
+
+function decodeHtml(text: string): string {
+  return text.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>');
+}
+
+async function mapConcurrent<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      results.push(await fn(item));
+    }
+  }));
+  return results;
+}
+const OPENCODE_URL = 'https://opencode.ai/zen/go/v1/chat/completions';
+const DEFAULT_MODEL = 'deepseek-v4-flash';
+
+type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export interface OpenCodeClientOptions {
+  apiKey?: string;
+  model?: string;
+  fetch?: FetchFn;
+}
+
+export interface OpenCodeChatOptions {
+  prompt: string;
+  maxTokens?: number;
+  temperature?: number;
+}
+
+export interface OpenCodeClient {
+  chat(options: OpenCodeChatOptions): Promise<{ text: string; model: string }>;
+}
+
+export class OpenCodeAuthError extends Error {
+  constructor() {
+    super('OPENCODE_GO_API_KEY or OPENCODE_API_KEY is required for OpenCode requests');
+    this.name = 'OpenCodeAuthError';
+  }
+}
+
+export class OpenCodeRequestError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+    this.name = 'OpenCodeRequestError';
+  }
+}
+
+export function openCodeApiKey(options: Pick<OpenCodeClientOptions, 'apiKey'> = {}): string {
+  return options.apiKey?.trim() || process.env.OPENCODE_GO_API_KEY?.trim() || process.env.OPENCODE_API_KEY?.trim() || '';
+}
+
+/** Minimal OpenAI-compatible client for short link-enrichment completions. */
+export function createOpenCodeClient(options: OpenCodeClientOptions = {}): OpenCodeClient {
+  const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+  const model = options.model?.trim() || process.env.FT_ENRICH_MODEL?.trim() || DEFAULT_MODEL;
+
+  return {
+    async chat(chatOptions) {
+      const key = openCodeApiKey(options);
+      if (!key) throw new OpenCodeAuthError();
+      // deepseek-v4-flash reasons before answering; smaller budgets can produce
+      // only reasoning_content and an empty message.content.
+      const res = await fetchFn(OPENCODE_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: chatOptions.prompt }],
+          max_tokens: Math.max(600, chatOptions.maxTokens ?? 600),
+          ...(chatOptions.temperature === undefined ? {} : { temperature: chatOptions.temperature }),
+        }),
+      });
+      const body = parseObject(await res.text());
+      if (!res.ok) throw new OpenCodeRequestError(errorMessage(body) ?? `OpenCode request failed with HTTP ${res.status}`, res.status);
+      const text = completionText(body);
+      if (!text.trim()) throw new OpenCodeRequestError('OpenCode returned an empty completion');
+      return { text, model };
+    },
+  };
+}
+
+function parseObject(text: string): Record<string, unknown> {
+  try {
+    const value = JSON.parse(text);
+    return value != null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function errorMessage(body: Record<string, unknown>): string | undefined {
+  const error = body.error;
+  return error != null && typeof error === 'object' && 'message' in error && typeof error.message === 'string' ? error.message : undefined;
+}
+
+function completionText(body: Record<string, unknown>): string {
+  const first = Array.isArray(body.choices) ? body.choices[0] : null;
+  if (first == null || typeof first !== 'object' || !('message' in first)) return '';
+  const message = first.message;
+  // Deliberately ignore reasoning_content: it is model scratch work, not the answer.
+  return message != null && typeof message === 'object' && 'content' in message && typeof message.content === 'string' ? message.content : '';
+}
+tests/web-server.test.ts-8-import { parseBoundedInteger, safeRoutePath } from '../src/web/http.js';
+tests/web-server.test.ts-9-import { loadWebMediaIndex, resolveMediaFile } from '../src/web/media.js';
+tests/web-server.test.ts-10-import { buildIndex } from '../src/bookmarks-db.js';
+tests/web-server.test.ts:11:import { rebuildCanonicalIndex, upsertYoutubeVideosAsSources } from '../src/canonical-bookmarks-db.js';
+tests/web-server.test.ts-12-import { openDb, saveDb } from '../src/db.js';
+tests/web-server.test.ts-13-import { writeJsonLines } from '../src/fs.js';
+tests/web-server.test.ts-14-import type { GitHubStarRecord } from '../src/github-stars/types.js';
+--
+tests/web-server.test.ts-157-async function seedUnifiedSources(root: string): Promise<void> {
+tests/web-server.test.ts-158-  await mkdir(path.join(root, 'github-stars'), { recursive: true });
+tests/web-server.test.ts-159-  await writeJsonLines(path.join(root, 'github-stars', 'stars.jsonl'), [githubStarRecord()]);
+tests/web-server.test.ts:160:  await rebuildCanonicalIndex();
+tests/web-server.test.ts-161-}
+tests/web-server.test.ts-162-
+tests/web-server.test.ts-163-async function startTestServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+--
+tests/cli.test.ts-6-import { compareVersions, runWithSpinner, buildCli, parseCookieOption, shouldDownloadSyncMedia } from '../src/cli.js';
+tests/cli.test.ts-7-import { dataDir } from '../src/paths.js';
+tests/cli.test.ts-8-import { skillWithFrontmatter } from '../src/skill.js';
+tests/cli.test.ts:9:import { rebuildCanonicalIndex } from '../src/canonical-bookmarks-db.js';
+tests/cli.test.ts-10-
+tests/cli.test.ts-11-async function captureStdout(fn: () => Promise<void>): Promise<string> {
+tests/cli.test.ts-12-  const chunks: string[] = [];
+--
+tests/cli.test.ts-259-  process.exitCode = 0;
+tests/cli.test.ts-260-
+tests/cli.test.ts-261-  try {
+tests/cli.test.ts:262:    await rebuildCanonicalIndex();
+tests/cli.test.ts-263-    const output = await captureStdout(async () => {
+tests/cli.test.ts-264-      await buildCli().parseAsync(['node', 'ft', 'classify', '--unified', '--regex']);
+tests/cli.test.ts-265-    });
+--
+src/canonical-bookmarks-db.ts-659-  };
+src/canonical-bookmarks-db.ts-660-}
+src/canonical-bookmarks-db.ts-661-
+src/canonical-bookmarks-db.ts:662:export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = {}): Promise<CanonicalRebuildResult> {
+src/canonical-bookmarks-db.ts-663-  const dbPath = twitterBookmarksIndexPath();
+src/canonical-bookmarks-db.ts-664-  const db = await openDb(dbPath);
+src/canonical-bookmarks-db.ts-665-
+--
+src/canonical-bookmarks-db.ts-765-    db.close();
+src/canonical-bookmarks-db.ts-766-  }
+src/canonical-bookmarks-db.ts-767-
+src/canonical-bookmarks-db.ts:768:  return rebuildCanonicalIndex();
+src/canonical-bookmarks-db.ts-769-}
+src/canonical-bookmarks-db.ts-770-
+src/canonical-bookmarks-db.ts-771-export async function searchCanonicalBookmarks(options: SearchCanonicalOptions): Promise<CanonicalSearchResult[]> {
+--
+src/cli.ts-26-  formatCanonicalSearchResults,
+src/cli.ts-27-  getCanonicalBookmarkById,
+src/cli.ts-28-  listCanonicalBookmarks,
+src/cli.ts:29:  rebuildCanonicalIndex,
+src/cli.ts-30-  searchCanonicalBookmarks,
+src/cli.ts-31-  upsertYoutubeVideosAsSources,
+src/cli.ts-32-  type YoutubeSourceVideoInput,
+--
+src/cli.ts-786-    const idx = await buildIndex();
+src/cli.ts-787-    process.stderr.write(`  \u2713 ${idx.recordCount} bookmarks indexed (${idx.newRecords} new)\n`);
+src/cli.ts-788-    process.stderr.write('  Building unified canonical index...\n');
+src/cli.ts:789:    const canonical = await rebuildCanonicalIndex();
+src/cli.ts-790-    process.stderr.write(`  \u2713 ${canonical.canonicalCount} unified items indexed (${canonical.sourceCount} sources)\n`);
+src/cli.ts-791-    return idx.newRecords;
+src/cli.ts-792-  }
+--
+src/cli.ts-1274-      console.log(`    Modified:        ${result.modifiedCount}`);
+src/cli.ts-1275-      console.log(`    Collections:     ${result.collections}`);
+src/cli.ts-1276-
+src/cli.ts:1277:      await rebuildCanonicalIndex();
+src/cli.ts-1278-      console.log(`  ✓ Canonical index rebuilt`);
+src/cli.ts-1279-
+src/cli.ts-1280-      if (options.classify) {
+--
+src/cli.ts-1317-        return;
+src/cli.ts-1318-      }
+src/cli.ts-1319-
+src/cli.ts:1320:      await rebuildCanonicalIndex();
+src/cli.ts-1321-      console.log(`  ✓ Canonical index rebuilt`);
+src/cli.ts-1322-
+src/cli.ts-1323-      if (options.classify) {
+--
+src/cli.ts-1457-      console.log(`    cache: ${result.cachePath}`);
+src/cli.ts-1458-      console.log(`    active: ${result.activePath}`);
+src/cli.ts-1459-
+src/cli.ts:1460:      await rebuildCanonicalIndex();
+src/cli.ts-1461-      console.log(`  ✓ Canonical index rebuilt`);
+src/cli.ts-1462-    }));
+src/cli.ts-1463-
+--
+src/cli.ts-2373-      process.stderr.write('Building search index...\n');
+src/cli.ts-2374-      const result = await buildIndex({ force: Boolean(options.force) });
+src/cli.ts-2375-      console.log(`Indexed ${result.recordCount} bookmarks (${result.newRecords} new) \u2192 ${result.dbPath}`);
+src/cli.ts:2376:      const canonical = await rebuildCanonicalIndex();
+src/cli.ts-2377-      console.log(`Indexed ${canonical.canonicalCount} unified items (${canonical.sourceCount} sources) \u2192 ${canonical.dbPath}`);
+src/cli.ts-2378-    }));
+src/cli.ts-2379-
+--
+tests/md-export.test.ts-4-import { tmpdir } from 'node:os';
+tests/md-export.test.ts-5-import path from 'node:path';
+tests/md-export.test.ts-6-import { buildIndex, updateArticleContent } from '../src/bookmarks-db.js';
+tests/md-export.test.ts:7:import { rebuildCanonicalIndex } from '../src/canonical-bookmarks-db.js';
+tests/md-export.test.ts-8-import { writeJsonLines } from '../src/fs.js';
+tests/md-export.test.ts-9-import { exportBookmarks, exportCanonicalBookmarks } from '../src/md-export.js';
+tests/md-export.test.ts-10-
+--
+tests/md-export.test.ts-195-      syncedAt: '2026-05-31T13:00:00Z',
+tests/md-export.test.ts-196-    }]);
+tests/md-export.test.ts-197-
+tests/md-export.test.ts:198:    await rebuildCanonicalIndex();
+tests/md-export.test.ts-199-    const out = path.join(dir, 'out');
+tests/md-export.test.ts-200-    const result = await exportCanonicalBookmarks({
+tests/md-export.test.ts-201-      outputDir: out,
+--
+src/daily/enrich.ts-115-  const db = await openDb(dbPath);
+src/daily/enrich.ts-116-  try {
+src/daily/enrich.ts-117-    initEnrichmentSchema(db);
+src/daily/enrich.ts:118:    const rows = db.exec(`SELECT url, summary, status, enriched_at FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
+src/daily/enrich.ts-119-    saveDb(db, dbPath);
+src/daily/enrich.ts-120-    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? '') }]));
+src/daily/enrich.ts-121-  } finally {
+--
+src/daily/enrich.ts-128-  const db = await openDb(dbPath);
+src/daily/enrich.ts-129-  try {
+src/daily/enrich.ts-130-    initEnrichmentSchema(db);
+src/daily/enrich.ts:131:    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at) VALUES (?, ?, ?, ?)
+src/daily/enrich.ts-132-      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at`);
+src/daily/enrich.ts-133-    try {
+src/daily/enrich.ts-134-      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt]);
+--
+src/daily/enrich.ts-142-}
+src/daily/enrich.ts-143-
+src/daily/enrich.ts-144-function initEnrichmentSchema(db: Database): void {
+src/daily/enrich.ts:145:  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL)');
+src/daily/enrich.ts-146-}
+src/daily/enrich.ts-147-
+src/daily/enrich.ts-148-async function extractPageMaterial(url: string, fetchFn: FetchFn): Promise<string> {
+--
+tests/canonical-bookmarks-db.test.ts-9-  formatCanonicalSearchResults,
+tests/canonical-bookmarks-db.test.ts-10-  getCanonicalBookmarkById,
+tests/canonical-bookmarks-db.test.ts-11-  listCanonicalBookmarks,
+tests/canonical-bookmarks-db.test.ts:12:  rebuildCanonicalIndex,
+tests/canonical-bookmarks-db.test.ts-13-  searchCanonicalBookmarks,
+tests/canonical-bookmarks-db.test.ts-14-} from '../src/canonical-bookmarks-db.js';
+tests/canonical-bookmarks-db.test.ts-15-import { openDb, saveDb } from '../src/db.js';
+--
+tests/canonical-bookmarks-db.test.ts-98-  };
+tests/canonical-bookmarks-db.test.ts-99-}
+tests/canonical-bookmarks-db.test.ts-100-
+tests/canonical-bookmarks-db.test.ts:101:test('rebuildCanonicalIndex dedupes X external link with raindrop bookmark URL', async () => {
+tests/canonical-bookmarks-db.test.ts-102-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-103-    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [{
+tests/canonical-bookmarks-db.test.ts-104-      id: 'x-1',
+--
+tests/canonical-bookmarks-db.test.ts-117-      syncedAt: '2026-05-10T00:00:00.000Z',
+tests/canonical-bookmarks-db.test.ts-118-    }]);
+tests/canonical-bookmarks-db.test.ts-119-
+tests/canonical-bookmarks-db.test.ts:120:    const result = await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-121-    assert.equal(result.sourceCount, 2);
+tests/canonical-bookmarks-db.test.ts-122-    assert.equal(result.canonicalCount, 1);
+tests/canonical-bookmarks-db.test.ts-123-
+--
+tests/canonical-bookmarks-db.test.ts-139-  });
+tests/canonical-bookmarks-db.test.ts-140-});
+tests/canonical-bookmarks-db.test.ts-141-
+tests/canonical-bookmarks-db.test.ts:142:test('rebuildCanonicalIndex stores raindrop source rows with null target_url', async () => {
+tests/canonical-bookmarks-db.test.ts-143-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-144-    await writeRaindropBookmarks(dir, [{
+tests/canonical-bookmarks-db.test.ts-145-      id: 10,
+--
+tests/canonical-bookmarks-db.test.ts-150-      syncedAt: '2026-05-10T00:00:00.000Z',
+tests/canonical-bookmarks-db.test.ts-151-    }]);
+tests/canonical-bookmarks-db.test.ts-152-
+tests/canonical-bookmarks-db.test.ts:153:    await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-154-
+tests/canonical-bookmarks-db.test.ts-155-    const db = await openDb(twitterBookmarksIndexPath());
+tests/canonical-bookmarks-db.test.ts-156-    try {
+--
+tests/canonical-bookmarks-db.test.ts-167-  });
+tests/canonical-bookmarks-db.test.ts-168-});
+tests/canonical-bookmarks-db.test.ts-169-
+tests/canonical-bookmarks-db.test.ts:170:test('rebuildCanonicalIndex indexes GitHub stars and searches repo metadata', async () => {
+tests/canonical-bookmarks-db.test.ts-171-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-172-    await writeGitHubStars(dir, [githubStarRecord()]);
+tests/canonical-bookmarks-db.test.ts-173-
+tests/canonical-bookmarks-db.test.ts:174:    const result = await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-175-    assert.equal(result.sourceCount, 1);
+tests/canonical-bookmarks-db.test.ts-176-    assert.equal(result.canonicalCount, 1);
+tests/canonical-bookmarks-db.test.ts-177-
+--
+tests/canonical-bookmarks-db.test.ts-187-  });
+tests/canonical-bookmarks-db.test.ts-188-});
+tests/canonical-bookmarks-db.test.ts-189-
+tests/canonical-bookmarks-db.test.ts:190:test('rebuildCanonicalIndex creates project source rows and indexes project context', async () => {
+tests/canonical-bookmarks-db.test.ts-191-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-192-    await writeProjects(dir, [projectRecord()]);
+tests/canonical-bookmarks-db.test.ts-193-
+tests/canonical-bookmarks-db.test.ts:194:    const result = await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-195-    assert.equal(result.sourceCount, 1);
+tests/canonical-bookmarks-db.test.ts-196-    assert.equal(result.canonicalCount, 1);
+tests/canonical-bookmarks-db.test.ts-197-
+--
+tests/canonical-bookmarks-db.test.ts-207-  });
+tests/canonical-bookmarks-db.test.ts-208-});
+tests/canonical-bookmarks-db.test.ts-209-
+tests/canonical-bookmarks-db.test.ts:210:test('rebuildCanonicalIndex merges GitHub-remote project with matching GitHub star', async () => {
+tests/canonical-bookmarks-db.test.ts-211-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-212-    await writeGitHubStars(dir, [githubStarRecord()]);
+tests/canonical-bookmarks-db.test.ts-213-    await writeProjects(dir, [projectRecord({
+--
+tests/canonical-bookmarks-db.test.ts-215-      remoteUrl: 'https://github.com/example/tool',
+tests/canonical-bookmarks-db.test.ts-216-    })]);
+tests/canonical-bookmarks-db.test.ts-217-
+tests/canonical-bookmarks-db.test.ts:218:    const result = await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-219-    assert.equal(result.sourceCount, 2);
+tests/canonical-bookmarks-db.test.ts-220-    assert.equal(result.canonicalCount, 1);
+tests/canonical-bookmarks-db.test.ts-221-
+--
+tests/canonical-bookmarks-db.test.ts-227-  });
+tests/canonical-bookmarks-db.test.ts-228-});
+tests/canonical-bookmarks-db.test.ts-229-
+tests/canonical-bookmarks-db.test.ts:230:test('rebuildCanonicalIndex uses stable project dedupe key for projects without remote URL', async () => {
+tests/canonical-bookmarks-db.test.ts-231-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-232-    await writeProjects(dir, [projectRecord({ repo: 'local-only', path: '/tmp/local-only', remoteUrl: undefined })]);
+tests/canonical-bookmarks-db.test.ts-233-
+tests/canonical-bookmarks-db.test.ts:234:    await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-235-
+tests/canonical-bookmarks-db.test.ts-236-    const db = await openDb(twitterBookmarksIndexPath());
+tests/canonical-bookmarks-db.test.ts-237-    try {
+--
+tests/canonical-bookmarks-db.test.ts-248-  });
+tests/canonical-bookmarks-db.test.ts-249-});
+tests/canonical-bookmarks-db.test.ts-250-
+tests/canonical-bookmarks-db.test.ts:251:test('rebuildCanonicalIndex caps project prompt text contribution', async () => {
+tests/canonical-bookmarks-db.test.ts-252-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-253-    await writeProjects(dir, [projectRecord({
+tests/canonical-bookmarks-db.test.ts-254-      recentPrompts: [
+--
+tests/canonical-bookmarks-db.test.ts-256-      ],
+tests/canonical-bookmarks-db.test.ts-257-    })]);
+tests/canonical-bookmarks-db.test.ts-258-
+tests/canonical-bookmarks-db.test.ts:259:    await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-260-
+tests/canonical-bookmarks-db.test.ts-261-    const listed = await listCanonicalBookmarks({ source: 'project', limit: 10 });
+tests/canonical-bookmarks-db.test.ts-262-    assert.equal(listed.length, 1);
+--
+tests/canonical-bookmarks-db.test.ts-277-      syncedAt: '2026-05-10T00:00:00.000Z',
+tests/canonical-bookmarks-db.test.ts-278-    }]);
+tests/canonical-bookmarks-db.test.ts-279-
+tests/canonical-bookmarks-db.test.ts:280:    await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-281-    await classifyCanonicalBookmarks();
+tests/canonical-bookmarks-db.test.ts-282-
+tests/canonical-bookmarks-db.test.ts-283-    const queryRows = await listCanonicalBookmarks({ query: 'agent memory', limit: 10 });
+--
+tests/canonical-bookmarks-db.test.ts-298-  });
+tests/canonical-bookmarks-db.test.ts-299-});
+tests/canonical-bookmarks-db.test.ts-300-
+tests/canonical-bookmarks-db.test.ts:301:test('rebuildCanonicalIndex dedupes GitHub star with raindrop bookmark URL', async () => {
+tests/canonical-bookmarks-db.test.ts-302-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-303-    await writeGitHubStars(dir, [githubStarRecord()]);
+tests/canonical-bookmarks-db.test.ts-304-    await writeRaindropBookmarks(dir, [{
+--
+tests/canonical-bookmarks-db.test.ts-310-      syncedAt: '2026-05-10T00:00:00.000Z',
+tests/canonical-bookmarks-db.test.ts-311-    }]);
+tests/canonical-bookmarks-db.test.ts-312-
+tests/canonical-bookmarks-db.test.ts:313:    const result = await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-314-    assert.equal(result.sourceCount, 2);
+tests/canonical-bookmarks-db.test.ts-315-    assert.equal(result.canonicalCount, 1);
+tests/canonical-bookmarks-db.test.ts-316-
+--
+tests/canonical-bookmarks-db.test.ts-356-      syncedAt: '2026-05-10T00:00:00.000Z',
+tests/canonical-bookmarks-db.test.ts-357-    }]);
+tests/canonical-bookmarks-db.test.ts-358-
+tests/canonical-bookmarks-db.test.ts:359:    await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-360-    const summary = await classifyCanonicalBookmarks();
+tests/canonical-bookmarks-db.test.ts-361-    assert.deepEqual(summary, { total: 1, classified: 1 });
+tests/canonical-bookmarks-db.test.ts-362-
+--
+tests/canonical-bookmarks-db.test.ts-375-  });
+tests/canonical-bookmarks-db.test.ts-376-});
+tests/canonical-bookmarks-db.test.ts-377-
+tests/canonical-bookmarks-db.test.ts:378:test('rebuildCanonicalIndex does not dedupe X bookmark with multiple external links against raindrop URL', async () => {
+tests/canonical-bookmarks-db.test.ts-379-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-380-    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [{
+tests/canonical-bookmarks-db.test.ts-381-      id: 'x-1',
+--
+tests/canonical-bookmarks-db.test.ts-397-      syncedAt: '2026-05-10T00:00:00.000Z',
+tests/canonical-bookmarks-db.test.ts-398-    }]);
+tests/canonical-bookmarks-db.test.ts-399-
+tests/canonical-bookmarks-db.test.ts:400:    const result = await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-401-    assert.equal(result.sourceCount, 2);
+tests/canonical-bookmarks-db.test.ts-402-    assert.equal(result.canonicalCount, 2);
+tests/canonical-bookmarks-db.test.ts-403-
+--
+tests/canonical-bookmarks-db.test.ts-408-  });
+tests/canonical-bookmarks-db.test.ts-409-});
+tests/canonical-bookmarks-db.test.ts-410-
+tests/canonical-bookmarks-db.test.ts:411:test('rebuildCanonicalIndex skips malformed raindrop URLs without crashing', async () => {
+tests/canonical-bookmarks-db.test.ts-412-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-413-    await writeRaindropBookmarks(dir, [
+tests/canonical-bookmarks-db.test.ts-414-      {
+--
+tests/canonical-bookmarks-db.test.ts-427-      },
+tests/canonical-bookmarks-db.test.ts-428-    ]);
+tests/canonical-bookmarks-db.test.ts-429-
+tests/canonical-bookmarks-db.test.ts:430:    const result = await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-431-    const rows = await listCanonicalBookmarks({ source: 'raindrop', limit: 10 });
+tests/canonical-bookmarks-db.test.ts-432-
+tests/canonical-bookmarks-db.test.ts-433-    assert.equal(result.sourceCount, 1);
+--
+tests/canonical-bookmarks-db.test.ts-437-  });
+tests/canonical-bookmarks-db.test.ts-438-});
+tests/canonical-bookmarks-db.test.ts-439-
+tests/canonical-bookmarks-db.test.ts:440:test('rebuildCanonicalIndex preserves canonical classification metadata across rebuilds', async () => {
+tests/canonical-bookmarks-db.test.ts-441-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-442-    await writeRaindropBookmarks(dir, [{
+tests/canonical-bookmarks-db.test.ts-443-      id: 10,
+--
+tests/canonical-bookmarks-db.test.ts-448-      syncedAt: '2026-05-10T00:00:00.000Z',
+tests/canonical-bookmarks-db.test.ts-449-    }]);
+tests/canonical-bookmarks-db.test.ts-450-
+tests/canonical-bookmarks-db.test.ts:451:    await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-452-
+tests/canonical-bookmarks-db.test.ts-453-    const dbPath = twitterBookmarksIndexPath();
+tests/canonical-bookmarks-db.test.ts-454-    const db = await openDb(dbPath);
+--
+tests/canonical-bookmarks-db.test.ts-463-      db.close();
+tests/canonical-bookmarks-db.test.ts-464-    }
+tests/canonical-bookmarks-db.test.ts-465-
+tests/canonical-bookmarks-db.test.ts:466:    await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-467-
+tests/canonical-bookmarks-db.test.ts-468-    const after = await openDb(dbPath);
+tests/canonical-bookmarks-db.test.ts-469-    try {
+--
+tests/canonical-bookmarks-db.test.ts-489-      syncedAt: '2026-05-10T00:00:00.000Z',
+tests/canonical-bookmarks-db.test.ts-490-    }]);
+tests/canonical-bookmarks-db.test.ts-491-
+tests/canonical-bookmarks-db.test.ts:492:    await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-493-    const matches = await searchCanonicalBookmarks({ query: 'foo(bar)', limit: 10 });
+tests/canonical-bookmarks-db.test.ts-494-
+tests/canonical-bookmarks-db.test.ts-495-    assert.equal(matches.length, 1);
+--
+tests/canonical-bookmarks-db.test.ts-497-  });
+tests/canonical-bookmarks-db.test.ts-498-});
+tests/canonical-bookmarks-db.test.ts-499-
+tests/canonical-bookmarks-db.test.ts:500:test('rebuildCanonicalIndex migrates older canonical tables without classification columns', async () => {
+tests/canonical-bookmarks-db.test.ts-501-  await withIsolatedDataDir(async (dir) => {
+tests/canonical-bookmarks-db.test.ts-502-    const dbPath = twitterBookmarksIndexPath();
+tests/canonical-bookmarks-db.test.ts-503-    const db = await openDb(dbPath);
+--
+tests/canonical-bookmarks-db.test.ts-546-      syncedAt: '2026-05-10T00:00:00.000Z',
+tests/canonical-bookmarks-db.test.ts-547-    }]);
+tests/canonical-bookmarks-db.test.ts-548-
+tests/canonical-bookmarks-db.test.ts:549:    await rebuildCanonicalIndex();
+tests/canonical-bookmarks-db.test.ts-550-    const summary = await classifyCanonicalBookmarks();
+tests/canonical-bookmarks-db.test.ts-551-    const rows = await listCanonicalBookmarks({ source: 'raindrop', limit: 10 });
+tests/canonical-bookmarks-db.test.ts-552-
+--
+tests/daily.test.ts-4-import os from 'node:os';
+tests/daily.test.ts-5-import path from 'node:path';
+tests/daily.test.ts-6-import { writeJson, writeJsonLines } from '../src/fs.js';
+tests/daily.test.ts:7:import { rebuildCanonicalIndex, relatedSeedTerms, type CanonicalRecentItem } from '../src/canonical-bookmarks-db.js';
+tests/daily.test.ts-8-import { readFile } from 'node:fs/promises';
+tests/daily.test.ts-9-import { collectDaily } from '../src/daily/collect.js';
+tests/daily.test.ts-10-import { connectDailyItems } from '../src/daily/connect.js';
+--
+tests/daily.test.ts-96-      }),
+tests/daily.test.ts-97-      projectRecord({ repo: 'idle-repo' }),
+tests/daily.test.ts-98-    ]);
+tests/daily.test.ts:99:    await rebuildCanonicalIndex();
+tests/daily.test.ts-100-
+tests/daily.test.ts-101-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-102-
+--
+tests/daily.test.ts-116-      starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
+tests/daily.test.ts-117-      starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
+tests/daily.test.ts-118-    ]);
+tests/daily.test.ts:119:    await rebuildCanonicalIndex();
+tests/daily.test.ts-120-
+tests/daily.test.ts-121-    ensureDailyDir();
+tests/daily.test.ts-122-    await writeJson(dailyMetaPath(), {
+--
+tests/daily.test.ts-142-      fullName: `overflow/item-${index + 1}`,
+tests/daily.test.ts-143-      starredAt: `2026-07-06T0${index}:00:00.000Z`,
+tests/daily.test.ts-144-    })));
+tests/daily.test.ts:145:    await rebuildCanonicalIndex();
+tests/daily.test.ts-146-
+tests/daily.test.ts-147-    const first = await collectDaily({
+tests/daily.test.ts-148-      now: new Date('2026-07-07T00:00:00.000Z'),
+--
+tests/daily.test.ts-182-    await writeStars(dir, [
+tests/daily.test.ts-183-      starRecord({ id: 1, fullName: 'history/item', starredAt: '2026-07-01T12:00:00.000Z' }),
+tests/daily.test.ts-184-    ]);
+tests/daily.test.ts:185:    await rebuildCanonicalIndex();
+tests/daily.test.ts-186-    ensureDailyDir();
+tests/daily.test.ts-187-    await writeJson(dailyMetaPath(), {
+tests/daily.test.ts-188-      lastRunAt: '2026-07-10T00:00:00.000Z',
+--
+tests/daily.test.ts-207-      starRecord({ id: 2, fullName: 'b/vector-search-primer', starredAt: '2026-06-10T00:00:00.000Z', description: 'a primer on vector search embeddings' }),
+tests/daily.test.ts-208-      starRecord({ id: 3, fullName: 'c/unrelated-css-thing', starredAt: '2026-06-11T00:00:00.000Z', description: 'css layout helpers' }),
+tests/daily.test.ts-209-    ]);
+tests/daily.test.ts:210:    await rebuildCanonicalIndex();
+tests/daily.test.ts-211-
+tests/daily.test.ts-212-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-213-    assert.equal(collection.items.length, 1);
+--
+tests/daily.test.ts-230-    const projectsDir = path.join(dir, 'projects');
+tests/daily.test.ts-231-    await mkdir(projectsDir, { recursive: true });
+tests/daily.test.ts-232-    await writeJsonLines(path.join(projectsDir, 'projects.jsonl'), []);
+tests/daily.test.ts:233:    await rebuildCanonicalIndex();
+tests/daily.test.ts-234-
+tests/daily.test.ts-235-    // Simulate a legacy Twitter-format row alongside.
+tests/daily.test.ts-236-    const { openDb, saveDb } = await import('../src/db.js');
+--
+tests/daily.test.ts-265-      starRecord({ id: 1, fullName: 'a/agent-runner', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent runner harness with detailed notes on orchestration, evaluation, implementation choices, failure recovery, and practical usage patterns for teams. '.repeat(2) }),
+tests/daily.test.ts-266-      starRecord({ id: 2, fullName: 'b/agent-primer', starredAt: '2026-06-10T00:00:00.000Z', description: 'primer on agent runner harnesses' }),
+tests/daily.test.ts-267-    ]);
+tests/daily.test.ts:268:    await rebuildCanonicalIndex();
+tests/daily.test.ts-269-
+tests/daily.test.ts-270-    const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+tests/daily.test.ts-271-    const connected = await connectDailyItems(collection);
+--
+tests/daily.test.ts-309-    await writeStars(dir, [
+tests/daily.test.ts-310-      starRecord({ id: 1, fullName: 'a/solo-tool', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool with detailed commentary about architecture, deployment tradeoffs, operational considerations, and practical implementation guidance. '.repeat(2) }),
+tests/daily.test.ts-311-    ]);
+tests/daily.test.ts:312:    await rebuildCanonicalIndex();
+tests/daily.test.ts-313-
+tests/daily.test.ts-314-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-315-    const connected = await connectDailyItems(collection);
+--
+tests/daily.test.ts-354-      fullName: `undateable/item-${index + 1}`,
+tests/daily.test.ts-355-      starredAt: '2026-07-06T12:00:00.000Z',
+tests/daily.test.ts-356-    })));
+tests/daily.test.ts:357:    await rebuildCanonicalIndex();
+tests/daily.test.ts-358-
+tests/daily.test.ts-359-    const { openDb, saveDb } = await import('../src/db.js');
+tests/daily.test.ts-360-    const { twitterBookmarksIndexPath } = await import('../src/paths.js');
+--
+tests/daily.test.ts-384-    await writeStars(dir, [
+tests/daily.test.ts-385-      starRecord({ id: 1, fullName: 'duplicate/item', starredAt: '2026-07-06T12:00:00.000Z' }),
+tests/daily.test.ts-386-    ]);
+tests/daily.test.ts:387:    await rebuildCanonicalIndex();
+tests/daily.test.ts-388-
+tests/daily.test.ts-389-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-390-    const result = await synthesizeDaily(collection, [], {
+--
+tests/daily.test.ts-409-      fullName: `saved/item-${index + 1}`,
+tests/daily.test.ts-410-      starredAt: '2026-07-06T12:00:00.000Z',
+tests/daily.test.ts-411-    })));
+tests/daily.test.ts:412:    await rebuildCanonicalIndex();
+tests/daily.test.ts-413-
+tests/daily.test.ts-414-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-415-    const result = await synthesizeDaily(collection, [], {
+--
+tests/daily.test.ts-443-      fullName: `overflow/item-${index + 1}`,
+tests/daily.test.ts-444-      starredAt: '2026-07-06T12:00:00.000Z',
+tests/daily.test.ts-445-    })));
+tests/daily.test.ts:446:    await rebuildCanonicalIndex();
+tests/daily.test.ts-447-
+tests/daily.test.ts-448-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-449-    const result = await synthesizeDaily(collection, [], {
+--
+tests/daily.test.ts-473-      starRecord({ id: 1, fullName: 'eligible/in-prompt', starredAt: '2026-07-06T12:00:00.000Z' }),
+tests/daily.test.ts-474-      starRecord({ id: 2, fullName: 'thin/otherwise-ignored', starredAt: '2026-07-06T13:00:00.000Z' }),
+tests/daily.test.ts-475-    ]);
+tests/daily.test.ts:476:    await rebuildCanonicalIndex();
+tests/daily.test.ts-477-
+tests/daily.test.ts-478-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-479-    const item = collection.items.find((candidate) => candidate.canonicalUrl?.includes('thin/otherwise-ignored'))!;
+--
+tests/daily.test.ts-504-test('daily: URL plus substantial commentary remains eligible for synthesis', async () => {
+tests/daily.test.ts-505-  await withIsolatedDataDir(async (dir) => {
+tests/daily.test.ts-506-    await writeStars(dir, [starRecord({ id: 1, fullName: 'commentary/eligible', starredAt: '2026-07-06T12:00:00.000Z' })]);
+tests/daily.test.ts:507:    await rebuildCanonicalIndex();
+tests/daily.test.ts-508-
+tests/daily.test.ts-509-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-510-    collection.items[0].displayTitle = 'Distinctive commentary title';
+--
+tests/daily.test.ts-529-      starRecord({ id: 1, fullName: 'thin/one', starredAt: '2026-07-06T12:00:00.000Z' }),
+tests/daily.test.ts-530-      starRecord({ id: 2, fullName: 'thin/two', starredAt: '2026-07-06T13:00:00.000Z' }),
+tests/daily.test.ts-531-    ]);
+tests/daily.test.ts:532:    await rebuildCanonicalIndex();
+tests/daily.test.ts-533-
+tests/daily.test.ts-534-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-535-    for (const item of collection.items) item.searchText = `${item.canonicalUrl} brief share`;
+--
+tests/daily.test.ts-547-test('daily: enriches a thin link into the prompt and reuses its durable cache', async () => {
+tests/daily.test.ts-548-  await withIsolatedDataDir(async (dir) => {
+tests/daily.test.ts-549-    await writeStars(dir, [starRecord({ id: 75, fullName: 'a/enriched-link', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
+tests/daily.test.ts:550:    await rebuildCanonicalIndex();
+tests/daily.test.ts-551-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-552-    const item = collection.items[0];
+tests/daily.test.ts-553-    item.searchText = `${item.canonicalUrl} brief`;
+--
+tests/daily.test.ts-575-    assert.match(prompt, /enriched-link/);
+tests/daily.test.ts-576-    assert.equal(fetchCalls, 1);
+tests/daily.test.ts-577-
+tests/daily.test.ts:578:    await rebuildCanonicalIndex();
+tests/daily.test.ts-579-    const cached = await enrichThinItems(collection.items, {
+tests/daily.test.ts-580-      fetch: async () => { throw new Error('cache miss'); },
+tests/daily.test.ts-581-      llm: async () => { throw new Error('cache miss'); },
+--
+tests/daily.test.ts-587-test('daily: empty enrichment completion is cached as failed and leaves the item thin', async () => {
+tests/daily.test.ts-588-  await withIsolatedDataDir(async (dir) => {
+tests/daily.test.ts-589-    await writeStars(dir, [starRecord({ id: 76, fullName: 'a/empty-enrichment', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
+tests/daily.test.ts:590:    await rebuildCanonicalIndex();
+tests/daily.test.ts-591-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-592-    collection.items[0].searchText = `${collection.items[0].canonicalUrl} brief`;
+tests/daily.test.ts-593-    const enrichment = await enrichThinItems(collection.items, {
+--
+tests/daily.test.ts-647-        ],
+tests/daily.test.ts-648-      }),
+tests/daily.test.ts-649-    ]);
+tests/daily.test.ts:650:    await rebuildCanonicalIndex();
+tests/daily.test.ts-651-    const { classifyCanonicalBookmarks } = await import('../src/canonical-bookmarks-db.js');
+tests/daily.test.ts-652-    await classifyCanonicalBookmarks();
+tests/daily.test.ts-653-
+--
+tests/daily.test.ts-665-
+tests/daily.test.ts-666-test('daily: synthesize skips when the window is empty', async () => {
+tests/daily.test.ts-667-  await withIsolatedDataDir(async () => {
+tests/daily.test.ts:668:    await rebuildCanonicalIndex();
+tests/daily.test.ts-669-    const collection = await collectDaily({ date: '2026-07-06' });
+tests/daily.test.ts-670-    const result = await synthesizeDaily(collection, [], { invoke: async () => '[]' });
+tests/daily.test.ts-671-    assert.equal(result.skipped, true);
+--
+tests/research.test.ts-3-import os from 'node:os';
+tests/research.test.ts-4-import path from 'node:path';
+tests/research.test.ts-5-import test from 'node:test';
+tests/research.test.ts:6:import { rebuildCanonicalIndex } from '../src/canonical-bookmarks-db.js';
+tests/research.test.ts-7-import { writeJsonLines } from '../src/fs.js';
+tests/research.test.ts-8-import { researchLocalContext } from '../src/research.js';
+tests/research.test.ts-9-import type { GitHubStarRecord } from '../src/github-stars/types.js';
+--
+tests/research.test.ts-56-    await mkdir(path.join(dataDir, 'github-stars'), { recursive: true });
+tests/research.test.ts-57-    await writeJsonLines(path.join(dataDir, 'github-stars', 'stars.jsonl'), [githubStarRecord()]);
+tests/research.test.ts-58-    await writeFile(path.join(libraryDir, 'memory.md'), '# Agent memory\n\nNotes about agent memory systems.\n');
+tests/research.test.ts:59:    await rebuildCanonicalIndex();
+tests/research.test.ts-60-
+tests/research.test.ts-61-    const result = await researchLocalContext('agent memory', { limit: 5 });
+tests/research.test.ts-62-    assert.equal(result.query, 'agent memory');
+
+exec
+/bin/zsh -lc "sed -n '620,775p' src/canonical-bookmarks-db.ts && sed -n '1,260p' tests/opencode-client.test.ts && cat package.json && nl -ba src/daily/enrich.ts | sed -n '1,260p' && nl -ba src/llm/opencode-client.ts | sed -n '1,220p' && nl -ba src/daily/synthesize.ts | sed -n '360,460p'" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+    group.displayTitle,
+    group.searchText,
+    preserved?.categories ?? null,
+    preserved?.primaryCategory ?? null,
+    preserved?.domains ?? null,
+    preserved?.primaryDomain ?? null,
+    group.sourceCount,
+    group.firstSavedAt,
+    group.lastSavedAt,
+    JSON.stringify(group.sources),
+  ];
+}
+
+function mapSearchRow(row: unknown[]): CanonicalSearchResult {
+  return {
+    id: row[0] as string,
+    canonicalUrl: (row[1] as string) ?? null,
+    displayTitle: (row[2] as string) ?? null,
+    searchText: row[3] as string,
+    sourceCount: Number(row[4] ?? 0),
+    sources: parseSources(row[5]),
+    score: Number(row[6] ?? 0),
+  };
+}
+
+function mapListRow(row: unknown[]): CanonicalBookmarkListResult {
+  return {
+    id: row[0] as string,
+    canonicalUrl: (row[1] as string) ?? null,
+    displayTitle: (row[2] as string) ?? null,
+    searchText: row[3] as string,
+    sourceCount: Number(row[4] ?? 0),
+    firstSavedAt: (row[5] as string) ?? null,
+    lastSavedAt: (row[6] as string) ?? null,
+    sources: parseSources(row[7]),
+    categories: (row[8] as string) ?? null,
+    primaryCategory: (row[9] as string) ?? null,
+    domains: (row[10] as string) ?? null,
+    primaryDomain: (row[11] as string) ?? null,
+  };
+}
+
+export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = {}): Promise<CanonicalRebuildResult> {
+  const dbPath = twitterBookmarksIndexPath();
+  const db = await openDb(dbPath);
+
+  try {
+    initCanonicalSchema(db);
+    const preservedFields = readPreservedCanonicalFields(db);
+
+    const sourceRows: CanonicalSourceInput[] = [];
+    const xRecords = await readJsonLines<BookmarkRecord>(twitterBookmarksCachePath());
+    sourceRows.push(...xRecords.map(xSourceFromRecord));
+
+    // Raindrop sources (replaces browser bookmarks)
+    const raindropCachePath = raindropBookmarksCachePath();
+    if (await pathExists(raindropCachePath)) {
+      const raindropRecords = await readJsonLines<RaindropRecord>(raindropCachePath);
+      const normalized = raindropRecords
+        .map(raindropSourceFromRecord)
+        .filter((row): row is CanonicalSourceInput => row !== null);
+      sourceRows.push(...normalized);
+    }
+
+    const githubStarsPath = githubStarsCachePath();
+    if (await pathExists(githubStarsPath)) {
+      const githubStarRecords = await readJsonLines<GitHubStarRecord>(githubStarsPath);
+      const normalized = githubStarRecords
+        .map(githubStarsSourceFromRecord)
+        .filter((row): row is CanonicalSourceInput => row !== null);
+      sourceRows.push(...normalized);
+    }
+
+    const projectsPath = projectsCachePath();
+    if (await pathExists(projectsPath)) {
+      const projectRecords = await readJsonLines<ProjectRecord>(projectsPath);
+      sourceRows.push(...projectRecords.map(projectSourceFromRecord));
+    }
+
+    sourceRows.push(...readYoutubeSourcesFromDb(db));
+
+    const groups = new Map<string, CanonicalSourceInput[]>();
+    for (const source of sourceRows) {
+      const existing = groups.get(source.dedupeKey) ?? [];
+      existing.push(source);
+      groups.set(source.dedupeKey, existing);
+    }
+    const canonicalGroups = [...groups.entries()].map(([dedupeKey, sources]) => buildCanonicalGroup(dedupeKey, sources));
+
+    db.run('BEGIN TRANSACTION');
+    try {
+      db.run('DELETE FROM bookmark_sources');
+      db.run('DELETE FROM canonical_bookmarks');
+      const canonicalStmt = db.prepare(INSERT_CANONICAL_SQL);
+      const sourceStmt = db.prepare(INSERT_SOURCE_SQL);
+      try {
+        for (const group of canonicalGroups) {
+          canonicalStmt.run(canonicalInsertParams(group, preservedFields.get(group.dedupeKey)));
+          const groupSources = groups.get(group.dedupeKey) ?? [];
+          for (const source of groupSources) sourceStmt.run(sourceInsertParams(source, group.id));
+        }
+      } finally {
+        canonicalStmt.free();
+        sourceStmt.free();
+      }
+      db.run(`INSERT INTO canonical_bookmarks_fts(canonical_bookmarks_fts) VALUES('rebuild')`);
+      db.run('COMMIT');
+    } catch (err) {
+      db.run('ROLLBACK');
+      throw err;
+    }
+
+    saveDb(db, dbPath);
+    return { dbPath, sourceCount: sourceRows.length, canonicalCount: canonicalGroups.length };
+  } finally {
+    db.close();
+  }
+}
+
+export async function upsertYoutubeVideosAsSources(videos: YoutubeSourceVideoInput[]): Promise<CanonicalRebuildResult> {
+  const dbPath = twitterBookmarksIndexPath();
+  const db = await openDb(dbPath);
+  const savedAt = new Date().toISOString();
+
+  try {
+    initCanonicalSchema(db);
+    db.run('BEGIN TRANSACTION');
+    try {
+      const sourceStmt = db.prepare(INSERT_SOURCE_SQL);
+      try {
+        for (const video of videos) {
+          const source = youtubeSourceFromVideo(video, savedAt);
+          db.run(`DELETE FROM bookmark_sources WHERE id = ?`, [source.id]);
+          sourceStmt.run(sourceInsertParams(source, canonicalIdForDedupeKey(source.dedupeKey)));
+        }
+      } finally {
+        sourceStmt.free();
+      }
+      db.run('COMMIT');
+    } catch (error) {
+      db.run('ROLLBACK');
+      throw error;
+    }
+    saveDb(db, dbPath);
+  } finally {
+    db.close();
+  }
+
+  return rebuildCanonicalIndex();
+}
+
+export async function searchCanonicalBookmarks(options: SearchCanonicalOptions): Promise<CanonicalSearchResult[]> {
+  const db = await openDb(twitterBookmarksIndexPath());
+  const query = options.query.trim();
+  const ftsQuery = sanitizeFtsQuery(query);
+  const limit = options.limit ?? 20;
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createOpenCodeClient, OpenCodeRequestError } from '../src/llm/opencode-client.js';
+
+test('OpenCode client uses message.content and reserves enough tokens for reasoning models', async () => {
+  let request: Record<string, unknown> | undefined;
+  const client = createOpenCodeClient({
+    apiKey: 'test-key',
+    fetch: async (_url, init) => {
+      request = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { reasoning_content: 'private reasoning', content: 'final answer' } }] }));
+    },
+  });
+  const result = await client.chat({ prompt: 'summarize', maxTokens: 12 });
+  assert.equal(result.text, 'final answer');
+  assert.equal(request?.model, 'deepseek-v4-flash');
+  assert.equal(request?.max_tokens, 600);
+});
+
+test('OpenCode client rejects reasoning-only responses', async () => {
+  const client = createOpenCodeClient({
+    apiKey: 'test-key',
+    fetch: async () => new Response(JSON.stringify({ choices: [{ message: { reasoning_content: 'private reasoning', content: '' } }] })),
+  });
+  await assert.rejects(() => client.chat({ prompt: 'summarize' }), OpenCodeRequestError);
+});
+{
+  "name": "fieldtheory",
+  "version": "1.3.20",
+  "description": "Field Theory CLI. Self-custody for your X/Twitter bookmarks. Local sync, full-text search, classification, and terminal dashboards.",
+  "type": "module",
+  "bin": {
+    "ft": "bin/ft.mjs",
+    "fieldtheory": "bin/ft.mjs"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test tests/**/*.test.ts",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/afar1/fieldtheory-cli.git"
+  },
+  "keywords": [
+    "bookmarks",
+    "twitter",
+    "x",
+    "search",
+    "fts5",
+    "sqlite",
+    "local-first",
+    "self-custody",
+    "cli"
+  ],
+  "dependencies": {
+    "commander": "^14.0.3",
+    "dotenv": "^17.3.1",
+    "sql.js": "^1.14.1",
+    "sql.js-fts5": "^1.4.0",
+    "undici": "^6.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/sql.js": "^1.4.11",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
+     1	import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+     2	import type { Database } from 'sql.js';
+     3	import { openDb, saveDb } from '../db.js';
+     4	import { twitterBookmarksIndexPath } from '../paths.js';
+     5	import { createOpenCodeClient, openCodeApiKey } from '../llm/opencode-client.js';
+     6	import { THIN_CONTENT_CHARS, contentLength } from './synthesize.js';
+     7	
+     8	const FAILED_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+     9	const BODY_LIMIT_BYTES = 200_000;
+    10	const DEFAULT_LIMIT = 25;
+    11	
+    12	type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+    13	
+    14	export interface LinkEnrichmentEntry {
+    15	  url: string;
+    16	  summary: string | null;
+    17	  status: 'ok' | 'failed';
+    18	  enrichedAt: string;
+    19	}
+    20	
+    21	export interface EnrichThinItemsOptions {
+    22	  fetch?: FetchFn;
+    23	  llm?: (prompt: string) => Promise<string>;
+    24	  limit?: number;
+    25	  now?: Date;
+    26	  onMissingKey?: () => void;
+    27	}
+    28	
+    29	export interface EnrichThinItemsResult {
+    30	  /** Items with a usable cached or newly generated summary in this digest. */
+    31	  enrichedCount: number;
+    32	  summaries: Map<string, string>;
+    33	}
+    34	
+    35	/** Fetch/cache summaries for otherwise-thin daily items. This function never throws. */
+    36	export async function enrichThinItems(items: CanonicalRecentItem[], options: EnrichThinItemsOptions = {}): Promise<EnrichThinItemsResult> {
+    37	  const eligible = items.filter((item) => isEligible(item));
+    38	  if (eligible.length === 0) return { enrichedCount: 0, summaries: new Map() };
+    39	  if (!options.llm && !openCodeApiKey()) {
+    40	    options.onMissingKey?.();
+    41	    return { enrichedCount: 0, summaries: new Map() };
+    42	  }
+    43	
+    44	  try {
+    45	    const now = options.now ?? new Date();
+    46	    const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
+    47	    const summaries = usableSummaries(eligible, cached);
+    48	    const limit = parseLimit(options.limit);
+    49	    const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+    50	    const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+    51	    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 600 })).text);
+    52	    const updates = await mapConcurrent(misses, 4, async (item): Promise<LinkEnrichmentEntry> => {
+    53	      const url = item.canonicalUrl!;
+    54	      try {
+    55	        const material = await extractPageMaterial(url, fetchFn);
+    56	        const summary = (await llm(buildEnrichmentPrompt(material))).trim();
+    57	        if (!summary) throw new Error('empty enrichment completion');
+    58	        return { url, summary, status: 'ok', enrichedAt: now.toISOString() };
+    59	      } catch {
+    60	        return { url, summary: null, status: 'failed', enrichedAt: now.toISOString() };
+    61	      }
+    62	    });
+    63	    if (updates.length) await writeCache(updates);
+    64	    for (const update of updates) if (update.status === 'ok' && update.summary) cached.set(update.url, update);
+    65	    const finalSummaries = usableSummaries(eligible, cached);
+    66	    return { enrichedCount: finalSummaries.size, summaries: finalSummaries };
+    67	  } catch {
+    68	    return { enrichedCount: 0, summaries: new Map() };
+    69	  }
+    70	}
+    71	
+    72	/** Append summaries to only the current collection's in-memory search text. */
+    73	export function mergeEnrichmentSummaries(items: CanonicalRecentItem[], summaries: Map<string, string>): void {
+    74	  for (const item of items) {
+    75	    const summary = item.canonicalUrl ? summaries.get(item.canonicalUrl) : undefined;
+    76	    if (summary && !item.searchText.includes(` summary: ${summary}`)) item.searchText = `${item.searchText} summary: ${summary}`.trim();
+    77	  }
+    78	}
+    79	
+    80	function isEligible(item: CanonicalRecentItem): boolean {
+    81	  if (contentLength(item.searchText) >= THIN_CONTENT_CHARS || !item.canonicalUrl) return false;
+    82	  try {
+    83	    const url = new URL(item.canonicalUrl);
+    84	    return (url.protocol === 'http:' || url.protocol === 'https:') && !isTweetStatusUrl(url);
+    85	  } catch {
+    86	    return false;
+    87	  }
+    88	}
+    89	
+    90	function isTweetStatusUrl(url: URL): boolean {
+    91	  return /(^|\.)((x|twitter)\.com)$/i.test(url.hostname) && /\/status\/\d+/i.test(url.pathname);
+    92	}
+    93	
+    94	function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date): boolean {
+    95	  if (!cached) return true;
+    96	  if (cached.status === 'ok' && cached.summary?.trim()) return false;
+    97	  return !Number.isFinite(Date.parse(cached.enrichedAt)) || Date.parse(cached.enrichedAt) <= now.getTime() - FAILED_RETRY_MS;
+    98	}
+    99	
+   100	function parseLimit(value: number | undefined): number {
+   101	  const raw = value ?? Number(process.env.FT_ENRICH_LIMIT ?? DEFAULT_LIMIT);
+   102	  return Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : DEFAULT_LIMIT;
+   103	}
+   104	
+   105	function usableSummaries(items: CanonicalRecentItem[], cache: Map<string, LinkEnrichmentEntry>, into = new Map<string, string>()): Map<string, string> {
+   106	  for (const item of items) {
+   107	    const entry = item.canonicalUrl ? cache.get(item.canonicalUrl) : undefined;
+   108	    if (item.canonicalUrl && entry?.status === 'ok' && entry.summary?.trim()) into.set(item.canonicalUrl, entry.summary.trim());
+   109	  }
+   110	  return into;
+   111	}
+   112	
+   113	async function readCache(urls: string[]): Promise<Map<string, LinkEnrichmentEntry>> {
+   114	  const dbPath = twitterBookmarksIndexPath();
+   115	  const db = await openDb(dbPath);
+   116	  try {
+   117	    initEnrichmentSchema(db);
+   118	    const rows = db.exec(`SELECT url, summary, status, enriched_at FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
+   119	    saveDb(db, dbPath);
+   120	    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? '') }]));
+   121	  } finally {
+   122	    db.close();
+   123	  }
+   124	}
+   125	
+   126	async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
+   127	  const dbPath = twitterBookmarksIndexPath();
+   128	  const db = await openDb(dbPath);
+   129	  try {
+   130	    initEnrichmentSchema(db);
+   131	    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at) VALUES (?, ?, ?, ?)
+   132	      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at`);
+   133	    try {
+   134	      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt]);
+   135	    } finally {
+   136	      statement.free();
+   137	    }
+   138	    saveDb(db, dbPath);
+   139	  } finally {
+   140	    db.close();
+   141	  }
+   142	}
+   143	
+   144	function initEnrichmentSchema(db: Database): void {
+   145	  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL)');
+   146	}
+   147	
+   148	async function extractPageMaterial(url: string, fetchFn: FetchFn): Promise<string> {
+   149	  const controller = new AbortController();
+   150	  const timer = setTimeout(() => controller.abort(), 8_000);
+   151	  try {
+   152	    const response = await fetchFn(url, { redirect: 'follow', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FieldTheoryDigest/1.0)' } });
+   153	    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+   154	    const html = await readLimitedBody(response, BODY_LIMIT_BYTES);
+   155	    const title = firstMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
+   156	    const description = firstMatch(html, /<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']*)["']/i)
+   157	      ?? firstMatch(html, /<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["'](?:description|og:description)["']/i);
+   158	    const visible = decodeHtml(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 1200);
+   159	    return [`URL: ${url}`, title && `Title: ${decodeHtml(title)}`, description && `Description: ${decodeHtml(description)}`, visible && `Text: ${visible}`].filter(Boolean).join('\n');
+   160	  } finally {
+   161	    clearTimeout(timer);
+   162	  }
+   163	}
+   164	
+   165	function buildEnrichmentPrompt(material: string): string {
+   166	  return `For a personal knowledge digest, summarize what this page is about in 2-3 plain sentences. No preamble.\n\n${material}`;
+   167	}
+   168	
+   169	async function readLimitedBody(response: Response, limit: number): Promise<string> {
+   170	  if (!response.body) return (await response.text()).slice(0, limit);
+   171	  const reader = response.body.getReader();
+   172	  const chunks: Uint8Array[] = [];
+   173	  let size = 0;
+   174	  try {
+   175	    while (size < limit) {
+   176	      const { done, value } = await reader.read();
+   177	      if (done) break;
+   178	      const remaining = limit - size;
+   179	      chunks.push(value.byteLength > remaining ? value.slice(0, remaining) : value);
+   180	      size += Math.min(value.byteLength, remaining);
+   181	    }
+   182	  } finally {
+   183	    await reader.cancel().catch(() => undefined);
+   184	  }
+   185	  const all = new Uint8Array(size);
+   186	  let offset = 0;
+   187	  for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.byteLength; }
+   188	  return new TextDecoder().decode(all);
+   189	}
+   190	
+   191	function firstMatch(text: string, pattern: RegExp): string | null {
+   192	  return pattern.exec(text)?.[1]?.trim() || null;
+   193	}
+   194	
+   195	function decodeHtml(text: string): string {
+   196	  return text.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>');
+   197	}
+   198	
+   199	async function mapConcurrent<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+   200	  const results: R[] = [];
+   201	  let cursor = 0;
+   202	  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+   203	    while (cursor < items.length) {
+   204	      const item = items[cursor++];
+   205	      results.push(await fn(item));
+   206	    }
+   207	  }));
+   208	  return results;
+   209	}
+     1	const OPENCODE_URL = 'https://opencode.ai/zen/go/v1/chat/completions';
+     2	const DEFAULT_MODEL = 'deepseek-v4-flash';
+     3	
+     4	type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+     5	
+     6	export interface OpenCodeClientOptions {
+     7	  apiKey?: string;
+     8	  model?: string;
+     9	  fetch?: FetchFn;
+    10	}
+    11	
+    12	export interface OpenCodeChatOptions {
+    13	  prompt: string;
+    14	  maxTokens?: number;
+    15	  temperature?: number;
+    16	}
+    17	
+    18	export interface OpenCodeClient {
+    19	  chat(options: OpenCodeChatOptions): Promise<{ text: string; model: string }>;
+    20	}
+    21	
+    22	export class OpenCodeAuthError extends Error {
+    23	  constructor() {
+    24	    super('OPENCODE_GO_API_KEY or OPENCODE_API_KEY is required for OpenCode requests');
+    25	    this.name = 'OpenCodeAuthError';
+    26	  }
+    27	}
+    28	
+    29	export class OpenCodeRequestError extends Error {
+    30	  constructor(message: string, readonly status?: number) {
+    31	    super(message);
+    32	    this.name = 'OpenCodeRequestError';
+    33	  }
+    34	}
+    35	
+    36	export function openCodeApiKey(options: Pick<OpenCodeClientOptions, 'apiKey'> = {}): string {
+    37	  return options.apiKey?.trim() || process.env.OPENCODE_GO_API_KEY?.trim() || process.env.OPENCODE_API_KEY?.trim() || '';
+    38	}
+    39	
+    40	/** Minimal OpenAI-compatible client for short link-enrichment completions. */
+    41	export function createOpenCodeClient(options: OpenCodeClientOptions = {}): OpenCodeClient {
+    42	  const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+    43	  const model = options.model?.trim() || process.env.FT_ENRICH_MODEL?.trim() || DEFAULT_MODEL;
+    44	
+    45	  return {
+    46	    async chat(chatOptions) {
+    47	      const key = openCodeApiKey(options);
+    48	      if (!key) throw new OpenCodeAuthError();
+    49	      // deepseek-v4-flash reasons before answering; smaller budgets can produce
+    50	      // only reasoning_content and an empty message.content.
+    51	      const res = await fetchFn(OPENCODE_URL, {
+    52	        method: 'POST',
+    53	        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    54	        body: JSON.stringify({
+    55	          model,
+    56	          messages: [{ role: 'user', content: chatOptions.prompt }],
+    57	          max_tokens: Math.max(600, chatOptions.maxTokens ?? 600),
+    58	          ...(chatOptions.temperature === undefined ? {} : { temperature: chatOptions.temperature }),
+    59	        }),
+    60	      });
+    61	      const body = parseObject(await res.text());
+    62	      if (!res.ok) throw new OpenCodeRequestError(errorMessage(body) ?? `OpenCode request failed with HTTP ${res.status}`, res.status);
+    63	      const text = completionText(body);
+    64	      if (!text.trim()) throw new OpenCodeRequestError('OpenCode returned an empty completion');
+    65	      return { text, model };
+    66	    },
+    67	  };
+    68	}
+    69	
+    70	function parseObject(text: string): Record<string, unknown> {
+    71	  try {
+    72	    const value = JSON.parse(text);
+    73	    return value != null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    74	  } catch {
+    75	    return {};
+    76	  }
+    77	}
+    78	
+    79	function errorMessage(body: Record<string, unknown>): string | undefined {
+    80	  const error = body.error;
+    81	  return error != null && typeof error === 'object' && 'message' in error && typeof error.message === 'string' ? error.message : undefined;
+    82	}
+    83	
+    84	function completionText(body: Record<string, unknown>): string {
+    85	  const first = Array.isArray(body.choices) ? body.choices[0] : null;
+    86	  if (first == null || typeof first !== 'object' || !('message' in first)) return '';
+    87	  const message = first.message;
+    88	  // Deliberately ignore reasoning_content: it is model scratch work, not the answer.
+    89	  return message != null && typeof message === 'object' && 'content' in message && typeof message.content === 'string' ? message.content : '';
+    90	}
+   360	  const digestPath = dailyDigestPath(collection.date);
+   361	
+   362	  if (collection.items.length === 0 && collection.projectDeltas.length === 0) {
+   363	    return {
+   364	      digestPath,
+   365	      themes: [],
+   366	      usedLlm: false,
+   367	      droppedCitations: 0,
+   368	      themedCount: 0,
+   369	      alsoSavedCount: 0,
+   370	      thinSkipped: 0,
+   371	      enrichedCount: options.enrichedCount ?? 0,
+   372	      skipped: true,
+   373	    };
+   374	  }
+   375	
+   376	  let themes: DailyTheme[] = [];
+   377	  let usedLlm = false;
+   378	  let droppedCitations = 0;
+   379	  let llmFailed = false;
+   380	  const enrichedItemIds = new Set(options.enrichedItemIds ?? []);
+   381	  const promptItems = collection.items.filter((item) => contentLength(item.searchText) >= THIN_CONTENT_CHARS || enrichedItemIds.has(item.id));
+   382	  const thinSkipped = collection.items.length - promptItems.length;
+   383	
+   384	  if (promptItems.length > 0) {
+   385	    const promptItemIds = new Set(promptItems.map((item) => item.id));
+   386	    const promptCollection: DailyCollection = { ...collection, items: promptItems };
+   387	    const promptConnected = connected.filter(({ item }) => promptItemIds.has(item.id));
+   388	    try {
+   389	      const aliases = buildDailyAliases(promptCollection, promptConnected);
+   390	      const invoke = options.invoke ?? ((prompt: string) => defaultInvoke(options.profile ?? {}, prompt));
+   391	      const raw = await invoke(buildDailyPrompt(promptCollection, promptConnected, aliases));
+   392	      const jsonText = extractJsonArray(raw);
+   393	      if (jsonText) {
+   394	        const validated = validateThemes(JSON.parse(jsonText), promptCollection, promptConnected, aliases);
+   395	        themes = validated.themes;
+   396	        droppedCitations = validated.dropped;
+   397	        usedLlm = themes.length > 0;
+   398	      } else llmFailed = true;
+   399	    } catch {
+   400	      // LLM unavailable or invalid output — fall back to mechanical grouping.
+   401	      llmFailed = true;
+   402	    }
+   403	    // On an LLM failure the fallback intentionally covers all items, including
+   404	    // thin links: it is a mechanical availability fallback, not synthesis.
+   405	    if (llmFailed) themes = mechanicalThemes(collection);
+   406	  }
+   407	
+   408	  const themedIds = new Set(themes.flatMap((theme) => theme.itemIds));
+   409	  const alsoSavedIds = collection.items
+   410	    .filter((item) => !themedIds.has(item.id))
+   411	    .map((item) => item.id);
+   412	
+   413	  const youtubeNotes = await buildYoutubeNotesLinks(
+   414	    [
+   415	      ...collection.items.map((item) => item.canonicalUrl),
+   416	      ...connected.flatMap(({ related }) => related.map((ref) => ref.url)),
+   417	    ],
+   418	    digestPath,
+   419	  );
+   420	  const coverage = await collectDailyCoverage({
+   421	    collected: collection.items.length,
+   422	    themed: themedIds.size,
+   423	    alsoSaved: alsoSavedIds.length,
+   424	    thinSkipped,
+   425	    enriched: options.enrichedCount ?? 0,
+   426	    carriedOver: collection.carriedOver,
+   427	    citationsDropped: droppedCitations,
+   428	    undateableExcluded: collection.undateableExcluded,
+   429	    synthesis: usedLlm ? 'llm' : 'mechanical',
+   430	  });
+   431	  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage));
+   432	  if (!collection.isExplicitDate) {
+   433	    const meta = await readDailyMeta();
+   434	    const { lastRunItemId: _lastRunItemId, ...metaWithoutCursor } = meta;
+   435	    await writeJson(dailyMetaPath(), {
+   436	      ...metaWithoutCursor,
+   437	      lastRunAt: collection.nextWatermark,
+   438	      ...(collection.nextWatermarkItemId ? { lastRunItemId: collection.nextWatermarkItemId } : {}),
+   439	      lastDigestDate: collection.date,
+   440	    });
+   441	  }
+   442	  // Historical --date renders are deliberately read-only for daily metadata:
+   443	  // lastDigestDate reflects the most recent rolling digest, just like lastRunAt.
+   444	
+   445	  return {
+   446	    digestPath,
+   447	    themes,
+   448	    usedLlm,
+   449	    droppedCitations,
+   450	    themedCount: themedIds.size,
+   451	    alsoSavedCount: alsoSavedIds.length,
+   452	    thinSkipped,
+   453	    enrichedCount: options.enrichedCount ?? 0,
+   454	    skipped: false,
+   455	  };
+   456	}
+
+exec
+/bin/zsh -lc "rg -n -C 3 \"searchText|displayTitle|renderItem|alsoSaved|Connected|contentLength\" src/daily src/canonical-bookmarks-db.ts | head -n 300 && rg -n \"function initCanonicalSchema|DELETE FROM\" src/canonical-bookmarks-db.ts && npm test -- --test-name-pattern='OpenCode client|daily: (thin|URL plus|skips the LLM|enriches|empty enrichment|enrichment silently)'" in /Users/manik/Github/fieldtheory-cli
+ exited 1 in 117ms:
+node:net:2145
+      const error = new UVExceptionWithHostPort(rval, 'listen', address, port);
+                    ^
+
+Error: listen EPERM: operation not permitted /var/folders/zy/zrm8cltd7jn6n3ftg2k6_psw0000gn/T/tsx-501/65269.pipe
+    at Server.setupListenHandle [as _listen2] (node:net:2145:21)
+    at listenInCluster (node:net:2224:12)
+    at Server.listen (node:net:2361:5)
+    at file:///Users/manik/Github/fieldtheory-cli/node_modules/tsx/dist/cli.mjs:53:31537
+    at new Promise (<anonymous>)
+    at createIpcServer (file:///Users/manik/Github/fieldtheory-cli/node_modules/tsx/dist/cli.mjs:53:31515)
+    at async file:///Users/manik/Github/fieldtheory-cli/node_modules/tsx/dist/cli.mjs:55:459 {
+  code: 'EPERM',
+  errno: -1,
+  syscall: 'listen',
+  address: '/var/folders/zy/zrm8cltd7jn6n3ftg2k6_psw0000gn/T/tsx-501/65269.pipe',
+  port: -1
+}
+
+Node.js v26.4.0
+
+codex
+The focused tests cannot start in this sandbox because `tsx` is blocked from creating its IPC socket. I’m completing static checks and a TypeScript build next.
+exec
+/bin/zsh -lc "npm run build && git diff --check && nl -ba src/canonical-bookmarks-db.ts | sed -n '110,170p' && nl -ba src/daily/synthesize.ts | sed -n '60,125p'" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 1017ms:
+   110	  videoId: string;
+   111	  title: string;
+   112	  tldr: string;
+   113	  keyPoints?: string[];
+   114	  chapters?: Array<{ tSec: number; label: string; summary: string }>;
+   115	  actionItems?: string[];
+   116	  topics: string[];
+   117	  notePath?: string | null;
+   118	  channel?: string | null;
+   119	  durationSec?: number | null;
+   120	  videoType?: string | null;
+   121	  published?: string | null;
+   122	}
+   123	
+   124	function initCanonicalSchema(db: Database): void {
+   125	  db.run(`CREATE TABLE IF NOT EXISTS bookmark_sources (
+   126	    id TEXT PRIMARY KEY,
+   127	    source TEXT NOT NULL,
+   128	    profile TEXT,
+   129	    source_item_id TEXT NOT NULL,
+   130	    source_url TEXT NOT NULL,
+   131	    target_url TEXT,
+   132	    dedupe_key TEXT NOT NULL,
+   133	    title TEXT,
+   134	    text TEXT,
+   135	    author_handle TEXT,
+   136	    saved_at TEXT,
+   137	    created_at TEXT,
+   138	    modified_at TEXT,
+   139	    folder_path_json TEXT,
+   140	    links_json TEXT,
+   141	    content_path TEXT,
+   142	    metadata_json TEXT,
+   143	    active INTEGER NOT NULL DEFAULT 1,
+   144	    canonical_id TEXT
+   145	  )`);
+   146	
+   147	  db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_dedupe_key ON bookmark_sources(dedupe_key)`);
+   148	  db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_canonical_id ON bookmark_sources(canonical_id)`);
+   149	  db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_source ON bookmark_sources(source, profile)`);
+   150	  ensureSourceColumn(db, 'content_path', 'TEXT');
+   151	  ensureSourceColumn(db, 'metadata_json', 'TEXT');
+   152	
+   153	  db.run(`CREATE TABLE IF NOT EXISTS canonical_bookmarks (
+   154	    id TEXT PRIMARY KEY,
+   155	    dedupe_key TEXT UNIQUE NOT NULL,
+   156	    canonical_url TEXT,
+   157	    display_title TEXT,
+   158	    search_text TEXT NOT NULL,
+   159	    categories TEXT,
+   160	    primary_category TEXT,
+   161	    domains TEXT,
+   162	    primary_domain TEXT,
+   163	    source_count INTEGER NOT NULL,
+   164	    first_saved_at TEXT,
+   165	    last_saved_at TEXT,
+   166	    sources_json TEXT
+   167	  )`);
+   168	
+   169	  db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS canonical_bookmarks_fts USING fts5(
+   170	    display_title,
+    60	  thinSkipped: number;
+    61	  enrichedCount: number;
+    62	  skipped: boolean;
+    63	}
+    64	
+    65	function snippet(item: CanonicalRecentItem): string {
+    66	  return item.searchText.replace(/\s+/g, ' ').slice(0, SNIPPET_CHARS);
+    67	}
+    68	
+    69	export interface DailyAliases {
+    70	  /** Short prompt alias (i1, r2, ...) → real canonical id. */
+    71	  items: Map<string, string>;
+    72	  related: Map<string, string>;
+    73	}
+    74	
+    75	/** Long canonical hash ids get mangled by smaller models; the prompt uses
+    76	 *  short ordinal aliases (i1/r1) and citations are mapped back locally. */
+    77	export function buildDailyAliases(collection: DailyCollection, connected: ConnectedItem[]): DailyAliases {
+    78	  const items = new Map<string, string>();
+    79	  collection.items.forEach((item, index) => items.set(`i${index + 1}`, item.id));
+    80	
+    81	  const related = new Map<string, string>();
+    82	  const seen = new Set<string>();
+    83	  let counter = 0;
+    84	  for (const { related: refs } of connected) {
+    85	    for (const ref of refs) {
+    86	      if (seen.has(ref.id)) continue;
+    87	      seen.add(ref.id);
+    88	      counter += 1;
+    89	      related.set(`r${counter}`, ref.id);
+    90	    }
+    91	  }
+    92	  return { items, related };
+    93	}
+    94	
+    95	export function buildDailyPrompt(collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): string {
+    96	  const itemAlias = new Map([...aliases.items.entries()].map(([alias, id]) => [id, alias]));
+    97	  const relatedAlias = new Map([...aliases.related.entries()].map(([alias, id]) => [id, alias]));
+    98	
+    99	  const lines: string[] = [];
+   100	  lines.push(`Date: ${collection.date}`);
+   101	  lines.push('');
+   102	  lines.push('NEW ITEMS (saved today):');
+   103	  for (const { item, related } of connected) {
+   104	    lines.push(`- id=${itemAlias.get(item.id)} source=${item.sources.join(',')} title=${JSON.stringify(item.displayTitle ?? item.canonicalUrl ?? item.id)}`);
+   105	    lines.push(`  snippet: ${snippet(item)}`);
+   106	    for (const ref of related) {
+   107	      lines.push(`  related: id=${relatedAlias.get(ref.id)} title=${JSON.stringify(ref.title ?? ref.url ?? ref.id)}`);
+   108	    }
+   109	  }
+   110	  lines.push('');
+   111	  lines.push('PROJECT ACTIVITY (repos worked on in this window):');
+   112	  for (const delta of collection.projectDeltas) {
+   113	    const subjects = delta.commits.slice(0, 5).map((commit) => commit.subject).join('; ');
+   114	    const questions = delta.prompts.slice(0, 3).map((prompt) => prompt.text.slice(0, 120)).join(' | ');
+   115	    lines.push(`- repo=${delta.repo} commits=[${subjects}] questions=[${questions}]`);
+   116	  }
+   117	  lines.push('');
+   118	  lines.push(`TASK: Group the new items into 3-${MAX_THEMES} themes. Respond with ONLY a JSON array:`);
+   119	  lines.push('[{"title": "...", "summary": "2-4 sentences on what is new and why it matters together",');
+   120	  lines.push('  "itemIds": ["<id like i1 from NEW ITEMS>"], "relatedIds": ["<id like r1 from related lines>"], "projects": ["<repo from PROJECT ACTIVITY>"]}]');
+   121	  lines.push('Rules: cite only the short ids (i1, i2, r1, ...) and repo names that appear verbatim above. Mention a project only when a theme genuinely connects to that repo\'s activity. Do not invent items, ids, or repos.');
+   122	
+   123	  return withSystemOverride('personal knowledge-synthesis engine that groups newly saved reading material into themes', lines.join('\n'));
+   124	}
+   125	
+
+codex
+{"summary":"3 findings: two high-severity reliability/security gaps and one low-severity body-cap gap. The cache, merge/order, count consistency, key non-logging, and enriched-short prompt partition appear correct.","evidence":["HIGH — src/daily/enrich.ts:148-162: page requests follow redirects without validating either the initial host or the final destination. A saved https URL can target localhost/private IP space directly or redirect there, enabling SSRF against local services. Restrict resolved hosts/IP ranges and validate each redirect hop (or disable redirects and follow validated hops manually).","HIGH — src/llm/opencode-client.ts:46-65: OpenCode completion fetch has no AbortController/timeout. src/daily/enrich.ts:52-62 awaits that completion inside the concurrency pool; a stalled Zen Go request leaves its worker unresolved and `Promise.all` never completes, hanging the digest. The page-fetch timer does not cover the LLM call.","LOW — src/daily/enrich.ts:169-170: streamed bodies are capped/cancelled correctly, but the no-body branch calls `response.text()` before slicing. That branch can buffer an unbounded body, so the stated 200 KB cap is not universally enforced. Use a bounded reader/byte limit in every response path.","Checked clean: per-item enrichment errors are caught (src/daily/enrich.ts:52-61), page AbortController timers are cleared (148-162), failed cache rows retry after 7 days and successful rows are reused (94-97), canonical rebuild deletes only bookmark_sources/canonical_bookmarks (src/canonical-bookmarks-db.ts:711-712), and CLI merges before connect then explicitly admits enriched IDs to the synthesis partition (src/cli.ts:1345-1364; src/daily/synthesize.ts:380-387). Digest rendering uses title/URL rather than searchText, so `summary:` does not leak into rendered entries."],"files_changed":[],"commands_run":[{"command":"git status --short && git diff --stat && git diff -- [scoped files]","exit_code":0,"summary":"Inspected uncommitted scoped changes."},{"command":"sed/nl/rg inspection of enrichment, OpenCode client, canonical rebuild, synthesis, and tests","exit_code":0,"summary":"Completed static review and line-level verification."},{"command":"npm test -- --test-name-pattern='OpenCode client|daily: ...'","exit_code":1,"summary":"Not runnable: sandbox blocks tsx IPC socket creation (EPERM)."},{"command":"npm run build && git diff --check","exit_code":0,"summary":"TypeScript build and whitespace validation passed."}],"verification":{"status":"not_run","details":"Focused tests could not run due to sandbox EPERM creating tsx IPC socket; TypeScript build passed."},"blockers":["Sandbox policy prevents tsx from listening on its temporary IPC socket."]}
+hook: Stop
+hook: Stop Completed
+tokens used
+74,124

@@ -1,0 +1,737 @@
+<title>Understanding Is the Bottleneck</title>
+<style>
+  :root {
+    --paper: #F8F9F7;
+    --paper-raised: #FFFFFF;
+    --ink: #1B2735;
+    --ink-soft: #47536A;
+    --ink-faint: #8B94A7;
+    --rule: #D8DEE6;
+    --accent: #2B4C9B;
+    --accent-soft: #E4EAF6;
+    --redpen: #B3261E;
+    --stamp: #B3261E;
+    --mono-bg: #EEF1F5;
+    --shadow: 0 1px 3px rgba(27, 39, 53, 0.08), 0 8px 28px rgba(27, 39, 53, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #1E2823;
+      --paper-raised: #263129;
+      --ink: #E8E6DA;
+      --ink-soft: #B9BCAC;
+      --ink-faint: #7E8578;
+      --rule: #38443C;
+      --accent: #E4C465;
+      --accent-soft: #34402F;
+      --redpen: #E88A7D;
+      --stamp: #E88A7D;
+      --mono-bg: #2C3830;
+      --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 8px 28px rgba(0,0,0,0.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1E2823;
+    --paper-raised: #263129;
+    --ink: #E8E6DA;
+    --ink-soft: #B9BCAC;
+    --ink-faint: #7E8578;
+    --rule: #38443C;
+    --accent: #E4C465;
+    --accent-soft: #34402F;
+    --redpen: #E88A7D;
+    --stamp: #E88A7D;
+    --mono-bg: #2C3830;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 8px 28px rgba(0,0,0,0.3);
+  }
+  :root[data-theme="light"] {
+    --paper: #F8F9F7;
+    --paper-raised: #FFFFFF;
+    --ink: #1B2735;
+    --ink-soft: #47536A;
+    --ink-faint: #8B94A7;
+    --rule: #D8DEE6;
+    --accent: #2B4C9B;
+    --accent-soft: #E4EAF6;
+    --redpen: #B3261E;
+    --stamp: #B3261E;
+    --mono-bg: #EEF1F5;
+    --shadow: 0 1px 3px rgba(27, 39, 53, 0.08), 0 8px 28px rgba(27, 39, 53, 0.06);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    overflow: hidden;
+  }
+  .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  .deck { position: relative; width: 100%; height: 100%; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: none;
+    padding: clamp(2rem, 6vh, 4rem) clamp(2rem, 7vw, 6rem) clamp(4.5rem, 9vh, 5.5rem);
+    flex-direction: column;
+    justify-content: center;
+  }
+  .slide.active { display: flex; }
+
+  /* red margin rule, like an exam booklet page */
+  .slide::before {
+    content: "";
+    position: absolute;
+    left: clamp(1.2rem, 4vw, 3.4rem);
+    top: 0; bottom: 0;
+    width: 1.5px;
+    background: color-mix(in srgb, var(--redpen) 45%, transparent);
+    pointer-events: none;
+  }
+
+  .eyebrow {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: clamp(0.65rem, 1.1vw, 0.8rem);
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1.2rem;
+  }
+  h1 {
+    font-size: clamp(2.4rem, 5.4vw, 4.4rem);
+    line-height: 1.06;
+    font-weight: 700;
+    text-wrap: balance;
+    max-width: 20ch;
+  }
+  h2 {
+    font-size: clamp(1.7rem, 3.4vw, 2.7rem);
+    line-height: 1.12;
+    font-weight: 700;
+    text-wrap: balance;
+    max-width: 24ch;
+    margin-bottom: clamp(1.2rem, 3vh, 2rem);
+  }
+  .lede {
+    font-size: clamp(1.05rem, 1.9vw, 1.45rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 58ch;
+  }
+  .body-cols { display: flex; gap: clamp(1.5rem, 4vw, 3.5rem); align-items: stretch; }
+  .body-cols > div { flex: 1; min-width: 0; }
+
+  p.item, li.item { font-size: clamp(0.95rem, 1.6vw, 1.25rem); line-height: 1.55; color: var(--ink-soft); }
+  strong { color: var(--ink); }
+
+  .card {
+    background: var(--paper-raised);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: clamp(1rem, 2.4vw, 1.7rem);
+    box-shadow: var(--shadow);
+  }
+  .card h3 {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: clamp(0.7rem, 1.15vw, 0.85rem);
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.7rem;
+  }
+  .card p, .card li { font-size: clamp(0.9rem, 1.5vw, 1.15rem); line-height: 1.55; color: var(--ink-soft); }
+  .card ul { padding-left: 1.2em; display: grid; gap: 0.45em; }
+
+  blockquote {
+    font-size: clamp(1.3rem, 2.7vw, 2.1rem);
+    line-height: 1.35;
+    font-style: italic;
+    max-width: 30ch;
+    text-wrap: balance;
+  }
+  .attrib {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: clamp(0.75rem, 1.2vw, 0.9rem);
+    color: var(--ink-faint);
+    margin-top: 1.2rem;
+    letter-spacing: 0.02em;
+  }
+
+  .redmark { position: relative; white-space: nowrap; }
+  .redmark svg {
+    position: absolute; left: -3%; bottom: -0.28em;
+    width: 106%; height: 0.5em;
+    overflow: visible; pointer-events: none;
+  }
+  .redmark svg path { stroke: var(--redpen); stroke-width: 3.2; fill: none; stroke-linecap: round; opacity: 0.85; }
+
+  table.map { border-collapse: collapse; width: 100%; }
+  table.map th, table.map td {
+    text-align: left;
+    padding: clamp(0.5rem, 1.4vh, 0.85rem) 1rem;
+    font-size: clamp(0.9rem, 1.6vw, 1.2rem);
+    border-bottom: 1px solid var(--rule);
+    line-height: 1.4;
+  }
+  table.map th {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: clamp(0.68rem, 1.1vw, 0.8rem);
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+    border-bottom: 2px solid var(--accent);
+  }
+  table.map td:first-child { color: var(--ink); }
+  table.map td:last-child { color: var(--ink-soft); }
+
+  .flow { display: flex; align-items: stretch; gap: 0.6rem; flex-wrap: wrap; }
+  .flow .step {
+    flex: 1; min-width: 8.5rem;
+    background: var(--paper-raised);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+    box-shadow: var(--shadow);
+  }
+  .flow .step.hot { border-color: var(--redpen); border-width: 1.5px; }
+  .flow .step .k {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); display: block; margin-bottom: 0.4rem;
+  }
+  .flow .step.hot .k { color: var(--redpen); }
+  .flow .step .v { font-size: clamp(0.85rem, 1.4vw, 1.05rem); line-height: 1.4; color: var(--ink-soft); }
+  .flow-sep { align-self: center; color: var(--ink-faint); font-size: 1.3rem; }
+
+  .stamp {
+    display: inline-block;
+    align-self: flex-start;
+    margin-top: 1.6rem;
+    margin-left: 0.4rem;
+    padding: 0.55em 1em;
+    border: 3px double var(--stamp);
+    border-radius: 4px;
+    color: var(--stamp);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-weight: 700;
+    font-size: clamp(0.8rem, 1.5vw, 1.1rem);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    transform: rotate(-3.5deg);
+    opacity: 0.9;
+  }
+
+  .statrow { display: flex; gap: 0.8rem; margin-top: 1.4rem; flex-wrap: wrap; }
+  .statrow .stat {
+    flex: 1; min-width: 10rem;
+    border-top: 2px solid var(--redpen);
+    padding: 0.7rem 0.2rem 0 0;
+  }
+  .statrow .n {
+    display: block;
+    font-size: clamp(1.6rem, 3.2vw, 2.5rem);
+    font-weight: 700;
+    color: var(--redpen);
+    font-variant-numeric: tabular-nums;
+  }
+  .statrow .d {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: clamp(0.72rem, 1.2vw, 0.9rem);
+    color: var(--ink-soft);
+    line-height: 1.4;
+  }
+  .axis { display: flex; align-items: center; gap: 1rem; margin: 1.6rem 0; }
+  .axis .pole {
+    flex: 0 0 auto; max-width: 17rem;
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px;
+    padding: 0.8rem 1rem; box-shadow: var(--shadow);
+  }
+  .axis .pole .k {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); display: block; margin-bottom: 0.3rem;
+  }
+  .axis .pole .v { font-size: clamp(0.85rem, 1.4vw, 1.05rem); font-style: italic; color: var(--ink-soft); line-height: 1.4; }
+  .axis .line { flex: 1; height: 2px; background: var(--rule); position: relative; min-width: 4rem; }
+  .axis .line::after {
+    content: "tasks move along this line, people don't";
+    position: absolute; top: -1.5em; left: 50%; transform: translateX(-50%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 0.68rem; letter-spacing: 0.08em; color: var(--ink-faint); white-space: nowrap;
+  }
+  .quizrow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; margin: 1.4rem 0; }
+  .quizrow .q {
+    background: var(--accent-soft);
+    border-radius: 6px;
+    padding: 0.7rem 0.4rem;
+    text-align: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-weight: 700;
+    font-size: clamp(0.85rem, 1.4vw, 1.05rem);
+    color: var(--accent);
+  }
+
+  .checklist { list-style: none; display: grid; gap: 0.65em; margin-top: 1.2rem; }
+  .checklist li {
+    font-size: clamp(1rem, 1.8vw, 1.35rem);
+    line-height: 1.45;
+    color: var(--ink-soft);
+    padding-left: 1.9em;
+    position: relative;
+  }
+  .checklist li::before {
+    content: "☐";
+    position: absolute; left: 0; top: -0.05em;
+    color: var(--accent);
+    font-size: 1.15em;
+  }
+
+  .foot {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.8rem clamp(2rem, 7vw, 6rem);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--rule);
+    background: var(--paper);
+    z-index: 5;
+  }
+  .foot .pos { font-variant-numeric: tabular-nums; }
+
+  .progress {
+    position: absolute; left: 0; bottom: 0; height: 3px;
+    background: var(--accent);
+    transition: width 0.25s ease;
+    z-index: 6;
+  }
+  @media (prefers-reduced-motion: reduce) { .progress { transition: none; } }
+
+  .notes {
+    position: absolute; inset: auto 0 0 0;
+    max-height: 46%;
+    overflow-y: auto;
+    background: var(--paper-raised);
+    border-top: 2px solid var(--accent);
+    padding: 1.2rem clamp(2rem, 7vw, 6rem) 3.4rem;
+    display: none;
+    z-index: 4;
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.12);
+  }
+  .notes.open { display: block; }
+  .notes h4 {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 0.6rem;
+  }
+  .notes p { font-size: 0.95rem; line-height: 1.6; color: var(--ink-soft); max-width: 75ch; margin-bottom: 0.6em; }
+
+  .hint {
+    position: absolute; top: 1rem; right: clamp(2rem, 7vw, 6rem);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 0.7rem; letter-spacing: 0.1em; color: var(--ink-faint);
+    z-index: 5;
+  }
+  a { color: var(--accent); }
+  .srcline { font-size: clamp(0.72rem, 1.1vw, 0.85rem); color: var(--ink-faint); line-height: 1.6; }
+  .navzone { position: absolute; top: 0; bottom: 3rem; width: 12%; z-index: 3; cursor: pointer; background: none; border: 0; padding: 0; appearance: none; }
+  .navzone:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+  .navzone.prev { left: 0; } .navzone.next { right: 0; }
+</style>
+
+<div class="deck" id="deck">
+
+<!-- 1 · TITLE -->
+<section class="slide" data-act="Cover">
+  <div class="eyebrow">A tech talk &middot; after Geoffrey Litt, AI Engineer 2026</div>
+  <h1>Understanding is the <span class="redmark">bottleneck<svg viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true"><path d="M2,7 Q30,3 55,6 T98,5"/></svg></span></h1>
+  <p class="lede" style="margin-top:1.6rem">What the college semester knows about coding with agents.</p>
+  <p class="lede" style="margin-top:1.4rem"><strong>An agent just landed a 50,000-line PR. Tests pass. Review approved. Who understands it?</strong></p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Open with the poll Litt ran at AI Engineer: raise your hand if you think humans still need to understand code. Then the hook: everything in the pipeline said yes, except a human mind. Credit: this talk builds on Geoffrey Litt (Notion), "Understanding is the new bottleneck", AI Engineer, July 2026, and extends it with the college parallel.</p>
+  </div>
+</section>
+
+<!-- 2 · VERIFY VS PARTICIPATE -->
+<section class="slide" data-act="Act I · The problem">
+  <div class="eyebrow">Act I &middot; The problem</div>
+  <h2>Two reasons to understand. Only one is being automated.</h2>
+  <div class="body-cols">
+    <div class="card">
+      <h3>Understand to verify</h3>
+      <ul>
+        <li>Is it correct? Matches spec, does not break prod, well architected.</li>
+        <li>All of it reduces to <strong>thumbs up or thumbs down</strong>.</li>
+        <li>Agents with good verification loops already do this, and they are improving.</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color: var(--accent); border-width:1.5px">
+      <h3>Understand to participate</h3>
+      <ul>
+        <li>You review, and <strong>you come away changed</strong>.</li>
+        <li>That understanding is what you carry into the next loop, and the next idea.</li>
+        <li>Rich mental structures you can recombine fast are what creative leaps are made of. <strong>Not delegable.</strong></li>
+      </ul>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Litt's central distinction. When people say "code review is the new bottleneck" they picture correctness checking, and that role for humans is genuinely shrinking, which is fine. The mistake is extending that to "so stop understanding". Participation, having the next idea, is the human part of the work and it requires understanding in your head, not in the agent's context window.</p>
+  </div>
+</section>
+
+<!-- 3 · COMPREHENSION DEBT -->
+<section class="slide" data-act="Act I · The problem">
+  <div class="eyebrow">Act I &middot; The problem</div>
+  <h2>Comprehension debt: it works until it doesn't</h2>
+  <p class="lede">Like technical debt, degraded understanding is free at first. You vibe-code, velocity is great, and then one day: <em>"wait, I have no idea what's going on"</em>. You can no longer participate.</p>
+  <div class="body-cols" style="margin-top:1.6rem">
+    <div class="card">
+      <h3>Cognitive debt</h3>
+      <p>Margaret Storey's term, echoed by Simon Willison: even if agent code is easy to understand, the humans involved may have simply lost the plot.</p>
+    </div>
+    <div class="card">
+      <h3>Comprehension debt</h3>
+      <p>cubic.dev's framing of the same failure: the real problem with AI coding is not the code quality, it is the shrinking share of the system anyone comprehends.</p>
+    </div>
+  </div>
+  <div class="statrow">
+    <div class="stat"><span class="n">+31%</span><span class="d">PRs merged with no review at all</span></div>
+    <div class="stat"><span class="n">+242%</span><span class="d">incidents per PR</span></div>
+    <div class="stat"><span class="n">6&times;</span><span class="d">bugs per developer vs 2025</span></div>
+  </div>
+  <p class="srcline" style="margin-top:0.6rem">Faros AI survey of 22,000 engineers, April 2026 &mdash; the debt is measured now, not hypothetical.</p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Sources: Margaret Storey's cognitive debt blog (cited on Litt's slide at 05:25), Simon Willison's post, and cubic.dev "The real problem with AI coding". The debt metaphor matters because it explains why nothing hurts today: the interest compounds silently and the bill arrives as an outage, a rewrite, or a team that cannot extend its own product. The Faros numbers are from Alex Volkov's Z/L Continuum talk (AI Engineer 2026): the same survey also found +861% code deletion per PR; Anthropic ships 8x more code per quarter and its status page "looks like a Christmas tree". Output does not mean stability.</p>
+  </div>
+</section>
+
+<!-- 4 · NAUR -->
+<section class="slide" data-act="Act I · The problem">
+  <div class="eyebrow">Act I &middot; The problem</div>
+  <blockquote>"The program is the theory in the programmers' heads. The code is only its shadow."</blockquote>
+  <p class="attrib">Peter Naur, Programming as Theory Building, 1985 (paraphrased)</p>
+  <p class="lede" style="margin-top:1.8rem">Agents generate the shadow at infinite speed, and build <strong>zero theory in your head</strong>. A real audit of a founder's app built entirely by prompting: a 7,000-line file, no logs, no rate limiting. It worked, until it didn't. Rebuilt from scratch.</p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Naur via Hak's talk "Is this the only skill left?". The audit anecdote is from the same talk: a Lovable-built product from a non-technical founder, every failure a systems-thinking failure. Naur's point predates AI by 40 years: a program you have no theory of is a program you cannot modify safely. AI made theory-free code cheap and abundant.</p>
+  </div>
+</section>
+
+<!-- 5 · GRADUATE PARADOX -->
+<section class="slide" data-act="Act II · The college parallel">
+  <div class="eyebrow">Act II &middot; The college parallel</div>
+  <h2>The graduate paradox</h2>
+  <p class="lede">No student reads the whole textbook. No student writes the discipline they study. Yet after the semester, society certifies them as <strong>having understood</strong>, and it mostly holds up.</p>
+  <p class="lede" style="margin-top:1.4rem">Because a degree never certified <em>coverage</em>. It certifies <strong>assessed understanding</strong>. Mastery was never "read everything", and it was never "wrote it yourself".</p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>The pivot slide: this is the talk's original frame. The audience objection to agent coding, "you didn't write it, so you can't own it", proves too much: by that logic no graduate owns their degree. Education solved the problem of certifying understanding of material you neither authored nor fully read. Engineering with agents is exactly that problem.</p>
+  </div>
+</section>
+
+<!-- 6 · MAPPING -->
+<section class="slide" data-act="Act II · The college parallel">
+  <div class="eyebrow">Act II &middot; The college parallel</div>
+  <h2>The teacher teaches. The agent codes. Same split.</h2>
+  <div style="overflow-x:auto">
+  <table class="map">
+    <tr><th>College</th><th>Agentic engineering</th></tr>
+    <tr><td>Teacher delivers the lecture</td><td>Agent produces the code</td></tr>
+    <tr><td>Attendance taken</td><td>PR merged</td></tr>
+    <tr><td>Attending &ne; learning</td><td>Merging &ne; understanding</td></tr>
+    <tr><td>Understanding is the student's job</td><td>Understanding is the engineer's job</td></tr>
+  </table>
+  </div>
+  <p class="lede" style="margin-top:1.4rem"><strong>A merged PR is an attended lecture.</strong> Nobody ever confused the two in school.</p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>The instructor was always better at the material than the student, and that never made the student's understanding optional. Same now: the agent knowing the code does not put the theory in your head. The responsibility for comprehension never moved; only the authorship did.</p>
+  </div>
+</section>
+
+<!-- 7 · WHAT COLLEGE HAS -->
+<section class="slide" data-act="Act II · The college parallel">
+  <div class="eyebrow">Act II &middot; The college parallel</div>
+  <h2>What college has that engineering lost</h2>
+  <div class="body-cols">
+    <div class="card">
+      <h3>The semester scaffold</h3>
+      <ul>
+        <li>Weekly quizzes and problem sets</li>
+        <li>Midterms, cross-questioning in class</li>
+        <li>Seminars where you restate the idea in your own words</li>
+        <li>The viva, where an examiner probes what you actually own</li>
+      </ul>
+      <p style="margin-top:0.8rem"><strong>Forced retrieval, repeated all term.</strong></p>
+    </div>
+    <div class="card" style="border-color: var(--redpen)">
+      <h3 style="color: var(--redpen)">The engineering non-scaffold</h3>
+      <ul>
+        <li>Merge on Friday</li>
+        <li>Forget by Monday</li>
+        <li>No retention loop exists anywhere in the SDLC</li>
+      </ul>
+    </div>
+  </div>
+  <p class="lede" style="margin-top:1.4rem">Even the lab shipping the most agent code admits it. Anthropic's recursive self-improvement essay: <em>"human code review has become a new bottleneck."</em></p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>This is the user-facing gap statement. Education never trusted a single exposure: it built an assessment scaffold across months. Software engineering has ceremonies for correctness (CI, review, staging) and none for comprehension. Engineers move on; nothing checks that any understanding was kept. The Anthropic RSI essay citation (via Volkov's Z/L talk) invokes Amdahl's law: 10x one stage of the pipeline and the un-accelerated stage, human comprehension, becomes the bottleneck. Nobody at Anthropic or OpenAI is removing the human; both are still hiring them.</p>
+  </div>
+</section>
+
+<!-- 8 · SCIENCE -->
+<section class="slide" data-act="Act II · The college parallel">
+  <div class="eyebrow">Act II &middot; The college parallel</div>
+  <h2>The learning science already exists</h2>
+  <div class="body-cols">
+    <div class="card">
+      <h3>Testing effect</h3>
+      <p>Retrieval practice beats re-reading. Being made to recall is what builds durable memory, a century of results.</p>
+    </div>
+    <div class="card">
+      <h3>Spaced repetition</h3>
+      <p>Reviews spaced over time keep knowledge alive. Quantum Country embeds the quizzes in the essay itself and keeps emailing them to you.</p>
+    </div>
+    <div class="card">
+      <h3>"Books don't work"</h3>
+      <p>Andy Matuschak: it is easy to read a book and not notice you understood nothing. Reading <em>feels</em> like understanding. Only retrieval tells the truth.</p>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Matuschak and Nielsen's Quantum Country is Litt's cited inspiration (slide at 10:58). The punchline for engineers: your feeling of having understood the agent's diff is exactly as unreliable as the feeling of having understood a textbook chapter. The fix is the same in both worlds, and it is 100 years old.</p>
+  </div>
+</section>
+
+<!-- 9 · TEXTBOOK -->
+<section class="slide" data-act="Act III · A semester system for engineers">
+  <div class="eyebrow">Act III &middot; A semester system for engineers &middot; 1 of 5</div>
+  <h2>The textbook: explain-diff</h2>
+  <p class="lede">Every agent change is a chance to be taught, not just shown. Litt's <code>explain-diff</code> skill writes the PR as a lesson:</p>
+  <div class="flow" style="margin-top:1.4rem">
+    <div class="step"><span class="k">1 &middot; Background</span><span class="v">How the system works, before what changed</span></div>
+    <div class="step"><span class="k">2 &middot; Intuition</span><span class="v">The essence, with examples, before any code</span></div>
+    <div class="step"><span class="k">3 &middot; Interactive figures</span><span class="v">Things to fiddle with, used tastefully</span></div>
+    <div class="step"><span class="k">4 &middot; Literate diff</span><span class="v">Prose before each file, in the right order</span></div>
+  </div>
+  <p class="lede" style="margin-top:1.4rem"><em>"I print these out and read them at the coffee shop. It's like reading a textbook about this PR."</em></p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>The skill is public: gist.github.com/geoffreylitt/a29df1b5f9865506e8952488eac3d524 (HTML and Notion variants), also shipped in the Notion Claude Code plugin as explain-diff. The generative question behind it: if a team spent a year building a personalized curriculum for this one change, what would it look like? Background-first and intuition-before-details is just good math teaching applied to diffs.</p>
+  </div>
+</section>
+
+<!-- 10 · EXAM -->
+<section class="slide" data-act="Act III · A semester system for engineers">
+  <div class="eyebrow">Act III &middot; A semester system for engineers &middot; 2 of 5</div>
+  <h2>The exam: a quiz gate on every PR</h2>
+  <div class="quizrow" aria-hidden="true">
+    <div class="q">Q1</div><div class="q">Q2</div><div class="q">Q3</div><div class="q">Q4</div><div class="q">Q5</div>
+  </div>
+  <p class="lede">Five questions, medium difficulty, at the bottom of every explainer. The rule: <strong>no code goes to teammates for review unless the author passes the quiz</strong> on what their agents wrote.</p>
+  <p class="lede" style="margin-top:1.2rem"><em>"The illusion of false understanding shatters fast."</em> It is a <strong>speed regulator</strong>: moving at the speed of understanding, not just the speed of correctness.</p>
+  <p class="lede" style="margin-top:1rem">And passing CI was never the bar: <em>"green text in GitHub ain't going to cut it."</em> &mdash; Dex Horthy, HumanLayer</p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Origin story from the talk: Litt sent a PR he believed he understood; a coworker's most basic question exposed that he hadn't. The quiz makes that moment happen in private, before the PR, every time. Quote is from his own thread about the trick. Emphasize: it sounds silly, and it catches you constantly. Dex Horthy's line is from "How to Ship Complex Features 10x Faster" (AI Tinkerers 2026): automated test passing is insufficient justification for deployment; his whole methodology keeps human checkpoints per phase and warns "do not outsource the thinking".</p>
+  </div>
+</section>
+
+<!-- 11 · LAB -->
+<section class="slide" data-act="Act III · A semester system for engineers">
+  <div class="eyebrow">Act III &middot; A semester system for engineers &middot; 3 of 5</div>
+  <h2>The lab: microworlds</h2>
+  <p class="lede">Papert's Mathland: kids learn French by living in France, so build a world where you learn the system by living in it.</p>
+  <div class="body-cols" style="margin-top:1.4rem">
+    <div class="card">
+      <h3>A debugger as a place</h3>
+      <p>Claude built an ephemeral timeline debugger for a Prolog interpreter: scrub through every step, watch all the state. Bugs got fixed, and a <em>feel for the machine</em> came free.</p>
+    </div>
+    <div class="card">
+      <h3>A migration as a game</h3>
+      <p>Untrusted migration script? Rebuilt as a control panel: old site left, new site right, click Next and watch files move. Iterative understanding without the manual pain.</p>
+    </div>
+  </div>
+  <p class="lede" style="margin-top:1.4rem"><strong>Agents can write code to help us understand code.</strong> The software isn't the product. You are.</p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Labs exist in college because lectures alone never taught anyone chemistry; doing did. Same principle. The peripheral vision point matters: when an agent just fixes the bug, you lose the incidental learning that living inside the system gives you. Papert: the point isn't the robot turtle, it's the kids who are changed.</p>
+  </div>
+</section>
+
+<!-- 12 · SEMINAR -->
+<section class="slide" data-act="Act III · A semester system for engineers">
+  <div class="eyebrow">Act III &middot; A semester system for engineers &middot; 4 of 5</div>
+  <h2>The seminar: shared spaces</h2>
+  <p class="lede">Understanding alone is not enough. Teams jam on <strong>shared understanding</strong>: common names for parts of the system, plans everyone can question.</p>
+  <div class="body-cols" style="margin-top:1.4rem">
+    <div class="card">
+      <h3>Multiplayer threads</h3>
+      <p>Humans and agents in one conversation, not everyone whispering to a private copilot. Like moving from DMs to a channel: you see each other's questions, and understand together.</p>
+    </div>
+    <div class="card">
+      <h3>Commentable plans</h3>
+      <p>The agent's plan lives in a shared doc. Anyone can anchor a comment to a paragraph and argue with it before it becomes code.</p>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>The seminar analogy: college never assessed you only alone, it made you restate ideas in front of peers, and the restating is where half the learning happens. Litt's team at Notion builds much of its code inside shared docs for exactly this reason; coding agents now live in the doc too.</p>
+  </div>
+</section>
+
+<!-- 13 · VIVA (original) -->
+<section class="slide" data-act="Act III · A semester system for engineers">
+  <div class="eyebrow">Act III &middot; A semester system for engineers &middot; 5 of 5 &middot; the missing piece</div>
+  <h2>The viva: a review agent that examines <em>you</em></h2>
+  <p class="lede">Litt quizzes himself. Go one step further: <strong>flip the direction of code review</strong>. Before approving, the review agent cross-questions the human.</p>
+  <div class="flow" style="margin-top:1.4rem">
+    <div class="step"><span class="k">PR opened</span><span class="v">Agent-written change lands for review</span></div>
+    <div class="flow-sep" aria-hidden="true">&rsaquo;</div>
+    <div class="step"><span class="k">Explainer</span><span class="v">Review agent writes the lesson</span></div>
+    <div class="flow-sep" aria-hidden="true">&rsaquo;</div>
+    <div class="step hot"><span class="k">Examination</span><span class="v">Agent asks the human 3&ndash;5 targeted questions</span></div>
+    <div class="flow-sep" aria-hidden="true">&rsaquo;</div>
+    <div class="step"><span class="k">Dual gate</span><span class="v">Code passes checks <em>and</em> human passes viva</span></div>
+    <div class="flow-sep" aria-hidden="true">&rsaquo;</div>
+    <div class="step"><span class="k">Merge</span><span class="v">Approval certifies code and comprehension</span></div>
+  </div>
+  <div class="stamp">Approved &middot; comprehension verified</div>
+  <p class="lede" style="margin-top:1.4rem">The industry already knows the builder must not grade itself: <em>"If I came up with an exam, then took the exam, and scored myself&hellip; not really productive."</em> &mdash; Alex Volkov, on separating the coding agent from the verifying agent. Same principle, one seat over: <strong>the examiner also examines the human.</strong></p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>The talk's original contribution. A viva examiner never wrote your thesis; their job is to verify you own it. Same here: the review agent already read the diff better than anyone, so let it examine the human. Self-quizzing depends on discipline; a gate in the merge flow makes comprehension a team invariant instead of a personal virtue. Sketch: a /viva command or a required check that opens a short Q&A before the approve button unlocks. Volkov's exam metaphor (Z/L Continuum talk) validates the frame from the agent side: separate builder from grader. Scope honestly: per Volkov's routing table, reserve the full viva for auth, money movement, permissions, and irreversible-data changes; lighter proof for the rest. vaibcode's order-n planning shows the same two human hotspots survive max-agentic workflows: selecting between design choices, and meticulously reading test cases and outputs.</p>
+  </div>
+</section>
+
+<!-- 14 · Z/L CONTINUUM -->
+<section class="slide" data-act="Act IV · Objections">
+  <div class="eyebrow">Act IV &middot; Objections &middot; the realist's map</div>
+  <h2>The Z/L continuum: route by task, not by ideology</h2>
+  <div class="axis">
+    <div class="pole"><span class="k">Zechner pole</span><span class="v">"Critical code: read every line."</span></div>
+    <div class="line" aria-hidden="true"></div>
+    <div class="pole"><span class="k">Lopopolo pole</span><span class="v">"Code is free. Don't get hung up on it."</span></div>
+  </div>
+  <p class="lede">Alex Volkov's synthesis of the same conference's two loudest talks: both are right, <strong>about different tasks</strong>. The question was never "should I read code?" It is <strong>"what proof does this specific change need?"</strong></p>
+  <p class="item" style="margin-top:1rem"><strong>The routing table:</strong> read every line of auth, money, permissions, irreversible data &middot; decompose into atomic reviewable PRs (agents are great at this) &middot; verify with traces, evals, shadow mode &middot; <strong>separate the builder from the grader</strong> &middot; engineer rails, observability, rollback.</p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>From Volkov's "Should AI Engineers Still Read Code in 2026?" (AI Engineer 2026). His mea culpa: he first framed the continuum as types of people; it's actually types of tasks — the same engineer YOLOs a non-critical change and line-reads a critical one. This slide pre-empts the "a viva on every PR is too slow" objection: the semester system routes like everything else. Full viva for the critical path; a passing quiz for the middle; let the trivial rip. Capability drift moves the review layer up (outputs, then task direction, then loops) but never removes the requirement of proof. Loops warning from the same talk: an agent that grades its own work didn't remove review, it hid it — Addy Osmani: relying entirely on automated loops means "digging myself into a deeper hole".</p>
+  </div>
+</section>
+
+<!-- 15 · OBJECTIONS -->
+<section class="slide" data-act="Act IV · Objections">
+  <div class="eyebrow">Act IV &middot; Objections</div>
+  <h2>"Agents will get smarter. Get out of the loop."</h2>
+  <div class="body-cols">
+    <div class="card">
+      <h3>The skill that remains</h3>
+      <p>Systems thinking: where state lives, where feedback lives, what breaks if you delete this. LLMs are probabilistic collaborators, not deterministic compilers; judgment doesn't retire. (Hak)</p>
+    </div>
+    <div class="card">
+      <h3>Even max autonomy needs it</h3>
+      <p>Harness engineering, running agents with humans fully out of the execution loop, still has humans steering with understanding: plans, guardrails, docs as infrastructure. (Lopopolo, OpenAI)</p>
+    </div>
+    <div class="card">
+      <h3>The market repriced it</h3>
+      <p>The junior pipeline broke after 2023, then hiring swung back hard in 2026. The engineers who survive stage-5 autonomy are the ones who still understand. (Angie Jones, Block)</p>
+    </div>
+  </div>
+  <p class="lede" style="margin-top:1.4rem"><em>"It's never felt so tempting to stop looking at code at all. But don't do this in production."</em> &mdash; Andrej Karpathy</p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Steelman then answer. Concede everything about correctness: yes, agents verify better every quarter. The three responses attack the "so stop understanding" conclusion from different angles: capability (systems thinking is the differentiator), practice (the most autonomous shops on earth still run on human understanding), and economics (Harvard's 62M-worker study showed seniority-biased hiring after GenAI, then IBM, Intuit, Salesforce all resumed junior hiring; the market discovered it cannot grow understanding without the pipeline). Jones's layoffs coda is the sober note to end the section on. Karpathy names the anxiety from both ends in one sentence; Volkov joked the whole conference talk could have been that tweet.</p>
+  </div>
+</section>
+
+<!-- 15 · CLOSE -->
+<section class="slide" data-act="Close">
+  <div class="eyebrow">Close</div>
+  <h2>The semester never ends</h2>
+  <p class="lede">Alan Kay, fifty years ago: kids modifying a game's code as they play, to learn physics. <strong>The point of computers was to level up humans.</strong> Build your own degree program:</p>
+  <ul class="checklist">
+    <li><strong>Textbook</strong>: explainer docs for every agent change</li>
+    <li><strong>Exam</strong>: a quiz you must pass before sending the PR</li>
+    <li><strong>Lab</strong>: microworlds to inhabit the system</li>
+    <li><strong>Seminar</strong>: shared spaces where the team understands together</li>
+    <li><strong>Viva</strong>: a review agent that examines the human before merge</li>
+  </ul>
+  <p class="lede" style="margin-top:1.6rem"><em>"Not every line in 2026 needs your eyes. Every system still needs your judgment."</em> &mdash; Alex Volkov</p>
+  <p class="lede" style="margin-top:1rem"><strong>Homework, due now: quiz yourself on the last PR you merged.</strong></p>
+  <p class="srcline" style="margin-top:1.6rem">Sources: G. Litt, Understanding is the new bottleneck (AI Engineer 2026) &middot; A. Volkov, The Z/L Continuum (AI Engineer 2026) &middot; P. Naur, Programming as Theory Building (1985) &middot; A. Matuschak &amp; M. Nielsen, Quantum Country &middot; S. Papert, Mindstorms &middot; M. Storey, cognitive debt &middot; cubic.dev &middot; Faros AI engineering survey (2026) &middot; Hak, Is this the only skill left? &middot; R. Lopopolo, Harness Engineering (OpenAI) &middot; D. Horthy (HumanLayer) &middot; A. Jones (Block) &middot; A. Karpathy &middot; A. Kay, A Personal Computer for Children of All Ages (1972)</p>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>End on Kay's meme from Litt's closing: "wait, the point of computers is understanding? Always has been." The optimistic reading: with the right tools we can be more deeply in the loop than ever, not less. The homework line is the CTA; make the room actually do it. Deck link and explain-diff gist QR go here if presenting live.</p>
+  </div>
+</section>
+
+  <button class="navzone prev" aria-label="Previous slide"></button>
+  <button class="navzone next" aria-label="Next slide"></button>
+  <div class="hint sans">&larr; &rarr; navigate &middot; N notes</div>
+  <div class="foot sans">
+    <span>CS-2026 &middot; Understanding is the bottleneck</span>
+    <span class="pos" id="pos">Page 1 of 15</span>
+  </div>
+  <div class="progress" id="progress"></div>
+  <aside class="notes sans" id="notes" aria-live="polite"></aside>
+</div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var pos = document.getElementById('pos');
+  var progress = document.getElementById('progress');
+  var notesPanel = document.getElementById('notes');
+  var notesOpen = false;
+  var i = 0;
+
+  var fromHash = parseInt((location.hash || '').replace('#', ''), 10);
+  if (fromHash >= 1 && fromHash <= slides.length) i = fromHash - 1;
+
+  function render() {
+    slides.forEach(function (s, k) { s.classList.toggle('active', k === i); });
+    pos.textContent = 'Page ' + (i + 1) + ' of ' + slides.length;
+    progress.style.width = (((i + 1) / slides.length) * 100) + '%';
+    location.replace('#' + (i + 1));
+    var src = slides[i].querySelector('.notes-src');
+    notesPanel.innerHTML = src ? src.innerHTML : '';
+    notesPanel.classList.toggle('open', notesOpen && !!src);
+  }
+
+  function go(d) { i = Math.min(slides.length - 1, Math.max(0, i + d)); render(); }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); go(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
+    else if (e.key === 'Home') { i = 0; render(); }
+    else if (e.key === 'End') { i = slides.length - 1; render(); }
+    else if (e.key === 'n' || e.key === 'N') { notesOpen = !notesOpen; render(); }
+  });
+  document.querySelector('.navzone.prev').addEventListener('click', function () { go(-1); });
+  document.querySelector('.navzone.next').addEventListener('click', function () { go(1); });
+  window.addEventListener('hashchange', function () {
+    var h = parseInt(location.hash.replace('#', ''), 10);
+    if (h >= 1 && h <= slides.length && h - 1 !== i) { i = h - 1; render(); }
+  });
+  render();
+})();
+</script>
+<style>
+  /* speaker-note sources stay hidden on the slide itself */
+  .notes-src { display: none; }
+</style>

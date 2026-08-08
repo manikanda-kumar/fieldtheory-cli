@@ -1,0 +1,18 @@
+{
+  "harness": "codex",
+  "task": "implement",
+  "mode": null,
+  "model": "gpt-5.6-terra",
+  "write": true,
+  "complexity": null,
+  "routing_source": "explicit-harness",
+  "rationale": "User explicitly selected codex implement task recommends claude, codex, grok, droid.",
+  "prompt_strategy": "wrapped",
+  "fallbacks": [],
+  "writeIsolation": "none",
+  "lockRequired": false,
+  "budget": {
+    "mode": "default",
+    "fallbackReason": null
+  }
+}

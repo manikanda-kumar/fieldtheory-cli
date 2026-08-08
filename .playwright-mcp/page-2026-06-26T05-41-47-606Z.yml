@@ -1,0 +1,256 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - link "birdclaw docs home" [ref=e5] [cursor=pointer]:
+        - /url: ./
+        - generic [ref=e7]:
+          - strong [ref=e8]: birdclaw
+          - generic [ref=e9]: Local Twitter memory
+      - button "Toggle dark mode" [ref=e10] [cursor=pointer]:
+        - img [ref=e11]
+        - img [ref=e13]
+    - generic [ref=e20]:
+      - generic [ref=e21]: Search
+      - searchbox "Search" [ref=e22]
+    - navigation [ref=e23]:
+      - generic [ref=e24]:
+        - heading "Start" [level=2] [ref=e25]
+        - link "Overview" [ref=e26] [cursor=pointer]:
+          - /url: ./
+        - link "Install" [ref=e27] [cursor=pointer]:
+          - /url: install.html
+        - link "Sign in" [ref=e28] [cursor=pointer]:
+          - /url: auth.html
+        - link "Quickstart" [ref=e29] [cursor=pointer]:
+          - /url: quickstart.html
+        - link "Configuration" [ref=e30] [cursor=pointer]:
+          - /url: configuration.html
+      - generic [ref=e31]:
+        - heading "Archive & Sync" [level=2] [ref=e32]
+        - link "Archive Import" [ref=e33] [cursor=pointer]:
+          - /url: archive.html
+        - link "Sync" [ref=e34] [cursor=pointer]:
+          - /url: sync.html
+        - link "Media" [ref=e35] [cursor=pointer]:
+          - /url: media.html
+        - link "Backup" [ref=e36] [cursor=pointer]:
+          - /url: backup.html
+        - link "Jobs" [ref=e37] [cursor=pointer]:
+          - /url: jobs.html
+      - generic [ref=e38]:
+        - heading "Reading & Triage" [level=2] [ref=e39]
+        - link "Search" [ref=e40] [cursor=pointer]:
+          - /url: search.html
+        - link "Mentions" [ref=e41] [cursor=pointer]:
+          - /url: mentions.html
+        - link "DMs" [ref=e42] [cursor=pointer]:
+          - /url: dms.html
+        - link "Inbox" [ref=e43] [cursor=pointer]:
+          - /url: inbox.html
+        - link "Research" [ref=e44] [cursor=pointer]:
+          - /url: research.html
+      - generic [ref=e45]:
+        - heading "Acting" [level=2] [ref=e46]
+        - link "Compose & Reply" [ref=e47] [cursor=pointer]:
+          - /url: compose.html
+        - link "Moderation" [ref=e48] [cursor=pointer]:
+          - /url: moderation.html
+      - generic [ref=e49]:
+        - heading "Reference" [level=2] [ref=e50]
+        - link "CLI Spec" [ref=e51] [cursor=pointer]:
+          - /url: cli.html
+        - link "Data And Architecture" [ref=e52] [cursor=pointer]:
+          - /url: data-architecture.html
+        - link "birdclaw Spec" [ref=e53] [cursor=pointer]:
+          - /url: spec.html
+  - main [ref=e54]:
+    - generic [ref=e55]:
+      - img
+      - paragraph [ref=e56]: Local-first · CLI + Web · SQLite
+      - heading "Your Twitter, your bird." [level=1] [ref=e57]
+      - paragraph [ref=e58]: "birdclaw is a local-first Twitter workspace: archive import, cached live reads, focused triage, and reply flows in one local web app + CLI."
+      - generic [ref=e59]:
+        - link "Quickstart" [ref=e60] [cursor=pointer]:
+          - /url: quickstart.html
+        - link "GitHub" [ref=e61] [cursor=pointer]:
+          - /url: https://github.com/steipete/birdclaw
+        - generic "Install with Homebrew" [ref=e62]:
+          - generic [ref=e63]: $
+          - code [ref=e64]: brew install steipete/tap/birdclaw
+          - button "Copy" [ref=e65] [cursor=pointer]
+      - generic "Things birdclaw stores locally" [ref=e66]:
+        - generic [ref=e67]: Tweets
+        - generic [ref=e68]: DMs
+        - generic [ref=e69]: Likes
+        - generic [ref=e70]: Bookmarks
+        - generic [ref=e71]: Mentions
+        - generic [ref=e72]: Inbox
+        - generic [ref=e73]: Blocks
+        - generic [ref=e74]: Mutes
+        - generic [ref=e75]: Graph
+      - paragraph [ref=e76]:
+        - link "Other install options →" [ref=e77] [cursor=pointer]:
+          - /url: install.html
+    - article [ref=e79]:
+      - heading "Anchor link Try it" [level=2] [ref=e80]:
+        - link "Anchor link" [ref=e81] [cursor=pointer]:
+          - /url: "#try-it"
+          - text: "#"
+        - text: Try it
+      - paragraph [ref=e82]:
+        - text: After
+        - link "installing" [ref=e83] [cursor=pointer]:
+          - /url: install.html
+        - text: and running
+        - link "birdclaw init" [ref=e84] [cursor=pointer]:
+          - /url: quickstart.html
+          - code [ref=e85]: birdclaw init
+        - text: ", every workflow is a one-liner."
+      - generic [ref=e86]:
+        - code [ref=e87]: "# Find and import your Twitter archive (auto-discovered on macOS). birdclaw archive find --json birdclaw import archive --json birdclaw import archive ~/Downloads/twitter-archive.zip --select likes,bookmarks --json # Pull in mentions, likes, bookmarks, and the home timeline. birdclaw sync timeline --limit 100 --refresh --json birdclaw sync bookmarks --mode auto --all --json # Search every tweet you've ever liked, locally, with FTS5. birdclaw search tweets \"local-first\" --json birdclaw search tweets --bookmarked --hide-low-quality --limit 100 --json # Triage with AI ranking and reply from the CLI. birdclaw inbox --score --hide-low-signal --limit 8 --json birdclaw compose reply 1891234567890 \"On it.\" # Stream a local \"what happened\" digest. birdclaw today birdclaw today --language zh-CN birdclaw digest week --json"
+        - button "Copy" [ref=e88] [cursor=pointer]
+      - paragraph [ref=e89]:
+        - text: Stable
+        - code [ref=e90]: "--json"
+        - text: envelopes go to stdout, progress and warnings to stderr — pipes stay parseable.
+      - heading "Anchor link What birdclaw does" [level=2] [ref=e91]:
+        - link "Anchor link" [ref=e92] [cursor=pointer]:
+          - /url: "#what-birdclaw-does"
+          - text: "#"
+        - text: What birdclaw does
+      - list [ref=e93]:
+        - listitem [ref=e94]:
+          - strong [ref=e95]: One local SQLite database
+          - text: for tweets, DMs, likes, bookmarks, mentions, follows, blocks, and mutes — multi-account, FTS5-indexed.
+        - listitem [ref=e96]:
+          - strong [ref=e97]: Archive-first, live-aware.
+          - text: Import a Twitter archive to establish account identity, then selectively re-import stale slices with
+          - code [ref=e98]: "--select"
+          - text: or refresh through live transports.
+        - listitem [ref=e99]:
+          - strong [ref=e100]: Cached live reads
+          - text: through
+          - link "xurl" [ref=e101] [cursor=pointer]:
+            - /url: https://github.com/xdevplatform/xurl
+            - code [ref=e102]: xurl
+          - text: and
+          - link "bird" [ref=e103] [cursor=pointer]:
+            - /url: https://github.com/steipete/bird
+            - code [ref=e104]: bird
+          - text: ", so repeated reads do not keep spending the API budget."
+        - listitem [ref=e105]:
+          - strong [ref=e106]: Local web app
+          - text: for
+          - code [ref=e107]: What happened
+          - text: ","
+          - code [ref=e108]: Home
+          - text: ","
+          - code [ref=e109]: Mentions
+          - text: ","
+          - code [ref=e110]: Likes
+          - text: ","
+          - code [ref=e111]: Bookmarks
+          - text: ","
+          - code [ref=e112]: DMs
+          - text: ","
+          - code [ref=e113]: Inbox
+          - text: ", and"
+          - code [ref=e114]: Blocks
+          - text: — light/dark/system theme, focused timeline lane, no dashboard chrome.
+        - listitem [ref=e115]:
+          - strong [ref=e116]: AI-ranked inbox
+          - text: (OpenAI) for low-signal filtering on mentions and DMs.
+        - listitem [ref=e117]:
+          - strong [ref=e118]: Streaming AI digest
+          - text: (OpenAI Responses API) for today, 24h, yesterday, or week, with DMs excluded unless explicitly enabled.
+        - listitem [ref=e119]:
+          - strong [ref=e120]: Account-scoped moderation
+          - text: with bulk blocklist import and a cookie-backed fallback when OAuth2 block writes get rejected.
+        - listitem [ref=e121]:
+          - strong [ref=e122]: Git-friendly text backups
+          - text: with yearly tweet shards and per-conversation DM shards — push the local SQLite truth into a private Git repo.
+      - heading "Anchor link Pick your path" [level=2] [ref=e123]:
+        - link "Anchor link" [ref=e124] [cursor=pointer]:
+          - /url: "#pick-your-path"
+          - text: "#"
+        - text: Pick your path
+      - list [ref=e125]:
+        - listitem [ref=e126]:
+          - strong [ref=e127]: First time using birdclaw.
+          - link "Install" [ref=e128] [cursor=pointer]:
+            - /url: install.html
+          - text: →
+          - link "Quickstart" [ref=e129] [cursor=pointer]:
+            - /url: quickstart.html
+          - text: covers archive-first account setup, live transports, and the local web app.
+        - listitem [ref=e130]:
+          - strong [ref=e131]: Have a Twitter archive ZIP.
+          - link "Archive import" [ref=e132] [cursor=pointer]:
+            - /url: archive.html
+          - text: walks through autodiscovery, selected re-imports, and idempotent re-runs.
+        - listitem [ref=e133]:
+          - strong [ref=e134]: Already initialized, want fresh live data.
+          - link "Sync" [ref=e135] [cursor=pointer]:
+            - /url: sync.html
+          - text: covers likes, bookmarks, timeline, mention threads, and rate-limit-aware resumable runs.
+        - listitem [ref=e136]:
+          - strong [ref=e137]: Triaging mentions or DMs.
+          - link "Search" [ref=e138] [cursor=pointer]:
+            - /url: search.html
+          - text: ","
+          - link "Mentions" [ref=e139] [cursor=pointer]:
+            - /url: mentions.html
+          - text: ","
+          - link "DMs" [ref=e140] [cursor=pointer]:
+            - /url: dms.html
+          - text: ", and"
+          - link "Inbox" [ref=e141] [cursor=pointer]:
+            - /url: inbox.html
+          - text: .
+        - listitem [ref=e142]:
+          - strong [ref=e143]: Exploring your network.
+          - link "Network Map" [ref=e144] [cursor=pointer]:
+            - /url: network-map.html
+          - text: plots current followers/following by profile location.
+        - listitem [ref=e145]:
+          - strong [ref=e146]: Maintaining a blocklist.
+          - link "Moderation" [ref=e147] [cursor=pointer]:
+            - /url: moderation.html
+          - text: covers blocks, mutes, ban/unban, and bulk imports.
+        - listitem [ref=e148]:
+          - strong [ref=e149]: Caching tweet media locally.
+          - link "Media" [ref=e150] [cursor=pointer]:
+            - /url: media.html
+          - text: covers
+          - code [ref=e151]: media fetch
+          - text: for images, video, and GIFs, plus archive-byte reuse.
+        - listitem [ref=e152]:
+          - strong [ref=e153]: Backing up to Git.
+          - link "Backup" [ref=e154] [cursor=pointer]:
+            - /url: backup.html
+          - text: for deterministic JSONL shards and
+          - code [ref=e155]: backup sync
+          - text: round-trips.
+        - listitem [ref=e156]:
+          - strong [ref=e157]: Looking up a flag.
+          - text: The
+          - link "CLI reference" [ref=e158] [cursor=pointer]:
+            - /url: cli.html
+          - text: lists every subcommand and option.
+      - heading "Anchor link Project" [level=2] [ref=e159]:
+        - link "Anchor link" [ref=e160] [cursor=pointer]:
+          - /url: "#project"
+          - text: "#"
+        - text: Project
+      - paragraph [ref=e161]: "Active development. Status: real and usable, not finished. Schema churn, transport gaps, and rough edges are expected while the core settles."
+      - paragraph [ref=e162]:
+        - text: The
+        - link "changelog" [ref=e163] [cursor=pointer]:
+          - /url: https://github.com/steipete/birdclaw/blob/main/CHANGELOG.md
+        - text: tracks what shipped recently. Goals and non-goals live in the
+        - link "spec" [ref=e164] [cursor=pointer]:
+          - /url: spec.html
+        - text: . Released under the
+        - link "MIT license" [ref=e165] [cursor=pointer]:
+          - /url: https://github.com/steipete/birdclaw/blob/main/LICENSE
+        - text: . Not affiliated with X Corp.

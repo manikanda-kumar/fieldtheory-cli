@@ -1,0 +1,184 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - paragraph [ref=e5]: FieldTheory digest preview
+      - heading "X List Tweets" [level=1] [ref=e6]
+      - generic [ref=e7]:
+        - generic [ref=e8]: List 1979812953135497678
+        - generic [ref=e9]: Fetched 2026-07-10T07:00:56.961Z
+        - generic [ref=e10]: 4 records
+    - navigation "Digest summary" [ref=e11]:
+      - link "4 List tweets" [ref=e12] [cursor=pointer]:
+        - /url: "#list-tweets"
+        - generic [ref=e13]: "4"
+        - generic [ref=e14]: List tweets
+      - link "0 Context" [ref=e15] [cursor=pointer]:
+        - /url: "#conversation-context"
+        - generic [ref=e16]: "0"
+        - generic [ref=e17]: Context
+      - link "0 With media" [ref=e18] [cursor=pointer]:
+        - /url: "#list-tweets"
+        - generic [ref=e19]: "0"
+        - generic [ref=e20]: With media
+      - link "0 Quoted" [ref=e21] [cursor=pointer]:
+        - /url: "#list-tweets"
+        - generic [ref=e22]: "0"
+        - generic [ref=e23]: Quoted
+  - generic [ref=e24]:
+    - navigation "Sections" [ref=e25]:
+      - link "List tweets" [ref=e26] [cursor=pointer]:
+        - /url: "#list-tweets"
+      - link "Conversation context" [ref=e27] [cursor=pointer]:
+        - /url: "#conversation-context"
+    - generic [ref=e28]:
+      - toolbar "Sort tweets" [ref=e29]:
+        - generic [ref=e30]: Sort by
+        - button "Reposts" [ref=e31] [cursor=pointer]
+        - button "Likes" [ref=e32] [cursor=pointer]
+        - button "Replies" [ref=e33] [cursor=pointer]
+        - button "Quotes" [ref=e34] [cursor=pointer]
+        - button "Views" [ref=e35] [cursor=pointer]
+        - button "Recent" [ref=e36] [cursor=pointer]
+        - button "Toggle sort direction" [ref=e37] [cursor=pointer]: ↓ High to low
+      - toolbar "Filter by link type" [ref=e38]:
+        - generic [ref=e39]: Links
+        - button "All" [ref=e40] [cursor=pointer]
+        - button "X 4" [ref=e41] [cursor=pointer]
+      - generic [ref=e42]:
+        - heading "List tweets 4" [level=2] [ref=e43]
+        - generic [ref=e44]:
+          - article [ref=e45]:
+            - generic [ref=e46]:
+              - generic [ref=e47]:
+                - generic [ref=e48]: Jaya Gupta · @JayaGup10
+                - time [ref=e49]: Fri Jul 10 07:00:11 +0000 2026
+              - generic [ref=e50]: List tweet
+            - paragraph [ref=e51]: "RT @JayaGup10: x.com/i/article/2075…"
+            - link "X x.com /i/article/2075070857827819520" [ref=e53] [cursor=pointer]:
+              - /url: http://x.com/i/article/2075070857827819520
+              - generic [ref=e54]:
+                - generic [ref=e55]:
+                  - generic [ref=e56]: X
+                  - generic [ref=e57]: x.com
+                - generic [ref=e58]: /i/article/2075070857827819520
+            - generic [ref=e59]:
+              - generic [ref=e60]:
+                - generic [ref=e61]:
+                  - generic [ref=e62]: "0"
+                  - text: Likes
+                - generic [ref=e63]:
+                  - generic [ref=e64]: "67"
+                  - text: Reposts
+                - generic [ref=e65]:
+                  - generic [ref=e66]: "0"
+                  - text: Replies
+                - generic [ref=e67]:
+                  - generic [ref=e68]: "0"
+                  - text: Quotes
+                - generic [ref=e69]:
+                  - generic [ref=e70]: n/a
+                  - text: Views
+              - link "Open on X" [ref=e71] [cursor=pointer]:
+                - /url: https://x.com/JayaGup10/status/2075475154084536508
+          - article [ref=e72]:
+            - generic [ref=e73]:
+              - generic [ref=e74]:
+                - generic [ref=e75]: sunil pai · @threepointone
+                - time [ref=e76]: Fri Jul 10 05:17:57 +0000 2026
+              - generic [ref=e77]: List tweet
+            - paragraph [ref=e78]: "RT @tldraw: x.com/i/article/2075…"
+            - link "X x.com /i/article/2075328409081663488" [ref=e80] [cursor=pointer]:
+              - /url: http://x.com/i/article/2075328409081663488
+              - generic [ref=e81]:
+                - generic [ref=e82]:
+                  - generic [ref=e83]: X
+                  - generic [ref=e84]: x.com
+                - generic [ref=e85]: /i/article/2075328409081663488
+            - generic [ref=e86]:
+              - generic [ref=e87]:
+                - generic [ref=e88]:
+                  - generic [ref=e89]: "0"
+                  - text: Likes
+                - generic [ref=e90]:
+                  - generic [ref=e91]: "29"
+                  - text: Reposts
+                - generic [ref=e92]:
+                  - generic [ref=e93]: "0"
+                  - text: Replies
+                - generic [ref=e94]:
+                  - generic [ref=e95]: "0"
+                  - text: Quotes
+                - generic [ref=e96]:
+                  - generic [ref=e97]: "117"
+                  - text: Views
+              - link "Open on X" [ref=e98] [cursor=pointer]:
+                - /url: https://x.com/threepointone/status/2075449425162321931
+          - article [ref=e99]:
+            - generic [ref=e100]:
+              - generic [ref=e101]:
+                - generic [ref=e102]: Ashpreet Bedi · @ashpreetbedi
+                - time [ref=e103]: Thu Jul 09 22:14:53 +0000 2026
+              - generic [ref=e104]: List tweet
+            - paragraph [ref=e105]: x.com/i/article/2075…
+            - link "X x.com /i/article/2075340731154067457" [ref=e107] [cursor=pointer]:
+              - /url: http://x.com/i/article/2075340731154067457
+              - generic [ref=e108]:
+                - generic [ref=e109]:
+                  - generic [ref=e110]: X
+                  - generic [ref=e111]: x.com
+                - generic [ref=e112]: /i/article/2075340731154067457
+            - generic [ref=e113]:
+              - generic [ref=e114]:
+                - generic [ref=e115]:
+                  - generic [ref=e116]: "34"
+                  - text: Likes
+                - generic [ref=e117]:
+                  - generic [ref=e118]: "7"
+                  - text: Reposts
+                - generic [ref=e119]:
+                  - generic [ref=e120]: "4"
+                  - text: Replies
+                - generic [ref=e121]:
+                  - generic [ref=e122]: "0"
+                  - text: Quotes
+                - generic [ref=e123]:
+                  - generic [ref=e124]: 2,221
+                  - text: Views
+              - link "Open on X" [ref=e125] [cursor=pointer]:
+                - /url: https://x.com/ashpreetbedi/status/2075342956832203167
+          - article [ref=e126]:
+            - generic [ref=e127]:
+              - generic [ref=e128]:
+                - generic [ref=e129]: jason · @jxnlco
+                - time [ref=e130]: Fri Jul 10 04:29:41 +0000 2026
+              - generic [ref=e131]: List tweet
+            - paragraph [ref=e132]: x.com/i/article/2075…
+            - link "X x.com /i/article/2075435927011491840" [ref=e134] [cursor=pointer]:
+              - /url: http://x.com/i/article/2075435927011491840
+              - generic [ref=e135]:
+                - generic [ref=e136]:
+                  - generic [ref=e137]: X
+                  - generic [ref=e138]: x.com
+                - generic [ref=e139]: /i/article/2075435927011491840
+            - generic [ref=e140]:
+              - generic [ref=e141]:
+                - generic [ref=e142]:
+                  - generic [ref=e143]: "115"
+                  - text: Likes
+                - generic [ref=e144]:
+                  - generic [ref=e145]: "4"
+                  - text: Reposts
+                - generic [ref=e146]:
+                  - generic [ref=e147]: "4"
+                  - text: Replies
+                - generic [ref=e148]:
+                  - generic [ref=e149]: "2"
+                  - text: Quotes
+                - generic [ref=e150]:
+                  - generic [ref=e151]: 10K
+                  - text: Views
+              - link "Open on X" [ref=e152] [cursor=pointer]:
+                - /url: https://x.com/jxnlco/status/2075437278596669799
+      - generic [ref=e153]:
+        - heading "Conversation context 0" [level=2] [ref=e154]
+        - paragraph [ref=e155]: No tweets in this section.

@@ -71,7 +71,8 @@ import { writeYoutubeIndexFromState, writeYoutubePlaylistIndex } from './youtube
 import { createEngineYoutubeLlmClient, createFallbackYoutubeLlmClient, type YoutubeLlmClient } from './youtube/llm.js';
 import { markPlaylistSynced, updateYoutubeState } from './youtube/state.js';
 import type { YtDlpAccessOptions } from './youtube/yt-dlp.js';
-import { fetchXListDigest } from './x-list-fetch.js';
+import { fetchXListDigest, parseListId } from './x-list-fetch.js';
+import { summarizeXList } from './x-list-summary.js';
 import { renderXListHtml } from './x-list-html.js';
 import { syncXListMembers } from './x-list-members.js';
 import { syncFollowing } from './following/sync.js';
@@ -2088,6 +2089,51 @@ export function buildCli() {
       console.log(`  ✓ HTML: ${htmlPath}`);
       console.log(`  ✓ JSON: ${jsonPath}`);
       console.log('    Open in a browser; sort by reposts/likes/replies/quotes/views with the toolbar.');
+    }));
+
+  // ── x-list-summary ──────────────────────────────────────────────────────
+
+  program
+    .command('x-list-summary')
+    .description('Summarize the latest stored X list digest into a daily markdown briefing')
+    .argument('<list>', 'X list id or x.com/i/lists/<id> URL')
+    .option('--engine <engine>', 'LLM engine for the summary (claude, codex, grok, droid, agy)')
+    .option('--model <model>', 'Model override for the summary')
+    .option('--effort <effort>', 'Effort override for the summary')
+    .option('--tweets <n>', 'Top tweets (by engagement) included in the prompt', (v: string) => Number(v), 80)
+    .option('--output <path>', 'Write the summary markdown to this path instead of the library daily dir')
+    .option('--force', 'Overwrite an existing summary for the same date', false)
+    .option('--json', 'JSON output', false)
+    .action(safe(async (list: string, options) => {
+      ensureDataDir();
+      const listId = parseListId(list);
+      const maxTweets = Number(options.tweets);
+      // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin the engine
+      // without baking flags into the sync-all step list — same contract as
+      // `ft daily --write`.
+      const result = await summarizeXList(listId, {
+        maxTweets: Number.isFinite(maxTweets) && maxTweets > 0 ? Math.floor(maxTweets) : undefined,
+        outputPath: pathOption(options.output),
+        force: Boolean(options.force),
+        profile: {
+          engine: stringOption(options.engine) ?? stringOption(process.env.FT_DAILY_ENGINE),
+          model: stringOption(options.model) ?? stringOption(process.env.FT_DAILY_MODEL),
+          effort: stringOption(options.effort) ?? stringOption(process.env.FT_DAILY_EFFORT),
+        },
+      });
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (result.skipped) {
+        console.log(`  Summary already exists for ${result.date}: ${result.summaryPath}`);
+        console.log('  Re-run with --force to regenerate.');
+        return;
+      }
+      console.log(`  ✓ X list summary written: ${result.summaryPath}`);
+      console.log(`  ✓ Latest pointer: ${result.latestPath}`);
+      console.log(`    ${result.tweetCount} tweets · ${result.promptTweets} in prompt · ${result.usedLlm ? `llm via ${result.engineLabel ?? 'default'}` : 'mechanical fallback'}`);
+      if (!result.usedLlm && result.llmError) console.log(`    llm failed: ${result.llmError}`);
     }));
 
   // ── x-list-members ──────────────────────────────────────────────────────

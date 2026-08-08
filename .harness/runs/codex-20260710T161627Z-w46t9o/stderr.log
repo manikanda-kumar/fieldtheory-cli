@@ -1,0 +1,765 @@
+2026-07-10T16:16:28.627123Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T16:16:28.627144Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T16:16:28.627146Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/cli-printing-press/testdata/golden/fixtures/dogfood-novel-doc-sync/cli/SKILL.md: missing YAML frontmatter delimited by ---
+OpenAI Codex v0.144.1
+--------
+workdir: /Users/manik/Github/fieldtheory-cli
+model: gpt-5.6-terra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f4cc7-fbe1-7863-b09a-ce3b1b59f01f
+--------
+user
+# Harness Worker Packet
+
+## Contract
+
+You are an internal worker for the use-harness router.
+Return a concise report to the router; do not address the end user directly.
+Do not claim success unless validation evidence is included.
+
+## Assignment
+
+- Run ID: codex-20260710T161627Z-w46t9o
+- Backend: codex
+- Task type: implement
+- Workspace: /Users/manik/Github/fieldtheory-cli
+- Permission mode: write-enabled
+- Model: gpt-5.6-terra
+
+## Objective
+
+Review finding (P2) on your change: cross-theme duplicate-citation dedup pollutes droppedCitations semantics. A VALID citation duplicated across themes now increments droppedCitations (synthesize.ts ~153,159), and an emptied duplicate-only theme adds another drop — but src/cli.ts:1371 reports this value as 'dropped invalid citations'. Fix: keep droppedCitations meaning invalid-alias/repo drops only; do NOT count cross-theme duplicate suppressions or the duplicate-only-theme skip into it. Track duplicates separately if useful (e.g., duplicateCitations on the validate result) but don't change the CLI. Add/adjust a test covering a valid citation duplicated across two themes: renders once, droppedCitations stays 0. Run node --import tsx --test tests/daily.test.ts and npm run build; both must pass. Concise summary.
+
+## Scope
+
+Use the objective and named files as scope. Do not broaden unless required.
+
+## Constraints
+
+- Match existing repo patterns.
+- Do not commit changes.
+- If changing files, report exact files changed.
+- If validation cannot run, say why.
+
+## Expected deliverable
+
+1. Summary
+2. Evidence
+3. Files changed
+4. Commands run
+5. Verification status
+6. Blockers
+
+## Result shape
+
+summary: string
+evidence: string[]
+files_changed: string[]
+commands_run: { command: string, exit_code: number | null, summary: string }[]
+verification: { status: "passed" | "failed" | "not_run", details: string }
+blockers: string[]
+
+codex
+I’ll correct the counter semantics without changing the CLI contract, add the duplicate-citation regression test, and run the requested checks.
+exec
+/bin/zsh -lc "sed -n '110,180p' src/daily/synthesize.ts && sed -n '200,340p' tests/daily.test.ts && git diff -- src/daily/synthesize.ts tests/daily.test.ts" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+  const repos = new Set(collection.projectDeltas.map((delta) => delta.repo));
+  const citedItems = new Set<string>();
+  const themes: DailyTheme[] = [];
+  let dropped = 0;
+
+  if (!Array.isArray(raw)) return { themes, dropped };
+
+  for (const entry of raw.slice(0, MAX_THEMES)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const candidate = entry as Record<string, unknown>;
+    const title = typeof candidate.title === 'string' ? candidate.title.trim() : '';
+    const summary = typeof candidate.summary === 'string' ? candidate.summary.trim() : '';
+    if (!title || !summary) continue;
+
+    const mapAliases = (value: unknown, aliasMap: Map<string, string>): { kept: string[]; removed: number } => {
+      if (!Array.isArray(value)) return { kept: [], removed: 0 };
+      const kept: string[] = [];
+      let removed = 0;
+      for (const alias of value) {
+        const real = typeof alias === 'string' ? aliasMap.get(alias.trim()) : undefined;
+        if (real && !kept.includes(real)) kept.push(real);
+        else removed += 1;
+      }
+      return { kept, removed };
+    };
+
+    const keepRepos = (value: unknown): { kept: string[]; removed: number } => {
+      if (!Array.isArray(value)) return { kept: [], removed: 0 };
+      const kept: string[] = [];
+      let removed = 0;
+      for (const repo of value) {
+        if (typeof repo === 'string' && repos.has(repo) && !kept.includes(repo)) kept.push(repo);
+        else removed += 1;
+      }
+      return { kept, removed };
+    };
+
+    const items = mapAliases(candidate.itemIds, aliases.items);
+    const uniqueItems = items.kept.filter((id) => {
+      if (citedItems.has(id)) return false;
+      citedItems.add(id);
+      return true;
+    });
+    dropped += items.kept.length - uniqueItems.length;
+    const related = mapAliases(candidate.relatedIds, aliases.related);
+    const projects = keepRepos(candidate.projects);
+    dropped += items.removed + related.removed + projects.removed;
+
+    if (uniqueItems.length === 0) {
+      dropped += 1;
+      continue;
+    }
+
+    themes.push({ title, summary, itemIds: uniqueItems, relatedIds: related.kept, projects: projects.kept });
+  }
+
+  return { themes, dropped };
+}
+
+function mechanicalThemes(collection: DailyCollection): DailyTheme[] {
+  const bySource = new Map<string, string[]>();
+  for (const item of collection.items) {
+    const key = item.sources[0] ?? 'other';
+    const list = bySource.get(key) ?? [];
+    list.push(item.id);
+    bySource.set(key, list);
+  }
+  return [...bySource.entries()].map(([source, ids]) => ({
+    title: `New from ${source}`,
+    summary: `${ids.length} item(s) saved from ${source} in this window.`,
+    itemIds: ids,
+    const fakeResponse = JSON.stringify([
+      {
+        title: 'Agent harnesses',
+        summary: 'New runner harness saved; builds on the primer read earlier.',
+        itemIds: ['i1', 'i99'],
+        relatedIds: hasRelated ? ['r1', 'r99'] : ['r99'],
+        projects: ['not-a-repo'],
+      },
+      { title: 'Ghost theme', summary: 'Only hallucinated ids.', itemIds: ['i77'], relatedIds: [], projects: [] },
+    ]);
+
+    const result = await synthesizeDaily(collection, connected, { invoke: async () => fakeResponse });
+
+    assert.equal(result.skipped, false);
+    assert.equal(result.usedLlm, true);
+    assert.equal(result.themes.length, 1);
+    assert.deepEqual(result.themes[0].itemIds, [newId]);
+    assert.ok(result.droppedCitations >= 3);
+
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /# Daily Digest — 2026-07-06/);
+    assert.match(digest, /agent-runner/);
+    assert.match(digest, /synthesis: llm/);
+    assert.ok(!digest.includes('hallucinated'));
+    assert.ok(!digest.includes('## Also saved'));
+
+    const meta = JSON.parse(await readFileText(dailyMetaPath()));
+    assert.equal(meta.lastDigestDate, '2026-07-06');
+    assert.ok(meta.lastRunAt);
+  });
+});
+
+test('daily: synthesize falls back to mechanical themes when the LLM fails', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/solo-tool', starredAt: '2026-07-06T12:00:00.000Z', description: 'standalone tool' }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const connected = await connectDailyItems(collection);
+    const result = await synthesizeDaily(collection, connected, {
+      invoke: async () => { throw new Error('engine down'); },
+    });
+
+    assert.equal(result.usedLlm, false);
+    assert.equal(result.themes.length, 1);
+    assert.match(result.themes[0].title, /github-stars/);
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /synthesis: mechanical/);
+  });
+});
+
+test('daily: synthesize renders uncited items under Also saved', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, Array.from({ length: 11 }, (_, index) => starRecord({
+      id: index + 1,
+      fullName: `saved/item-${index + 1}`,
+      starredAt: '2026-07-06T12:00:00.000Z',
+    })));
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const result = await synthesizeDaily(collection, [], {
+      invoke: async () => JSON.stringify([
+        { title: 'First', summary: 'The first three saved items.', itemIds: ['i1', 'i2', 'i3'], relatedIds: [], projects: [] },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          title: `Theme ${index + 2}`,
+          summary: `Saved item ${index + 4}.`,
+          itemIds: [`i${index + 4}`],
+          relatedIds: [],
+          projects: [],
+        })),
+      ]),
+    });
+
+    assert.equal(result.themedCount, 9);
+    assert.equal(result.alsoSavedCount, 2);
+    const digest = await readFileText(result.digestPath);
+    const alsoSaved = digest.split('## Also saved\n\n')[1];
+    assert.ok(alsoSaved);
+    assert.match(alsoSaved, /item-10/);
+    assert.match(alsoSaved, /item-11/);
+  });
+});
+
+test('daily: synthesize renders items from themes dropped by the cap under Also saved', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, Array.from({ length: 9 }, (_, index) => starRecord({
+      id: index + 1,
+      fullName: `overflow/item-${index + 1}`,
+      starredAt: '2026-07-06T12:00:00.000Z',
+    })));
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const result = await synthesizeDaily(collection, [], {
+      invoke: async () => JSON.stringify(Array.from({ length: 9 }, (_, index) => ({
+        title: `Theme ${index + 1}`,
+        summary: `Saved item ${index + 1}.`,
+        itemIds: [`i${index + 1}`],
+        relatedIds: [],
+        projects: [],
+      }))),
+    });
+
+    assert.equal(result.themedCount, 7);
+    assert.equal(result.alsoSavedCount, 2);
+    const digest = await readFileText(result.digestPath);
+    const alsoSaved = digest.split('## Also saved\n\n')[1];
+    assert.ok(alsoSaved);
+    assert.match(alsoSaved, /item-8/);
+    assert.match(alsoSaved, /item-9/);
+  });
+});
+
+test('daily: interests classifies rising/steady/fading topics and finds active threads', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const now = new Date('2026-07-07T00:00:00.000Z');
+    const recent = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
+    // Rising: 3 "agents"-category saves this week, none in baseline.
+    // Fading: 5 "css" saves in baseline, none this week.
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/agent-one', starredAt: recent(1), description: 'llm agents orchestration framework' }),
+      starRecord({ id: 2, fullName: 'b/agent-two', starredAt: recent(2), description: 'llm agents memory framework' }),
+      starRecord({ id: 3, fullName: 'c/agent-three', starredAt: recent(3), description: 'llm agents evaluation framework' }),
+      ...Array.from({ length: 5 }, (_, i) => starRecord({
+        id: 10 + i,
+        fullName: `css/lib-${i}`,
+        starredAt: recent(10 + i),
+        description: 'css styling toolkit',
+      })),
+    ]);
+    const projectsDir = path.join(dir, 'projects');
+    await mkdir(projectsDir, { recursive: true });
+    await writeJsonLines(path.join(projectsDir, 'projects.jsonl'), [
+      projectRecord({
+        repo: 'agent-lab',
+        recentPrompts: [
+          { timestamp: recent(1), text: 'how do agents framework handle orchestration' },
+          { timestamp: recent(2), text: 'best agents framework for memory' },
+diff --git a/src/daily/synthesize.ts b/src/daily/synthesize.ts
+index d64a706..1a5b9a2 100644
+--- a/src/daily/synthesize.ts
++++ b/src/daily/synthesize.ts
+@@ -40,6 +40,8 @@ export interface SynthesizeDailyResult {
+   themes: DailyTheme[];
+   usedLlm: boolean;
+   droppedCitations: number;
++  themedCount: number;
++  alsoSavedCount: number;
+   skipped: boolean;
+ }
+ 
+@@ -106,6 +108,7 @@ export function buildDailyPrompt(collection: DailyCollection, connected: Connect
+ 
+ export function validateThemes(raw: unknown, collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): { themes: DailyTheme[]; dropped: number } {
+   const repos = new Set(collection.projectDeltas.map((delta) => delta.repo));
++  const citedItems = new Set<string>();
+   const themes: DailyTheme[] = [];
+   let dropped = 0;
+ 
+@@ -142,16 +145,22 @@ export function validateThemes(raw: unknown, collection: DailyCollection, connec
+     };
+ 
+     const items = mapAliases(candidate.itemIds, aliases.items);
++    const uniqueItems = items.kept.filter((id) => {
++      if (citedItems.has(id)) return false;
++      citedItems.add(id);
++      return true;
++    });
++    dropped += items.kept.length - uniqueItems.length;
+     const related = mapAliases(candidate.relatedIds, aliases.related);
+     const projects = keepRepos(candidate.projects);
+     dropped += items.removed + related.removed + projects.removed;
+ 
+-    if (items.kept.length === 0) {
++    if (uniqueItems.length === 0) {
+       dropped += 1;
+       continue;
+     }
+ 
+-    themes.push({ title, summary, itemIds: items.kept, relatedIds: related.kept, projects: projects.kept });
++    themes.push({ title, summary, itemIds: uniqueItems, relatedIds: related.kept, projects: projects.kept });
+   }
+ 
+   return { themes, dropped };
+@@ -216,6 +225,7 @@ function renderDigestMarkdown(
+   collection: DailyCollection,
+   connected: ConnectedItem[],
+   themes: DailyTheme[],
++  alsoSavedIds: string[],
+   usedLlm: boolean,
+   youtubeNotes: Map<string, string> = new Map(),
+ ): string {
+@@ -231,6 +241,12 @@ function renderDigestMarkdown(
+     for (const ref of related) relatedById.set(ref.id, ref);
+   }
+   const sources = [...new Set(collection.items.flatMap((item) => item.sources))].sort();
++  const renderItem = (item: CanonicalRecentItem, id: string): string => {
++    const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
++    const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
++    const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
++    return `- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`;
++  };
+ 
+   const lines: string[] = [];
+   lines.push('---');
+@@ -252,10 +268,7 @@ function renderDigestMarkdown(
+     for (const id of theme.itemIds) {
+       const item = itemById.get(id);
+       if (!item) continue;
+-      const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
+-      const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
+-      const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
+-      lines.push(`- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`);
++      lines.push(renderItem(item, id));
+     }
+     if (theme.relatedIds.length > 0) {
+       lines.push('');
+@@ -274,6 +287,17 @@ function renderDigestMarkdown(
+     lines.push('');
+   }
+ 
++  if (alsoSavedIds.length > 0) {
++    lines.push('## Also saved');
++    lines.push('');
++    for (const id of alsoSavedIds) {
++      const item = itemById.get(id);
++      if (!item) continue;
++      lines.push(renderItem(item, id));
++    }
++    lines.push('');
++  }
++
+   if (collection.projectDeltas.length > 0) {
+     lines.push('## Project activity');
+     lines.push('');
+@@ -301,7 +325,15 @@ export async function synthesizeDaily(
+   const digestPath = dailyDigestPath(collection.date);
+ 
+   if (collection.items.length === 0 && collection.projectDeltas.length === 0) {
+-    return { digestPath, themes: [], usedLlm: false, droppedCitations: 0, skipped: true };
++    return {
++      digestPath,
++      themes: [],
++      usedLlm: false,
++      droppedCitations: 0,
++      themedCount: 0,
++      alsoSavedCount: 0,
++      skipped: true,
++    };
+   }
+ 
+   let themes: DailyTheme[] = [];
+@@ -326,6 +358,11 @@ export async function synthesizeDaily(
+     if (themes.length === 0) themes = mechanicalThemes(collection);
+   }
+ 
++  const themedIds = new Set(themes.flatMap((theme) => theme.itemIds));
++  const alsoSavedIds = collection.items
++    .filter((item) => !themedIds.has(item.id))
++    .map((item) => item.id);
++
+   const youtubeNotes = await buildYoutubeNotesLinks(
+     [
+       ...collection.items.map((item) => item.canonicalUrl),
+@@ -333,8 +370,16 @@ export async function synthesizeDaily(
+     ],
+     digestPath,
+   );
+-  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, usedLlm, youtubeNotes));
++  await writeMd(digestPath, renderDigestMarkdown(collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes));
+   await writeJson(dailyMetaPath(), { lastRunAt: collection.untilIso, lastDigestDate: collection.date });
+ 
+-  return { digestPath, themes, usedLlm, droppedCitations, skipped: false };
++  return {
++    digestPath,
++    themes,
++    usedLlm,
++    droppedCitations,
++    themedCount: themedIds.size,
++    alsoSavedCount: alsoSavedIds.length,
++    skipped: false,
++  };
+ }
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 92e9f22..1ceb417 100644
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -221,6 +221,7 @@ test('daily: synthesize validates citations, writes digest, and advances waterma
+     assert.match(digest, /agent-runner/);
+     assert.match(digest, /synthesis: llm/);
+     assert.ok(!digest.includes('hallucinated'));
++    assert.ok(!digest.includes('## Also saved'));
+ 
+     const meta = JSON.parse(await readFileText(dailyMetaPath()));
+     assert.equal(meta.lastDigestDate, '2026-07-06');
+@@ -249,6 +250,69 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
+   });
+ });
+ 
++test('daily: synthesize renders uncited items under Also saved', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, Array.from({ length: 11 }, (_, index) => starRecord({
++      id: index + 1,
++      fullName: `saved/item-${index + 1}`,
++      starredAt: '2026-07-06T12:00:00.000Z',
++    })));
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async () => JSON.stringify([
++        { title: 'First', summary: 'The first three saved items.', itemIds: ['i1', 'i2', 'i3'], relatedIds: [], projects: [] },
++        ...Array.from({ length: 6 }, (_, index) => ({
++          title: `Theme ${index + 2}`,
++          summary: `Saved item ${index + 4}.`,
++          itemIds: [`i${index + 4}`],
++          relatedIds: [],
++          projects: [],
++        })),
++      ]),
++    });
++
++    assert.equal(result.themedCount, 9);
++    assert.equal(result.alsoSavedCount, 2);
++    const digest = await readFileText(result.digestPath);
++    const alsoSaved = digest.split('## Also saved\n\n')[1];
++    assert.ok(alsoSaved);
++    assert.match(alsoSaved, /item-10/);
++    assert.match(alsoSaved, /item-11/);
++  });
++});
++
++test('daily: synthesize renders items from themes dropped by the cap under Also saved', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, Array.from({ length: 9 }, (_, index) => starRecord({
++      id: index + 1,
++      fullName: `overflow/item-${index + 1}`,
++      starredAt: '2026-07-06T12:00:00.000Z',
++    })));
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async () => JSON.stringify(Array.from({ length: 9 }, (_, index) => ({
++        title: `Theme ${index + 1}`,
++        summary: `Saved item ${index + 1}.`,
++        itemIds: [`i${index + 1}`],
++        relatedIds: [],
++        projects: [],
++      }))),
++    });
++
++    assert.equal(result.themedCount, 7);
++    assert.equal(result.alsoSavedCount, 2);
++    const digest = await readFileText(result.digestPath);
++    const alsoSaved = digest.split('## Also saved\n\n')[1];
++    assert.ok(alsoSaved);
++    assert.match(alsoSaved, /item-8/);
++    assert.match(alsoSaved, /item-9/);
++  });
++});
++
+ test('daily: interests classifies rising/steady/fading topics and finds active threads', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     const now = new Date('2026-07-07T00:00:00.000Z');
+
+apply patch
+patch: completed
+/Users/manik/Github/fieldtheory-cli/src/daily/synthesize.ts
+/Users/manik/Github/fieldtheory-cli/tests/daily.test.ts
+diff --git a/src/daily/synthesize.ts b/src/daily/synthesize.ts
+index 1a5b9a2ad63b2d99fd11d03ce63a47a5c87744f5..6a54640bb1a66c0a6138f1e4152faf3e6d80d1d5
+--- a/src/daily/synthesize.ts
++++ b/src/daily/synthesize.ts
+@@ -150,13 +150,11 @@
+       citedItems.add(id);
+       return true;
+     });
+-    dropped += items.kept.length - uniqueItems.length;
+     const related = mapAliases(candidate.relatedIds, aliases.related);
+     const projects = keepRepos(candidate.projects);
+     dropped += items.removed + related.removed + projects.removed;
+ 
+     if (uniqueItems.length === 0) {
+-      dropped += 1;
+       continue;
+     }
+ 
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 1ceb4178cc0d6d359d3e00908f5701acce109dfc..07c7c017e5ef61c6c3584239f33a6198d68b5e0c
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -250,6 +250,29 @@
+   });
+ });
+ 
++test('daily: synthesize suppresses duplicate valid citations without counting them as dropped', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [
++      starRecord({ id: 1, fullName: 'duplicate/item', starredAt: '2026-07-06T12:00:00.000Z' }),
++    ]);
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async () => JSON.stringify([
++        { title: 'First', summary: 'The saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++        { title: 'Duplicate', summary: 'The same saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++      ]),
++    });
++
++    assert.equal(result.droppedCitations, 0);
++    assert.equal(result.themedCount, 1);
++    assert.equal(result.alsoSavedCount, 0);
++    const digest = await readFileText(result.digestPath);
++    assert.equal(digest.match(/^- \[/gm)?.length, 1);
++  });
++});
++
+ test('daily: synthesize renders uncited items under Also saved', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, Array.from({ length: 11 }, (_, index) => starRecord({
+
+diff --git a/src/daily/synthesize.ts b/src/daily/synthesize.ts
+index 1a5b9a2ad63b2d99fd11d03ce63a47a5c87744f5..6a54640bb1a66c0a6138f1e4152faf3e6d80d1d5
+--- a/src/daily/synthesize.ts
++++ b/src/daily/synthesize.ts
+@@ -150,13 +150,11 @@
+       citedItems.add(id);
+       return true;
+     });
+-    dropped += items.kept.length - uniqueItems.length;
+     const related = mapAliases(candidate.relatedIds, aliases.related);
+     const projects = keepRepos(candidate.projects);
+     dropped += items.removed + related.removed + projects.removed;
+ 
+     if (uniqueItems.length === 0) {
+-      dropped += 1;
+       continue;
+     }
+ 
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 1ceb4178cc0d6d359d3e00908f5701acce109dfc..07c7c017e5ef61c6c3584239f33a6198d68b5e0c
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -250,6 +250,29 @@
+   });
+ });
+ 
++test('daily: synthesize suppresses duplicate valid citations without counting them as dropped', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [
++      starRecord({ id: 1, fullName: 'duplicate/item', starredAt: '2026-07-06T12:00:00.000Z' }),
++    ]);
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async () => JSON.stringify([
++        { title: 'First', summary: 'The saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++        { title: 'Duplicate', summary: 'The same saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++      ]),
++    });
++
++    assert.equal(result.droppedCitations, 0);
++    assert.equal(result.themedCount, 1);
++    assert.equal(result.alsoSavedCount, 0);
++    const digest = await readFileText(result.digestPath);
++    assert.equal(digest.match(/^- \[/gm)?.length, 1);
++  });
++});
++
+ test('daily: synthesize renders uncited items under Also saved', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, Array.from({ length: 11 }, (_, index) => starRecord({
+
+codex
+The counter now only reflects invalid aliases/repos. The regression test exercises a duplicate valid citation that is rendered once with zero dropped citations.
+exec
+/bin/zsh -lc 'node --import tsx --test tests/daily.test.ts && npm run build && git diff --check' in /Users/manik/Github/fieldtheory-cli
+diff --git a/src/daily/synthesize.ts b/src/daily/synthesize.ts
+index 1a5b9a2ad63b2d99fd11d03ce63a47a5c87744f5..6a54640bb1a66c0a6138f1e4152faf3e6d80d1d5
+--- a/src/daily/synthesize.ts
++++ b/src/daily/synthesize.ts
+@@ -150,13 +150,11 @@
+       citedItems.add(id);
+       return true;
+     });
+-    dropped += items.kept.length - uniqueItems.length;
+     const related = mapAliases(candidate.relatedIds, aliases.related);
+     const projects = keepRepos(candidate.projects);
+     dropped += items.removed + related.removed + projects.removed;
+ 
+     if (uniqueItems.length === 0) {
+-      dropped += 1;
+       continue;
+     }
+ 
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 1ceb4178cc0d6d359d3e00908f5701acce109dfc..07c7c017e5ef61c6c3584239f33a6198d68b5e0c
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -250,6 +250,29 @@
+   });
+ });
+ 
++test('daily: synthesize suppresses duplicate valid citations without counting them as dropped', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [
++      starRecord({ id: 1, fullName: 'duplicate/item', starredAt: '2026-07-06T12:00:00.000Z' }),
++    ]);
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async () => JSON.stringify([
++        { title: 'First', summary: 'The saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++        { title: 'Duplicate', summary: 'The same saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++      ]),
++    });
++
++    assert.equal(result.droppedCitations, 0);
++    assert.equal(result.themedCount, 1);
++    assert.equal(result.alsoSavedCount, 0);
++    const digest = await readFileText(result.digestPath);
++    assert.equal(digest.match(/^- \[/gm)?.length, 1);
++  });
++});
++
+ test('daily: synthesize renders uncited items under Also saved', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, Array.from({ length: 11 }, (_, index) => starRecord({
+
+ succeeded in 1717ms:
+(node:68418) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ daily: collect windows on first_saved_at and gathers project deltas (67.939875ms)
+✔ daily: collect uses watermark when no date given and caps at 7 days (29.709584ms)
+✔ daily: connect links new items to older related items only (23.739875ms)
+✔ daily: collect handles Twitter-format and offset-ISO timestamps in first_saved_at (38.061917ms)
+✔ daily: relatedSeedTerms drops stopwords, short words, and numbers (0.415042ms)
+✔ daily: digest path validates date shape (0.204084ms)
+✔ daily: synthesize validates citations, writes digest, and advances watermark (37.0145ms)
+✔ daily: synthesize falls back to mechanical themes when the LLM fails (38.642375ms)
+✔ daily: synthesize suppresses duplicate valid citations without counting them as dropped (36.8835ms)
+✔ daily: synthesize renders uncited items under Also saved (37.860792ms)
+✔ daily: synthesize renders items from themes dropped by the cap under Also saved (37.966708ms)
+✔ daily: interests classifies rising/steady/fading topics and finds active threads (47.798375ms)
+✔ daily: synthesize skips when the window is empty (11.538208ms)
+✔ daily: extractYoutubeVideoId handles watch, short, shorts, and embed URLs (0.124208ms)
+✔ daily: digest links youtube items to their library notes when notes exist (30.536875ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 586.613625
+npm notice run fieldtheory@1.3.20 build
+npm notice run tsc -p tsconfig.json
+
+codex
+{"summary":"Fixed duplicate valid citations so they no longer inflate droppedCitations; duplicate-only themes are silently suppressed.","evidence":["Added regression test: two themes cite the same valid item; it renders once, themedCount is 1, alsoSavedCount is 0, and droppedCitations remains 0.","Focused daily suite passed 15/15."],"files_changed":["src/daily/synthesize.ts","tests/daily.test.ts"],"commands_run":[{"command":"node --import tsx --test tests/daily.test.ts","exit_code":0,"summary":"Passed 15/15 tests."},{"command":"npm run build","exit_code":0,"summary":"TypeScript build passed."},{"command":"git diff --check","exit_code":0,"summary":"No whitespace errors."}],"verification":{"status":"passed","details":"Requested focused tests and TypeScript build passed."},"blockers":[]}
+diff --git a/src/daily/synthesize.ts b/src/daily/synthesize.ts
+index 1a5b9a2ad63b2d99fd11d03ce63a47a5c87744f5..6a54640bb1a66c0a6138f1e4152faf3e6d80d1d5
+--- a/src/daily/synthesize.ts
++++ b/src/daily/synthesize.ts
+@@ -150,13 +150,11 @@
+       citedItems.add(id);
+       return true;
+     });
+-    dropped += items.kept.length - uniqueItems.length;
+     const related = mapAliases(candidate.relatedIds, aliases.related);
+     const projects = keepRepos(candidate.projects);
+     dropped += items.removed + related.removed + projects.removed;
+ 
+     if (uniqueItems.length === 0) {
+-      dropped += 1;
+       continue;
+     }
+ 
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 1ceb4178cc0d6d359d3e00908f5701acce109dfc..07c7c017e5ef61c6c3584239f33a6198d68b5e0c
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -250,6 +250,29 @@
+   });
+ });
+ 
++test('daily: synthesize suppresses duplicate valid citations without counting them as dropped', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [
++      starRecord({ id: 1, fullName: 'duplicate/item', starredAt: '2026-07-06T12:00:00.000Z' }),
++    ]);
++    await rebuildCanonicalIndex();
++
++    const collection = await collectDaily({ date: '2026-07-06' });
++    const result = await synthesizeDaily(collection, [], {
++      invoke: async () => JSON.stringify([
++        { title: 'First', summary: 'The saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++        { title: 'Duplicate', summary: 'The same saved item.', itemIds: ['i1'], relatedIds: [], projects: [] },
++      ]),
++    });
++
++    assert.equal(result.droppedCitations, 0);
++    assert.equal(result.themedCount, 1);
++    assert.equal(result.alsoSavedCount, 0);
++    const digest = await readFileText(result.digestPath);
++    assert.equal(digest.match(/^- \[/gm)?.length, 1);
++  });
++});
++
+ test('daily: synthesize renders uncited items under Also saved', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, Array.from({ length: 11 }, (_, index) => starRecord({
+
+hook: Stop
+hook: Stop Completed
+tokens used
+1,75,199

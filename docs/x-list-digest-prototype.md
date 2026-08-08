@@ -28,6 +28,14 @@ With no `--html-output`/`--output`, digests are written to `~/.fieldtheory/x-lis
 
 Each external link is badged by source type (GitHub, YouTube, Hugging Face, arXiv, Blog, HN, npm, …).
 
+## Daily summary
+
+`ft x-list-summary <list>` turns the stored `<listId>-latest.json` into a markdown briefing (Top themes / Notable releases & links / Worth a closer look) via the LLM engine chain (`FT_DAILY_ENGINE`/`FT_DAILY_MODEL`/`FT_DAILY_EFFORT`, same contract as `ft daily`), with a mechanical top-posts fallback when every engine fails:
+
+- Output: `~/.fieldtheory/library/daily/x-list/<YYYY-MM-DD>.md` plus stable pointer `~/.fieldtheory/x-lists/<listId>-summary-latest.md`.
+- Skips if today's summary already exists; `--force` regenerates. `--tweets <n>` controls prompt size (default 80 top-engagement list tweets).
+- `sync-all --x-list <id>` runs it automatically right after the fetch step, so the nightly launchd job produces the summary daily.
+
 ## Daily job (macOS launchd)
 
 A LaunchAgent runs the digest once a day for the last 24h:

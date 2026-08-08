@@ -1,0 +1,1028 @@
+2026-07-10T17:04:30.108239Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T17:04:30.108262Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T17:04:30.108263Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/cli-printing-press/testdata/golden/fixtures/dogfood-novel-doc-sync/cli/SKILL.md: missing YAML frontmatter delimited by ---
+OpenAI Codex v0.144.1
+--------
+workdir: /Users/manik/Github/fieldtheory-cli
+model: gpt-5.6-terra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f4cea-05ec-7e42-a538-44b0e71109e0
+--------
+user
+# Harness Worker Packet
+
+## Contract
+
+You are an internal worker for the use-harness router.
+Return a concise report to the router; do not address the end user directly.
+Do not claim success unless validation evidence is included.
+
+## Assignment
+
+- Run ID: codex-20260710T170428Z-2ynodu
+- Backend: codex
+- Task type: implement
+- Workspace: /Users/manik/Github/fieldtheory-cli
+- Permission mode: write-enabled
+- Model: gpt-5.6-terra
+
+## Objective
+
+Review finding (P2) on your change: src/daily/coverage.ts:63 X freshness uses lastIncrementalSyncAt ?? lastFullSyncAt — an older incremental timestamp hides a newer full sync. Fix: report the maximum parsed timestamp across both fields (reuse latestBookmarkSyncAt helper if it fits, else compare parsed epochs). Adjust/extend the test if it pinned the old behavior. Run node --import tsx --test tests/daily.test.ts && npm run build. Concise summary.
+
+## Scope
+
+Use the objective and named files as scope. Do not broaden unless required.
+
+## Constraints
+
+- Match existing repo patterns.
+- Do not commit changes.
+- If changing files, report exact files changed.
+- If validation cannot run, say why.
+
+## Expected deliverable
+
+1. Summary
+2. Evidence
+3. Files changed
+4. Commands run
+5. Verification status
+6. Blockers
+
+## Result shape
+
+summary: string
+evidence: string[]
+files_changed: string[]
+commands_run: { command: string, exit_code: number | null, summary: string }[]
+verification: { status: "passed" | "failed" | "not_run", details: string }
+blockers: string[]
+
+codex
+I’ll correct the X freshness probe to select the newest valid metadata timestamp, add focused coverage for that ordering, and rerun the requested checks.
+exec
+/bin/zsh -lc "sed -n '1,120p' CONTINUITY.md; sed -n '1,140p' src/daily/coverage.ts; rg -n \"lastIncrementalSyncAt|lastFullSyncAt|latestBookmarkSyncAt\" src tests" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+Goal (incl. success criteria): Implement R8–R11 daily coverage footer: every written digest has fault-tolerant source freshness, dark-source disclosure, and reconciled run counts in footer/frontmatter, including an honest undateable exclusion count.
+Constraints/Assumptions:
+- Preserve the existing rendering/"Also saved" and watermark/overflow work; do not rework it.
+Key decisions:
+- Overflow uses an oldest-first `(first_saved_at, canonical id)` cursor. `lastRunAt` is the timestamp and `lastRunItemId` breaks timestamp ties.
+- Undateable count is the all-index count of canonical rows whose `first_saved_at` is null or unparseable; it is labeled "canonical total" because malformed timestamps cannot honestly be assigned to a window.
+State:
+- R5–R7 implementation validated; stale overflow cursor is now used only when the effective rolling start equals the persisted watermark instant. Clamp-boundary regression test passes.
+- R8–R11 implemented and validated. Freshness uses each source's existing metadata timestamp; per-source read/parse failures return `unknown`.
+Done:
+- Read the requested plan and current pipeline.
+- Guarded cursor use after rolling-window clamping/fallback and added regression coverage.
+- Added `src/daily/coverage.ts`; digest frontmatter/footer counts; fault-tolerant five-source probes; canonical-total undateable accounting; AE4/AE6 and overflow reconciliation tests.
+Now:
+- Ready to hand off validated coverage-footer implementation.
+Next:
+- None.
+Open questions (UNCONFIRMED if needed):
+- None.
+Working set (files/ids/commands):
+- src/daily/coverage.ts; src/daily/collect.ts; src/daily/synthesize.ts; src/canonical-bookmarks-db.ts; tests/daily.test.ts; `node --import tsx --test tests/daily.test.ts`; `npm run build`
+
+VISION SESSION (2026-07-07) — daily-synthesis companion agent:
+- Goal: agent that synthesizes all consumed data (X bm, YT playlists, Raindrop, GitHub stars, following, x-lists) daily, learns interests, proactively recalls during any project/research ("we studied that last week", "gotcha in blog X", "hot on X right now").
+- Existing substrate: sync-all orchestrator, canonical FTS db (10k+ bookmarks), ft research/ask --json, library md wiki, following/experts index, x-list daily digests, daily-sync plan doc (docs/plans/2026-06-21-daily-sync-second-brain.md).
+- Grounding decision: NO project dumps — ingest from ground truth directly: ~/Github repos (248, 51 with CONTINUITY.md Goal/Now/Next), Claude JSONL (~/.claude/projects/*, 73 dirs, type:"user" lines), Codex ~/.codex/sessions, OpenCode opencode.db. github-sessions/agent-sessions apps = viewers only.
+- PLAN WRITTEN: docs/plans/2026-07-07-companion-agent-daily-synthesis.md — Phase A `ft sync-projects` (7th source, src/projects/, Claude sessions v1), Phase B `ft daily` (digest + interests.md, SQL connect + LLM synthesize w/ citation validation), Phase C global second-brain skill. 9-step build order.
+- APPROVED (2026-07-07): implement via codex (gpt-5.5, codex:codex-rescue subagent), fable reviews each step until OK, then next. Defaults locked: scan root ~/Github, 14d prompt retention, droid+deepseek-v4-flash digest model. Commit per step (no attribution trailer), no push until asked.
+- DONE Step 1 (COMMITTED c346a67): src/projects/ scanner. Codex implemented; fable review found+fixed 3 issues: (1) bare-label ledger headings "Goal (incl. success criteria):" no-dash format (dominant real format — regex made dash optional + sibling-label terminators), (2) bold "- **Goal:**" format, (3) README HTML lines leaking into description. Live verify: 152 repos/7s/0 errors, 26/26 ledgers extracted, active md clean, tests 10/10, full suite 778/778.
+- DONE Step 2 (COMMITTED 464c95c): src/projects/sessions.ts — Claude JSONL prompt extraction (encoded-dir decode strips scan-root prefix first, hyphen candidates; type:user filter; 14d retention; incremental mtime+size skip with prompt merge from previous records) + "Recent agent queries" md section + "Recent focus" active-list line + 0.5x prompt-recency ranking weight. Fable review fix: filter ALL '<'-leading content (task-[REDACTED] harness noise polluted prompts). Live: 10 repos w/ prompts, 104 prompts, ft-cli 26 real questions, incremental rerun faster. Tests 15/15, full 783/783.
+- DONE Step 3 (COMMITTED 9afe2a2): canonical integration (source='project', GitHub-remote dedupe merges w/ stars else project:<repo>, prompt text 4K cap) + `ft sync-projects` CLI (--root/--max-age-days/--no-sessions/--dry-run, canonical rebuild after) + sync-all 'projects' step + getProjectsStatus + remoteUrl normalization (git@→https). Codex hit SESSION LIMIT (resets 10am IST) mid-run but implementation was complete — fable verified: build clean, focused 71/71, live `ft sync-projects` 152 repos indexed, `ft list --unified --source project` + unified search return goals+prompts. Fable fix: filter "This session is being continued..." compaction-summary prompts. Full suite 790/790.
+- CODEX LIMIT: gpt-5.5 session limit until 10am IST. Steps 4+ = fable implements directly (user standing permission to override model choice) unless user prefers waiting.
+- Learnings: git add <dir> fails via git wrapper — add files individually. tsx -e no top-level await — use .mts script. dcg hook blocks rm -rf — use fresh scratch dir names. Live-verify scratch: scratchpad/step{1,2,3}-live via FT_DATA_DIR sandbox.
+- DONE Step 4 (COMMITTED 5708634, implemented by FABLE directly — codex limit): src/daily/{paths,collect,connect}.ts + canonical helpers getCanonicalBookmarksSince/findRelatedCanonicalBookmarks/relatedSeedTerms + `ft daily` CLI (--date/--window-hours/--json; watermark from daily/meta.json, 7d cap, digest write deferred to step 5). FIX during review: projectSourceFromRecord savedAt no longer falls back to scannedAt (commit-less repos flooded daily window as "new" every rescan — 138→6 items after fix). Tests tests/daily.test.ts 5/5, full 795/795. Live verified: related links sane (agent-sessions-active→agent-sessions).
+- DONE Step 5 (COMMITTED 5f2384f, fable): src/daily/synthesize.ts — buildDailyPrompt (withSystemOverride hardened), validateThemes (every cited id must exist in collected set; hallucinated ids dropped + counted; theme w/ zero valid items dropped), mechanical fallback on LLM failure, digest md w/ frontmatter (synthesis: llm|mechanical) + [[project:*]] wikilinks, watermark advance on write only. CLI: ft daily --write/--force/--engine/--model/--effort; existing digest guarded unless --force. LIVE VERIFIED droid/deepseek-v4-flash: 3 coherent themes from 6 items, valid citations, older-save connections. Tests 8/8, full 798/798.
+- DONE Step 6 (COMMITTED 0be6d70, fable): src/daily/interests.ts — topic velocity (7d vs 30d baseline, rising/steady/fading), active threads (terms in BOTH recent saves AND agent prompts), experts matched to rising topics from following.jsonl, ≤80-line hard cap, written to library/interests.md on every ft daily --write. Review fixes from real-data preview: exclude website hostnames (primary_domain holds "youtube.com") + "unclassified" from topics. Real preview sane: rising=technique/research/launch/security, steady=tool, fading=(github.com now filtered). Tests 9/9, full 799/799.
+- DONE Step 7 (COMMITTED 6aca30c, fable): sync-all tail step 'daily' (ft daily --write, after canonical-md, disabled by --no-synthesis). CRITICAL FIXES found via production run: (1) first_saved_at mixes ISO+offset and Twitter-format "Wed Sep 30..." strings — ALL windowing/beforeIso comparisons switched from string to Date.parse epochs (collect, getCanonicalBookmarksSince, findRelated beforeIso, interests) — before fix real digest had 0 items; (2) small models mangle long canonical hash ids — prompt now uses short aliases (i1/r1) mapped back locally (was 30 dropped citations→mechanical; after: 6 llm themes, 0 dropped); (3) multiline X titles broke md links — linkLabel one-lines. PRODUCTION LIVE: ~/.fieldtheory/library/daily/2026-07-06.md = 14 items, 6 themes (dream-mode stars ↔ X memory posts ↔ YT talk ↔ skills project — vision working), interests.md live. sync-all dry-run shows full 8-step plan. Tests 10/10 daily, full 801/801.
+- DONE Step 8 (COMMITTED 9471406, fable): global skill ~/.claude/skills/second-brain/SKILL.md (recall ladder: interests.md+projects-active.md always → daily digests for temporal → ft research/sqlite3 for topics → library md deep-read → conversational surfacing w/ dates; sqlite3 fallback for old ft binaries) + docs/AGENTS-recall.md (cross-agent contract: artifact table, ladder, rules incl. mixed-timestamp warning + prompt-privacy note) + CLAUDE.md pointer. Skill registered live this session. Verified artifacts: interests.md 25 lines, projects-active.md 57, 2 daily digests, repo ft research returns ranked hits.
+- ALL 8 STEPS COMPLETE. Commits: c346a67, 464c95c, 9afe2a2, 5708634, 5f2384f, 0be6d70, 6aca30c, 9471406 (8 commits on main, not pushed).
+- NOTE: global ft binary (1.3.22 npm) predates sync-projects/daily/research — user should npm update or run from repo until published.
+- DONE Step 9 (COMMITTED be3964e, fable): multi-agent session ingestion — codex (~/.codex/sessions/yyyy/mm/dd/rollout-*.jsonl, cwd in session_meta), amp (~/.local/share/amp/threads/T-*.json, repo from env.initial.trees uri, thread created ts), pi (~/.pi/agent/sessions/<enc>/, cwd in type:"session" header), droid (~/.factory/sessions — TWO layouts: current <encoded-cwd>/<id>.jsonl w/ cwd in session_start header + legacy flat via sessions-index.json). Per-BLOCK noise filtering (droid packs env-dump + real prompt in one message), '# Task Tool Invocation' subagent noise filtered. User decision: pi+droid in, opencode skipped (rarely used). Tests hermeticSessionRoots guard real stores; 25/25 projects, full 810/810. Live: claude 113 + codex 109 + pi 5 + droid 1 prompts (amp 0 = no threads in 14d window, verified legit). Production resync: 17 repos w/ prompts (was 10).
+- DONE Step 10 (COMMITTED 2e5094a): nightly sync-all launchd job LIVE.
+  - Wrapper ~/.fieldtheory/sync-all.sh: runs repo dist (node ~/Github/fieldtheory-cli/dist/cli.js — NOT stale global ft), --x-list 1979812953135497678 --playlist PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk --youtube-limit 8 --classify, extra args pass-through for smoke tests, log ~/.fieldtheory/sync-all.log.
+  - Plist ~/Library/LaunchAgents/dev.fieldtheory.sync-all-daily.plist @ 09:00 daily, loaded (launchctl bootstrap, state=waiting).
+  - Secrets: ~/.fieldtheory/.env (0600) w/ OPENCODE_GO_API_KEY + OPENROUTER_API_KEY (CLI auto-loads via config.ts). RAINDROP_TOKEN absent → raindrop step skips gracefully.
+  - Digest engine pinned via new FT_DAILY_ENGINE/FT_DAILY_MODEL/FT_DAILY_EFFORT env fallbacks (wrapper sets droid + deepseek-v4-flash) — unattended runs never fall back to claude CLI.
+  - RETIRED dev.fieldtheory.xlist-daily (booted out; plist moved to ~/.fieldtheory/x-lists/*.retired — x-list now inside sync-all, no double-fetch).
+  - Smoke test: wrapper --only projects --no-synthesis → exit 0, projects+index ran, plan printed correctly. Full suite 810/810.
+- State: companion pipeline FULLY WIRED: 7 sources incl. 5-agent session ingestion → nightly digest+interests @ 09:00 → recall via second-brain skill. 10 commits on main unpushed (c346a67..2e5094a).
+- RAINDROP LIVE (2026-07-08, COMMITTED f3e7371): user pointed at RAINDROP_TEST_TOKEN (client honors it alongside RAINDROP_TOKEN). Appended to ~/.fieldtheory/.env; wrapper now `set -a; source ~/.fieldtheory/.env` (CLI's own dotenv reads ~/.fieldtheory/bookmarks/.env — dataDir — NOT ~/.fieldtheory/.env, and sync-raindrop never calls loadEnv; sourcing in wrapper covers all subcommands). Verified clean-env dry-run OK. First full backfill: 13,378 raindrop bookmarks, 7 collections → canonical 21,735 rows, classified 7,503. FIX: syncRaindropBookmarks now mkdirs raindrop dir up front (resume state written per-page hit ENOENT on first-ever run). Suite 810/810.
+- PUSHED (2026-07-08): all 11 commits 183ad50..f3e7371 → origin/main. CONTINUITY.md + docs/plans left uncommitted per convention.
+- NIGHTLY RUN VERIFIED (2026-07-08): launchd fired 09:00, all 8 steps ✓, exit=0 09:35 (md export slow — first full 21.7k canonical export post-raindrop). Digest 2026-07-08.md written.
+- SLEEP-PROOFING (2026-07-08): launchd catches up missed 09:00 on wake (free). Self-wake needs user-run `sudo pmset repeat wakeorpoweron MTWRFSU 08:58:00` — suggested, UNCONFIRMED if user ran it. Pi 5 assessed as always-on alternative: chrome-cookies.ts HAS Linux path (v10/v11), residential IP safe; blocker = projects source (Mac repos+sessions) → would need Mac rsync of projects.jsonl. Cloud VM rejected (projects dead, X datacenter-IP risk).
+- DONE (COMMITTED 42399b7): daily digest links YouTube items/related refs to library notes md — extractYoutubeVideoId + buildYoutubeNotesLinks (state.json lookup, pathExists guard, digest-relative link) in src/daily/synthesize.ts. Live verified: 7 [notes](../youtube/...) links in regenerated 2026-07-08 digest, month segments correct. Tests 12/12 daily, full 812/812.
+- NOTEBOOKLM LIVE (2026-07-10): weekly-rotated digest auto-push wired. CLI = notebooklm-mcp-cli (`~/.local/bin/nlm`, uv tool, unofficial; auth via `nlm login`, expires periodically → sync-all.log shows "nlm: push FAILED"). sync-all.sh tail after exit 0: one notebook per ISO week "Field Theory <YYYY-Www>" (auto-created via `nlm notebook create` + jq, id cached ~/.fieldtheory/nlm/week-<w>.id; FT_NLM_NOTEBOOK overrides), pushes today's digest + every [notes](../youtube/*.md) file it references (title = notes H1), per-week manifest week-<w>.pushed dedupes. W28 notebook id a37e16ac-340d-4bf6-9f8e-7b2b1dd7a463, renamed "Field Theory 2026-W28", 11 sources live (digests 07-08/09/10 + 8 notes). Verified: smoke run pushed 8 notes, dedupe idempotent, manifest==source count. NOTE: 07-09/07-10 digests originally lacked notes links (launchd ran pre-feature dist); 07-10 regenerated --force. Source budget/wk ≈ 7 digests + ~40 notes < 50 free cap.
+- Next (optional): weekly rollups, x-list canonical ingest (GAP-3).
+
+SYNC-FAILURE DIAGNOSIS (2026-07-07) — why `ft sync` failed 6 Jul:
+- Symptom: user's `ft sync` (~23:28 IST 6 Jul) died mid-run. jsonl had 23 new records (checkpoint 18:14 UTC) but bookmarks-meta.json/backfill-state stuck at 4 Jul, bookmarks.db not rebuilt → hard abort BEFORE final writes (graphql-bookmarks.ts:799-817). 429 rate-limit is handled gracefully (writes meta), so NOT rate-limit stop → cause = thrown error, most likely undici `Error: fetch failed` (same error killed x-lists daily.log run 5 Jul 09:28) or Ctrl-C. No crash reports, no sync log exists to recover exact message.
+- Amplifier: 10,150 bookmarks ≥ 9,500 → auto-continue scans ~508 pages every incremental sync (~30 min with rate-limit backoffs) — huge window for network death. `fetchPageWithRetry` fetch() has NO timeout/AbortSignal (graphql-bookmarks.ts:444); `parseRetryAfterSec` honors x-rate-limit-reset unbounded (up to ~15 min × 4 attempts).
+- RECOVERED: reran `ft sync` (bg, 31 min, stopReason "max runtime reached" — normal) → exit 0, 0 new remote, 23 stranded bookmarks indexed, total 10150, media fetched, index rebuilt, meta/state now 2026-07-06T19:05Z. State healthy.
+- Possible fixes (not implemented): AbortSignal.timeout on fetch, cap retry-after wait, persist sync log, terminal-stop marker so auto-continue doesn't rescan 508 pages every run.
+
+SYNC SESSION (2026-07-01) — sync youtube playlist + github stars:
+- Goal: run `ft sync-github-stars` + `ft sync-youtube` for last playlist `PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk`.
+- Decision: youtube LLM notes via droid engine, model `deepseek-v4-flash` (user req).
+- Auth: gh authed (manikanda-kumar), OPENROUTER_API_KEY set. cookies-from-browser chrome + impersonate chrome for yt-dlp.
+- Done: github-stars sync — already current (fetched 0, total 2288, newest 2026-07-01). Canonical index rebuilt. Build clean.
+- Done: youtube sync complete (droid/deepseek-v4-flash) — 269 processed (211 done, 58 partial), 152 skipped-unchanged, 4 no-transcript, 0 failed. Index rebuilt ~/.fieldtheory/library/youtube/index.html.
+- Done: both sources synced. No commits.
+- FEATURE (2026-07-02) per-playlist index.html:
+  - paths.ts: `youtubeLibraryIndexHtmlPath(playlistId?)` → `index-<id>.html` (safePathSegment guarded).
+  - index-html.ts: extracted `toIndexEntry`; added `writeYoutubePlaylistIndex(playlistId)` — filters to `state.playlists[id].videoIds` (deduped via Set), returns null if no members have notes. `writeYoutubeIndexHtml` takes optional playlistId.
+  - cli.ts sync-youtube: after global index, also writes per-playlist index (skips for --video-ids-file).
+  - Notes markdown stays shared/deduped by videoId; only HTML index scoped. Cross-playlist video appears in both.
+  - Tests: tests/youtube-index-html.test.ts (+2 scope/dedup/null), tests/paths.test.ts (+2 path/traversal). paths 6/6, index 3/3, cli 33/33. Build clean.
+  - Verified live: index-PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk.html = 419 entries = global (playlist covers whole library). Dedup bug caught (was 420 from duplicate videoId in playlist.videoIds).
+- State: COMPLETE.
+
+OCR-FUSION SESSION (2026-07-02) — feed slide OCR into notes prompt for slide-heavy conf talks:
+- Goal: AI Engineer conf playlist PLcfpQ4tk2k0V1LNigteMgExP1rb4Hy8wn (82 vids, slide-heavy). Slide OCR text was captured but never fed to notes LLM.
+- Change:
+  - notes.ts: GenerateNotesInput +optional `slides?: SlideImage[]`; generateNotes builds `<untrusted_slide_ocr>` block (timestamped, deduped, budget 12K via buildSlideOcrBlock) + fusion instruction; block omitted when no OCR. New opt slideOcrCharBudget.
+  - overview.ts: REORDERED — capture slides BEFORE generateNotes (slide gate uses classifyYoutubeVideoType(meta) pre-notes), then generateNotes({...fetched, slides: slideImages}).
+  - Tests: youtube-notes.test.ts +1 (OCR inject/dedup/omit) 7/7. Build clean.
+- VERIFIED live (flash, video LC3-P7v3yoI): slides 9, OCR rich; note now cites slide-only facts (50% traffic from agents, HTML 1993→React, 40% ctx utilization, YAML ~100 tokens), each keypoint tagged (Slide [MM:SS]). Big quality win vs transcript-only.
+- Model comparison in progress: deepseek-v4-flash (done), deepseek-v4-pro + mimo-v2.5 (running). Isolated FT_DATA_DIR per model under scratchpad/mt-<model>/. Sample ids: UNzCG3lw6O0, LC3-P7v3yoI.
+- MUST use `--overview slides` (default none = no slides captured). Deps present: yt-dlp, ffmpeg, summarize.
+- Model compare done: all 3 fuse OCR identically (3/5 slide facts); flash best value (pro=+30% prose only, 12x cost; mimo lean, no upside). Comparison HTML: scratchpad/model-comparison.html.
+- CHOSEN: deepseek-v4-flash + --overview slides for full run.
+- Now: full 82-vid playlist sync running bg (task b3xgqt73j), real library, log scratchpad/full-run.log. First video done (6 slides). On completion writes global index.html + per-playlist index-PLcfpQ4tk2k0V1LNigteMgExP1rb4Hy8wn.html.
+- DONE: full 82-vid run complete — 73 done, 2 partial, 6 skipped, 1 no-transcript, 0 failed. 75/82 have slides+OCR. Global index.html + index-PLcfpQ4tk2k0V1LNigteMgExP1rb4Hy8wn.html written.
+- COMMITTED + PUSHED (2026-07-05): `183ad50 feat: OCR-fuse slides into notes and per-playlist index` (8 files, +197 -28). Both features (per-playlist index + OCR-fusion) in one commit. Build clean, 768/768 tests. origin/main efb94e7..183ad50. CONTINUITY.md + pngs/docs left uncommitted per convention.
+- State: COMPLETE.
+
+MAGICPATH FRONTEND SESSION (2026-06-27):
+- Goal (incl. success criteria): Create a new MagicPath project for Field Theory and produce a better first-page/front-end concept for the project.
+- Constraints/Assumptions: Used `MagicPath:magicpath` skill. MagicPath edits were limited to the code workspace's allowed files. Project URL should stay on a MagicPath canvas, not component previews.
+- Key decisions: Created a new personal MagicPath project instead of modifying `My First Project`; designed a dense local-first knowledge-library dashboard grounded in Field Theory's sources: X bookmarks, Raindrop, GitHub stars, YouTube notes, X list digest, and following experts.
+- State: New project `Field Theory Library Dashboard` exists at MagicPath project ID `421504403401502720`. Component ID `421504477854576640`, generatedName `safe-brook-2393`, revision `421504477854576641`. Project URL: `https://www.magicpath.ai/files/421504403401502720`.
+- Done: Authenticated MagicPath CLI, created project, ran `code start`, authored React/Tailwind component in `/tmp/fieldtheory-magicpath-dashboard`, fixed JSX parse error, submitted successfully with `code submit --wait`.
+- Now: Embedded browser control timed out while opening/checking the new project, so `magicpath-ai view 421504403401502720` was used as fallback to open it in the system browser.
+- Next: Review the MagicPath canvas visually; if further edits are needed, resync/fetch the completed revision before editing because MagicPath reported local workspace staleness after asset URL normalization.
+- Open questions: UNCONFIRMED whether the embedded browser recovered and is currently on the new project URL after the timeout.
+- Working set (files/ids/commands): `/tmp/fieldtheory-magicpath-dashboard/src/components/generated/FieldTheoryLibraryDashboard.tsx`; `/tmp/fieldtheory-magicpath-dashboard/src/index.css`; `npx -y magicpath-ai create-project --name "Field Theory Library Dashboard" -o json`; `npx -y magicpath-ai code submit --dir /tmp/fieldtheory-magicpath-dashboard --wait -o json`.
+- UPDATE (2026-06-27): User clarified this is a saved-knowledge-over-years product and asked to remove unwanted dashboard data / move it to subpages. Resynced component into `/tmp/fieldtheory-magicpath-dashboard-v2` with `code start --component 421504477854576640`; revised IA so Home is calm archive orientation + ask/search + "continue from memory"; moved source health, expert graph, and synthesis/pipeline details to `Library`, `Sources`, `People`, and `Synthesis` tabs. Submitted successfully as revision `421507232623120384`. Embedded browser verified at `https://www.magicpath.ai/files/421504403401502720` with markers `Saved knowledge`, `Personal archive over years`, `Sources`, `People`, `Synthesis`, `Continue from memory`. Local v2 workspace is stale after MagicPath asset normalization; resync before further edits.
+- UPDATE (2026-06-27): Addressed browser comments: search must expose source tuning, and `Today` was missing. Resynced into `/tmp/fieldtheory-magicpath-dashboard-v3`; added `Today` top-level nav/page; added source chips (`All`, `X`, `Raindrop`, `GitHub`, `YouTube`, `People`) directly in the Home search card with explanatory source context. Submitted successfully as revision `421508741435887616`. Embedded browser verification found `Today Fresh saves and resurfacing` plus search source buttons inside the iframe. Local v3 workspace is stale after MagicPath asset normalization; resync before further edits.
+- UPDATE (2026-06-27): User said v3 looked dated/90s and asked for modern systems quality. Resynced into `/tmp/fieldtheory-magicpath-dashboard-v4`; fixed search layout structurally with `.ft-query-row`; appended modern visual-system override: dark app sidebar, light high-contrast workspace, subtle radial accents, rounded command palette, horizontal source chips, stronger typography, contemporary cards, dark focused-view panel. Submitted successfully as revision `421509844743393280`. Embedded browser screenshot verified modernized layout and horizontal source chips. Local v4 workspace is stale after MagicPath asset normalization; resync before further edits.
+- UPDATE (2026-06-27): User approved MagicPath direction and asked to translate to web UI. Implemented in repo `ft serve` shell without adding a frontend build pipeline. Modified `src/web/app-shell.ts` to use the MagicPath IA (`Home`, `Today`, `Library`, `Sources`, `People`, `Synthesis`), modern dark sidebar/light workspace visual system, command search card, source chips (`All`, `X`, `Raindrop`, `GitHub`, `YouTube`) backed by `/api/unified?source=...`, archive Home using real `/api/unified` + `/api/stats`, People from top authors, Synthesis from existing list context endpoint. Updated `tests/web-server.test.ts` shell smoke coverage. Verified `npx tsx --test tests/web-server.test.ts` pass (11/11), `npm run build` pass, local server `http://127.0.0.1:8765` running, Browser screenshots saved `/tmp/fieldtheory-magicpath-concept.png` and `/tmp/fieldtheory-web-ui-implementation-v2.png`; source chip and Today nav interactions verified in embedded browser. Current known visual deviation: implementation uses live data and current browser viewport, so vertical content extends below screenshot instead of fitting exactly in MagicPath's selected 1440x1100 canvas.
+
+DROID ENGINE SESSION (2026-06-22) — third LLM engine + prompt hardening:
+- Added `src/llm/droid-engine.ts`: routes LLM calls through OpenCode Go API (env OPENCODE_GO_API_KEY or ~/.local/share/opencode/auth.json). Model chain deepseek-v4-flash → mimo-v2.5 → deepseek-v4-pro; FT_DROID_MODEL/--model override.
+- engine.ts: registered `droid` (async-only; sync invokeEngine throws clear error). Added withSystemOverride() + extractSystemPrompt() → system block routed via native channels (claude --system-prompt, codex personality="none" prefix, droid system msg).
+- Hardened all task prompts (bookmark-classify-llm, following/classify, md-prompts, seeds-model, youtube/{notes,script,slides}) with system override; classify paths moved sync→invokeEngineAsync.
+- README: engine/model/pricing docs. tests/engine.test.ts: +6 (droid detect, claude --system-prompt, extractSystemPrompt x3).
+- VERIFIED: build clean; full suite 737/737. Required `npm install` first (node_modules was missing @types).
+- COMMITTED (not pushed): `a36c93d feat: add droid engine and harden LLM system prompts` (12 files, +476/-70). Excluded CONTINUITY.md + docs/plans (convention).
+- Non-blockers left: resolveModelChain dups primary at tail when --model = a fallback id; getDroidModelChain exported-unused.
+
+REVIEW+FIX SESSION (2026-06-21) — thermo-nuclear review of `following` feature + fixes applied:
+/**
+ * Mechanical coverage accounting for daily digests.  Freshness deliberately
+ * uses each source's own sync metadata instead of canonical-index mtimes:
+ * X uses bookmarks-meta's incremental/full sync timestamps; Raindrop,
+ * GitHub stars, and projects store their last sync in meta.json; YouTube's
+ * per-playlist lastSyncedAt is the only stored sync timestamp in state.json.
+ */
+
+import { pathExists, readJson } from '../fs.js';
+import { githubStarsMetaPath } from '../github-stars/paths.js';
+import { twitterBookmarksMetaPath, youtubeStatePath } from '../paths.js';
+import { projectsMetaPath } from '../projects/paths.js';
+import { raindropMetaPath } from '../raindrop/paths.js';
+
+export type CoverageFreshness = string | 'never synced' | 'unknown';
+
+export interface DailyCoverageCounts {
+  collected: number;
+  themed: number;
+  alsoSaved: number;
+  carriedOver: number;
+  citationsDropped: number;
+  /** Counted across the full canonical index, not just this digest window. */
+  undateableExcluded: number;
+  synthesis: 'llm' | 'mechanical';
+}
+
+export interface DailyCoverage {
+  freshness: Record<'x' | 'raindrop' | 'github-stars' | 'youtube' | 'projects', CoverageFreshness>;
+  counts: DailyCoverageCounts;
+}
+
+function timestamp(value: unknown): CoverageFreshness {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return 'unknown';
+  return value;
+}
+
+async function probeMeta(path: string, pick: (value: Record<string, unknown>) => unknown): Promise<CoverageFreshness> {
+  try {
+    if (!(await pathExists(path))) return 'never synced';
+    return timestamp(pick(await readJson<Record<string, unknown>>(path)));
+  } catch {
+    // A corrupt/unreadable per-source state must never prevent a digest.
+    return 'unknown';
+  }
+}
+
+async function probeYoutube(): Promise<CoverageFreshness> {
+  try {
+    if (!(await pathExists(youtubeStatePath()))) return 'never synced';
+    const state = await readJson<{ playlists?: Record<string, { lastSyncedAt?: unknown }> }>(youtubeStatePath());
+    const values = Object.values(state.playlists ?? {})
+      .map((playlist) => playlist.lastSyncedAt)
+      .filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)));
+    return values.length ? values.sort().at(-1)! : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+  const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
+    probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
+    probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+    probeYoutube(),
+    probeMeta(projectsMetaPath(), (meta) => meta.lastSyncedAt),
+  ]);
+  return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+}
+
+src/graphql-bookmarks.ts:803:    lastFullSyncAt: completedFullSync ? syncedAt : previousMeta?.lastFullSyncAt,
+src/graphql-bookmarks.ts:804:    lastIncrementalSyncAt: incremental ? syncedAt : previousMeta?.lastIncrementalSyncAt,
+src/graphql-bookmarks.ts:1233:    lastFullSyncAt: previousMeta?.lastFullSyncAt,
+src/graphql-bookmarks.ts:1234:    lastIncrementalSyncAt: syncedAt,
+src/bookmarks-service.ts:1:import { getTwitterBookmarksStatus, latestBookmarkSyncAt } from './bookmarks.js';
+src/bookmarks-service.ts:62:    lastUpdated: latestBookmarkSyncAt(status),
+src/types.ts:113:  lastFullSyncAt?: string;
+src/types.ts:114:  lastIncrementalSyncAt?: string;
+tests/graphql-bookmarks.test.ts:1017:      lastFullSyncAt: '2026-04-18T12:00:00.000Z',
+tests/graphql-bookmarks.test.ts:1058:      assert.equal(meta.lastFullSyncAt, '2026-04-18T12:00:00.000Z');
+tests/bookmarks-status.test.ts:31:    assert.equal(status.lastIncrementalSyncAt, '2026-04-05T12:34:56Z');
+tests/bookmarks-status.test.ts:48:      lastIncrementalSyncAt: '2026-04-05T10:00:00Z',
+tests/bookmarks-status.test.ts:69:    assert.equal(status.lastIncrementalSyncAt, '2026-04-05T12:34:56Z');
+tests/bookmarks-status.test.ts:84:      lastIncrementalSyncAt: '2026-04-05T12:34:56Z',
+tests/bookmarks-status.test.ts:100:    assert.equal(status.lastIncrementalSyncAt, '2026-04-05T12:34:56Z');
+tests/bookmarks-service.test.ts:76:      lastIncrementalSyncAt: '2026-04-05T10:00:00Z',
+tests/bookmarks-service.test.ts:77:      lastFullSyncAt: '2026-04-05T12:34:56Z',
+tests/bookmarks-service.test.ts:103:      lastIncrementalSyncAt: '2026-04-05T12:34:56Z',
+src/bookmarks.ts:233:    lastFullSyncAt: mode === 'full' ? now : previousMeta?.lastFullSyncAt,
+src/bookmarks.ts:234:    lastIncrementalSyncAt: mode === 'incremental' ? now : previousMeta?.lastIncrementalSyncAt,
+src/bookmarks.ts:248:export function latestBookmarkSyncAt(
+src/bookmarks.ts:249:  meta?: Pick<BookmarkCacheMeta, 'lastIncrementalSyncAt' | 'lastFullSyncAt'> | null,
+src/bookmarks.ts:254:  for (const candidate of [meta?.lastIncrementalSyncAt, meta?.lastFullSyncAt]) {
+src/bookmarks.ts:275:  const metaUpdatedAt = latestBookmarkSyncAt(meta);
+src/bookmarks.ts:285:      lastFullSyncAt: meta?.lastFullSyncAt,
+src/bookmarks.ts:286:      lastIncrementalSyncAt: state?.lastRunAt ?? meta?.lastIncrementalSyncAt,
+src/daily/coverage.ts:63:    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
+
+exec
+/bin/zsh -lc "sed -n '235,268p' src/bookmarks.ts; sed -n '1,50p' src/types.ts; sed -n '95,122p' src/types.ts; rg -n \"collectDailyCoverage|Coverage\" tests/daily.test.ts" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+    totalBookmarks: merged.length,
+  };
+  await writeJson(metaPath, meta);
+
+  return {
+    mode,
+    totalBookmarks: merged.length,
+    added,
+    cachePath,
+    metaPath,
+  };
+}
+
+export function latestBookmarkSyncAt(
+  meta?: Pick<BookmarkCacheMeta, 'lastIncrementalSyncAt' | 'lastFullSyncAt'> | null,
+): string | null {
+  let latestValue: string | null = null;
+  let latestTs = Number.NEGATIVE_INFINITY;
+
+  for (const candidate of [meta?.lastIncrementalSyncAt, meta?.lastFullSyncAt]) {
+    if (!candidate) continue;
+    const parsed = Date.parse(candidate);
+    if (!Number.isFinite(parsed) || parsed <= latestTs) continue;
+    latestTs = parsed;
+    latestValue = candidate;
+  }
+
+  return latestValue;
+}
+
+export async function getTwitterBookmarksStatus(): Promise<BookmarkCacheMeta & { cachePath: string; metaPath: string }> {
+  const cachePath = twitterBookmarksCachePath();
+  const metaPath = twitterBookmarksMetaPath();
+  const statePath = twitterBackfillStatePath();
+export interface BookmarkMediaVariant {
+  url?: string;
+  contentType?: string;
+  bitrate?: number;
+}
+
+export interface BookmarkMediaObject {
+  url?: string;
+  mediaUrl?: string;
+  expandedUrl?: string;
+  previewUrl?: string;
+  type?: string;
+  altText?: string;
+  extAltText?: string;
+  width?: number;
+  height?: number;
+  videoVariants?: BookmarkMediaVariant[];
+  variants?: BookmarkMediaVariant[];
+}
+
+export interface BookmarkAuthorSnapshot {
+  handle?: string;
+  name?: string;
+  profileImageUrl?: string;
+  description?: string;
+  location?: string;
+  url?: string;
+  verified?: boolean;
+  followersCount?: number;
+  followingCount?: number;
+  statusesCount?: number;
+}
+
+export interface BookmarkEngagementSnapshot {
+  likeCount?: number;
+  repostCount?: number;
+  replyCount?: number;
+  quoteCount?: number;
+  bookmarkCount?: number;
+  viewCount?: number;
+}
+
+export interface QuotedTweetSnapshot {
+  id: string;
+  text: string;
+  authorHandle?: string;
+  authorName?: string;
+  authorProfileImageUrl?: string;
+  postedAt?: string | null;
+  media?: string[];
+   */
+  textExpandedAt?: string;
+  /**
+   * Set when gap-fill tried to backfill the quoted tweet for this record and
+   * failed permanently (deleted, forbidden, empty body). Prevents retrying the
+   * same dead tweet on every run.
+   */
+  quotedTweetFailedAt?: string;
+}
+
+export interface BookmarkFolder {
+  id: string;
+  name: string;
+}
+
+export interface BookmarkCacheMeta {
+  provider: 'twitter';
+  schemaVersion: number;
+  lastFullSyncAt?: string;
+  lastIncrementalSyncAt?: string;
+  totalBookmarks: number;
+}
+
+export interface XOAuthTokenSet {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+321:    assert.match(digest, /## Coverage/);
+
+apply patch
+patch: completed
+/Users/manik/Github/fieldtheory-cli/src/daily/coverage.ts
+/Users/manik/Github/fieldtheory-cli/tests/daily.test.ts
+diff --git a/src/daily/coverage.ts b/src/daily/coverage.ts
+index c45ed65b36ac9fdaf5b9a0c245df1c093bc4cb9a..e1f86438327bdde89810772df5156c11216845f0
+--- a/src/daily/coverage.ts
++++ b/src/daily/coverage.ts
+@@ -8,9 +8,11 @@
+ 
+ import { pathExists, readJson } from '../fs.js';
+ import { githubStarsMetaPath } from '../github-stars/paths.js';
++import { latestBookmarkSyncAt } from '../bookmarks.js';
+ import { twitterBookmarksMetaPath, youtubeStatePath } from '../paths.js';
+ import { projectsMetaPath } from '../projects/paths.js';
+ import { raindropMetaPath } from '../raindrop/paths.js';
++import type { BookmarkCacheMeta } from '../types.js';
+ 
+ export type CoverageFreshness = string | 'never synced' | 'unknown';
+ 
+@@ -58,9 +60,21 @@
+   }
+ }
+ 
++async function probeX(): Promise<CoverageFreshness> {
++  try {
++    if (!(await pathExists(twitterBookmarksMetaPath()))) return 'never synced';
++    const meta = await readJson<Pick<BookmarkCacheMeta, 'lastIncrementalSyncAt' | 'lastFullSyncAt'>>(twitterBookmarksMetaPath());
++    // A full sync can finish after the last incremental sync, so freshness is
++    // the newest valid timestamp across both fields.
++    return latestBookmarkSyncAt(meta) ?? 'unknown';
++  } catch {
++    return 'unknown';
++  }
++}
++
+ export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+   const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+-    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
++    probeX(),
+     probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
+     probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+     probeYoutube(),
+@@ -68,4 +82,3 @@
+   ]);
+   return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+ }
+-
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index eecfc65d6ed0d9cf198766303799171175c9fcd6..7994db8990e5b1d20d36f3a08845179d9abb4695
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -8,6 +8,7 @@
+ import { readFile } from 'node:fs/promises';
+ import { collectDaily } from '../src/daily/collect.js';
+ import { connectDailyItems } from '../src/daily/connect.js';
++import { collectDailyCoverage } from '../src/daily/coverage.js';
+ import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+ import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+ 
+@@ -323,6 +324,25 @@
+   });
+ });
+ 
++test('daily: X coverage freshness uses the newest full or incremental sync timestamp', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeJson(path.join(dir, 'bookmarks-meta.json'), {
++      lastIncrementalSyncAt: '2026-07-06T10:00:00.000Z',
++      lastFullSyncAt: '2026-07-06T12:00:00.000Z',
++    });
++    const coverage = await collectDailyCoverage({
++      collected: 0,
++      themed: 0,
++      alsoSaved: 0,
++      carriedOver: 0,
++      citationsDropped: 0,
++      undateableExcluded: 0,
++      synthesis: 'mechanical',
++    });
++    assert.equal(coverage.freshness.x, '2026-07-06T12:00:00.000Z');
++  });
++});
++
+ test('daily: coverage counts canonical rows excluded for undateable first_saved_at', async () => {
+   await withIsolatedDataDir(async () => {
+     await writeStars(process.env.FT_DATA_DIR!, Array.from({ length: 4 }, (_, index) => starRecord({
+
+diff --git a/src/daily/coverage.ts b/src/daily/coverage.ts
+index c45ed65b36ac9fdaf5b9a0c245df1c093bc4cb9a..e1f86438327bdde89810772df5156c11216845f0
+--- a/src/daily/coverage.ts
++++ b/src/daily/coverage.ts
+@@ -8,9 +8,11 @@
+ 
+ import { pathExists, readJson } from '../fs.js';
+ import { githubStarsMetaPath } from '../github-stars/paths.js';
++import { latestBookmarkSyncAt } from '../bookmarks.js';
+ import { twitterBookmarksMetaPath, youtubeStatePath } from '../paths.js';
+ import { projectsMetaPath } from '../projects/paths.js';
+ import { raindropMetaPath } from '../raindrop/paths.js';
++import type { BookmarkCacheMeta } from '../types.js';
+ 
+ export type CoverageFreshness = string | 'never synced' | 'unknown';
+ 
+@@ -58,9 +60,21 @@
+   }
+ }
+ 
++async function probeX(): Promise<CoverageFreshness> {
++  try {
++    if (!(await pathExists(twitterBookmarksMetaPath()))) return 'never synced';
++    const meta = await readJson<Pick<BookmarkCacheMeta, 'lastIncrementalSyncAt' | 'lastFullSyncAt'>>(twitterBookmarksMetaPath());
++    // A full sync can finish after the last incremental sync, so freshness is
++    // the newest valid timestamp across both fields.
++    return latestBookmarkSyncAt(meta) ?? 'unknown';
++  } catch {
++    return 'unknown';
++  }
++}
++
+ export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+   const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+-    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
++    probeX(),
+     probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
+     probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+     probeYoutube(),
+@@ -68,4 +82,3 @@
+   ]);
+   return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+ }
+-
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index eecfc65d6ed0d9cf198766303799171175c9fcd6..7994db8990e5b1d20d36f3a08845179d9abb4695
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -8,6 +8,7 @@
+ import { readFile } from 'node:fs/promises';
+ import { collectDaily } from '../src/daily/collect.js';
+ import { connectDailyItems } from '../src/daily/connect.js';
++import { collectDailyCoverage } from '../src/daily/coverage.js';
+ import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+ import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+ 
+@@ -323,6 +324,25 @@
+   });
+ });
+ 
++test('daily: X coverage freshness uses the newest full or incremental sync timestamp', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeJson(path.join(dir, 'bookmarks-meta.json'), {
++      lastIncrementalSyncAt: '2026-07-06T10:00:00.000Z',
++      lastFullSyncAt: '2026-07-06T12:00:00.000Z',
++    });
++    const coverage = await collectDailyCoverage({
++      collected: 0,
++      themed: 0,
++      alsoSaved: 0,
++      carriedOver: 0,
++      citationsDropped: 0,
++      undateableExcluded: 0,
++      synthesis: 'mechanical',
++    });
++    assert.equal(coverage.freshness.x, '2026-07-06T12:00:00.000Z');
++  });
++});
++
+ test('daily: coverage counts canonical rows excluded for undateable first_saved_at', async () => {
+   await withIsolatedDataDir(async () => {
+     await writeStars(process.env.FT_DATA_DIR!, Array.from({ length: 4 }, (_, index) => starRecord({
+
+exec
+/bin/zsh -lc 'node --import tsx --test tests/daily.test.ts && npm run build && git diff --check' in /Users/manik/Github/fieldtheory-cli
+diff --git a/src/daily/coverage.ts b/src/daily/coverage.ts
+index c45ed65b36ac9fdaf5b9a0c245df1c093bc4cb9a..e1f86438327bdde89810772df5156c11216845f0
+--- a/src/daily/coverage.ts
++++ b/src/daily/coverage.ts
+@@ -8,9 +8,11 @@
+ 
+ import { pathExists, readJson } from '../fs.js';
+ import { githubStarsMetaPath } from '../github-stars/paths.js';
++import { latestBookmarkSyncAt } from '../bookmarks.js';
+ import { twitterBookmarksMetaPath, youtubeStatePath } from '../paths.js';
+ import { projectsMetaPath } from '../projects/paths.js';
+ import { raindropMetaPath } from '../raindrop/paths.js';
++import type { BookmarkCacheMeta } from '../types.js';
+ 
+ export type CoverageFreshness = string | 'never synced' | 'unknown';
+ 
+@@ -58,9 +60,21 @@
+   }
+ }
+ 
++async function probeX(): Promise<CoverageFreshness> {
++  try {
++    if (!(await pathExists(twitterBookmarksMetaPath()))) return 'never synced';
++    const meta = await readJson<Pick<BookmarkCacheMeta, 'lastIncrementalSyncAt' | 'lastFullSyncAt'>>(twitterBookmarksMetaPath());
++    // A full sync can finish after the last incremental sync, so freshness is
++    // the newest valid timestamp across both fields.
++    return latestBookmarkSyncAt(meta) ?? 'unknown';
++  } catch {
++    return 'unknown';
++  }
++}
++
+ export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+   const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+-    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
++    probeX(),
+     probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
+     probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+     probeYoutube(),
+@@ -68,4 +82,3 @@
+   ]);
+   return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+ }
+-
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index eecfc65d6ed0d9cf198766303799171175c9fcd6..7994db8990e5b1d20d36f3a08845179d9abb4695
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -8,6 +8,7 @@
+ import { readFile } from 'node:fs/promises';
+ import { collectDaily } from '../src/daily/collect.js';
+ import { connectDailyItems } from '../src/daily/connect.js';
++import { collectDailyCoverage } from '../src/daily/coverage.js';
+ import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+ import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+ 
+@@ -323,6 +324,25 @@
+   });
+ });
+ 
++test('daily: X coverage freshness uses the newest full or incremental sync timestamp', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeJson(path.join(dir, 'bookmarks-meta.json'), {
++      lastIncrementalSyncAt: '2026-07-06T10:00:00.000Z',
++      lastFullSyncAt: '2026-07-06T12:00:00.000Z',
++    });
++    const coverage = await collectDailyCoverage({
++      collected: 0,
++      themed: 0,
++      alsoSaved: 0,
++      carriedOver: 0,
++      citationsDropped: 0,
++      undateableExcluded: 0,
++      synthesis: 'mechanical',
++    });
++    assert.equal(coverage.freshness.x, '2026-07-06T12:00:00.000Z');
++  });
++});
++
+ test('daily: coverage counts canonical rows excluded for undateable first_saved_at', async () => {
+   await withIsolatedDataDir(async () => {
+     await writeStars(process.env.FT_DATA_DIR!, Array.from({ length: 4 }, (_, index) => starRecord({
+
+ succeeded in 1831ms:
+(node:17237) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ daily: collect windows on first_saved_at and gathers project deltas (65.463583ms)
+✔ daily: collect uses watermark when no date given and caps at 7 days (27.57875ms)
+✔ daily: overflow advances only through the oldest collected items and drains on the next run (38.061584ms)
+✔ daily: explicit date synthesis does not move the rolling watermark (36.363042ms)
+✔ daily: connect links new items to older related items only (23.922709ms)
+✔ daily: collect handles Twitter-format and offset-ISO timestamps in first_saved_at (45.090167ms)
+✔ daily: relatedSeedTerms drops stopwords, short words, and numbers (0.150542ms)
+✔ daily: digest path validates date shape (0.151917ms)
+✔ daily: synthesize validates citations, writes digest, and advances the rolling watermark (38.383458ms)
+✔ daily: synthesize falls back to mechanical themes when the LLM fails (31.041ms)
+✔ daily: X coverage freshness uses the newest full or incremental sync timestamp (8.594833ms)
+✔ daily: coverage counts canonical rows excluded for undateable first_saved_at (39.393958ms)
+✔ daily: synthesize suppresses duplicate valid citations without counting them as dropped (29.650459ms)
+✔ daily: synthesize renders uncited items under Also saved (37.938709ms)
+✔ daily: synthesize renders items from themes dropped by the cap under Also saved (29.223875ms)
+✔ daily: interests classifies rising/steady/fading topics and finds active threads (44.863167ms)
+✔ daily: synthesize skips when the window is empty (10.589709ms)
+✔ daily: extractYoutubeVideoId handles watch, short, shorts, and embed URLs (0.095375ms)
+✔ daily: digest links youtube items to their library notes when notes exist (25.433458ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 692.338875
+npm notice run fieldtheory@1.3.20 build
+npm notice run tsc -p tsconfig.json
+
+apply patch
+patch: completed
+/Users/manik/Github/fieldtheory-cli/CONTINUITY.md
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 0e50fc6ae36e99bd43f372137d9b8b42c003733d..b457c862fa45e83df267a74043b9aec5c91e3d2f
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -6,11 +6,12 @@
+ - Undateable count is the all-index count of canonical rows whose `first_saved_at` is null or unparseable; it is labeled "canonical total" because malformed timestamps cannot honestly be assigned to a window.
+ State:
+ - R5–R7 implementation validated; stale overflow cursor is now used only when the effective rolling start equals the persisted watermark instant. Clamp-boundary regression test passes.
+-- R8–R11 implemented and validated. Freshness uses each source's existing metadata timestamp; per-source read/parse failures return `unknown`.
++- R8–R11 implemented and validated. Freshness uses each source's existing metadata timestamp; per-source read/parse failures return `unknown`; X freshness uses the newest valid value across full and incremental sync timestamps.
+ Done:
+ - Read the requested plan and current pipeline.
+ - Guarded cursor use after rolling-window clamping/fallback and added regression coverage.
+ - Added `src/daily/coverage.ts`; digest frontmatter/footer counts; fault-tolerant five-source probes; canonical-total undateable accounting; AE4/AE6 and overflow reconciliation tests.
++- Fixed review P2: X freshness now reuses `latestBookmarkSyncAt` to choose the newer of full/incremental timestamps, with regression coverage.
+ Now:
+ - Ready to hand off validated coverage-footer implementation.
+ Next:
+diff --git a/src/daily/coverage.ts b/src/daily/coverage.ts
+index c45ed65b36ac9fdaf5b9a0c245df1c093bc4cb9a..e1f86438327bdde89810772df5156c11216845f0
+--- a/src/daily/coverage.ts
++++ b/src/daily/coverage.ts
+@@ -8,9 +8,11 @@
+ 
+ import { pathExists, readJson } from '../fs.js';
+ import { githubStarsMetaPath } from '../github-stars/paths.js';
++import { latestBookmarkSyncAt } from '../bookmarks.js';
+ import { twitterBookmarksMetaPath, youtubeStatePath } from '../paths.js';
+ import { projectsMetaPath } from '../projects/paths.js';
+ import { raindropMetaPath } from '../raindrop/paths.js';
++import type { BookmarkCacheMeta } from '../types.js';
+ 
+ export type CoverageFreshness = string | 'never synced' | 'unknown';
+ 
+@@ -58,9 +60,21 @@
+   }
+ }
+ 
++async function probeX(): Promise<CoverageFreshness> {
++  try {
++    if (!(await pathExists(twitterBookmarksMetaPath()))) return 'never synced';
++    const meta = await readJson<Pick<BookmarkCacheMeta, 'lastIncrementalSyncAt' | 'lastFullSyncAt'>>(twitterBookmarksMetaPath());
++    // A full sync can finish after the last incremental sync, so freshness is
++    // the newest valid timestamp across both fields.
++    return latestBookmarkSyncAt(meta) ?? 'unknown';
++  } catch {
++    return 'unknown';
++  }
++}
++
+ export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+   const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+-    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
++    probeX(),
+     probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
+     probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+     probeYoutube(),
+@@ -68,4 +82,3 @@
+   ]);
+   return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+ }
+-
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index eecfc65d6ed0d9cf198766303799171175c9fcd6..7994db8990e5b1d20d36f3a08845179d9abb4695
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -8,6 +8,7 @@
+ import { readFile } from 'node:fs/promises';
+ import { collectDaily } from '../src/daily/collect.js';
+ import { connectDailyItems } from '../src/daily/connect.js';
++import { collectDailyCoverage } from '../src/daily/coverage.js';
+ import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+ import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+ 
+@@ -323,6 +324,25 @@
+   });
+ });
+ 
++test('daily: X coverage freshness uses the newest full or incremental sync timestamp', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeJson(path.join(dir, 'bookmarks-meta.json'), {
++      lastIncrementalSyncAt: '2026-07-06T10:00:00.000Z',
++      lastFullSyncAt: '2026-07-06T12:00:00.000Z',
++    });
++    const coverage = await collectDailyCoverage({
++      collected: 0,
++      themed: 0,
++      alsoSaved: 0,
++      carriedOver: 0,
++      citationsDropped: 0,
++      undateableExcluded: 0,
++      synthesis: 'mechanical',
++    });
++    assert.equal(coverage.freshness.x, '2026-07-06T12:00:00.000Z');
++  });
++});
++
+ test('daily: coverage counts canonical rows excluded for undateable first_saved_at', async () => {
+   await withIsolatedDataDir(async () => {
+     await writeStars(process.env.FT_DATA_DIR!, Array.from({ length: 4 }, (_, index) => starRecord({
+
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 0e50fc6ae36e99bd43f372137d9b8b42c003733d..b457c862fa45e83df267a74043b9aec5c91e3d2f
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -6,11 +6,12 @@
+ - Undateable count is the all-index count of canonical rows whose `first_saved_at` is null or unparseable; it is labeled "canonical total" because malformed timestamps cannot honestly be assigned to a window.
+ State:
+ - R5–R7 implementation validated; stale overflow cursor is now used only when the effective rolling start equals the persisted watermark instant. Clamp-boundary regression test passes.
+-- R8–R11 implemented and validated. Freshness uses each source's existing metadata timestamp; per-source read/parse failures return `unknown`.
++- R8–R11 implemented and validated. Freshness uses each source's existing metadata timestamp; per-source read/parse failures return `unknown`; X freshness uses the newest valid value across full and incremental sync timestamps.
+ Done:
+ - Read the requested plan and current pipeline.
+ - Guarded cursor use after rolling-window clamping/fallback and added regression coverage.
+ - Added `src/daily/coverage.ts`; digest frontmatter/footer counts; fault-tolerant five-source probes; canonical-total undateable accounting; AE4/AE6 and overflow reconciliation tests.
++- Fixed review P2: X freshness now reuses `latestBookmarkSyncAt` to choose the newer of full/incremental timestamps, with regression coverage.
+ Now:
+ - Ready to hand off validated coverage-footer implementation.
+ Next:
+diff --git a/src/daily/coverage.ts b/src/daily/coverage.ts
+index c45ed65b36ac9fdaf5b9a0c245df1c093bc4cb9a..e1f86438327bdde89810772df5156c11216845f0
+--- a/src/daily/coverage.ts
++++ b/src/daily/coverage.ts
+@@ -8,9 +8,11 @@
+ 
+ import { pathExists, readJson } from '../fs.js';
+ import { githubStarsMetaPath } from '../github-stars/paths.js';
++import { latestBookmarkSyncAt } from '../bookmarks.js';
+ import { twitterBookmarksMetaPath, youtubeStatePath } from '../paths.js';
+ import { projectsMetaPath } from '../projects/paths.js';
+ import { raindropMetaPath } from '../raindrop/paths.js';
++import type { BookmarkCacheMeta } from '../types.js';
+ 
+ export type CoverageFreshness = string | 'never synced' | 'unknown';
+ 
+@@ -58,9 +60,21 @@
+   }
+ }
+ 
++async function probeX(): Promise<CoverageFreshness> {
++  try {
++    if (!(await pathExists(twitterBookmarksMetaPath()))) return 'never synced';
++    const meta = await readJson<Pick<BookmarkCacheMeta, 'lastIncrementalSyncAt' | 'lastFullSyncAt'>>(twitterBookmarksMetaPath());
++    // A full sync can finish after the last incremental sync, so freshness is
++    // the newest valid timestamp across both fields.
++    return latestBookmarkSyncAt(meta) ?? 'unknown';
++  } catch {
++    return 'unknown';
++  }
++}
++
+ export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+   const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+-    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
++    probeX(),
+     probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
+     probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+     probeYoutube(),
+@@ -68,4 +82,3 @@
+   ]);
+   return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+ }
+-
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index eecfc65d6ed0d9cf198766303799171175c9fcd6..7994db8990e5b1d20d36f3a08845179d9abb4695
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -8,6 +8,7 @@
+ import { readFile } from 'node:fs/promises';
+ import { collectDaily } from '../src/daily/collect.js';
+ import { connectDailyItems } from '../src/daily/connect.js';
++import { collectDailyCoverage } from '../src/daily/coverage.js';
+ import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+ import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+ 
+@@ -323,6 +324,25 @@
+   });
+ });
+ 
++test('daily: X coverage freshness uses the newest full or incremental sync timestamp', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeJson(path.join(dir, 'bookmarks-meta.json'), {
++      lastIncrementalSyncAt: '2026-07-06T10:00:00.000Z',
++      lastFullSyncAt: '2026-07-06T12:00:00.000Z',
++    });
++    const coverage = await collectDailyCoverage({
++      collected: 0,
++      themed: 0,
++      alsoSaved: 0,
++      carriedOver: 0,
++      citationsDropped: 0,
++      undateableExcluded: 0,
++      synthesis: 'mechanical',
++    });
++    assert.equal(coverage.freshness.x, '2026-07-06T12:00:00.000Z');
++  });
++});
++
+ test('daily: coverage counts canonical rows excluded for undateable first_saved_at', async () => {
+   await withIsolatedDataDir(async () => {
+     await writeStars(process.env.FT_DATA_DIR!, Array.from({ length: 4 }, (_, index) => starRecord({
+
+codex
+summary: "Fixed P2: X freshness now reports the newest valid timestamp across full and incremental sync metadata via latestBookmarkSyncAt."
+evidence:
+  - "Added regression test where a newer full sync supersedes an older incremental sync."
+  - "Focused daily suite passed: 19/19 tests."
+  - "TypeScript build and git diff whitespace check passed."
+files_changed:
+  - "CONTINUITY.md"
+  - "src/daily/coverage.ts"
+  - "tests/daily.test.ts"
+commands_run:
+  - command: "node --import tsx --test tests/daily.test.ts"
+    exit_code: 0
+    summary: "19 tests passed."
+  - command: "npm run build"
+    exit_code: 0
+    summary: "TypeScript build passed."
+  - command: "git diff --check"
+    exit_code: 0
+    summary: "No whitespace errors."
+verification:
+  status: "passed"
+  details: "Regression test confirms newer full-sync timestamps are selected over older incremental timestamps."
+blockers: []
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 0e50fc6ae36e99bd43f372137d9b8b42c003733d..b457c862fa45e83df267a74043b9aec5c91e3d2f
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -6,11 +6,12 @@
+ - Undateable count is the all-index count of canonical rows whose `first_saved_at` is null or unparseable; it is labeled "canonical total" because malformed timestamps cannot honestly be assigned to a window.
+ State:
+ - R5–R7 implementation validated; stale overflow cursor is now used only when the effective rolling start equals the persisted watermark instant. Clamp-boundary regression test passes.
+-- R8–R11 implemented and validated. Freshness uses each source's existing metadata timestamp; per-source read/parse failures return `unknown`.
++- R8–R11 implemented and validated. Freshness uses each source's existing metadata timestamp; per-source read/parse failures return `unknown`; X freshness uses the newest valid value across full and incremental sync timestamps.
+ Done:
+ - Read the requested plan and current pipeline.
+ - Guarded cursor use after rolling-window clamping/fallback and added regression coverage.
+ - Added `src/daily/coverage.ts`; digest frontmatter/footer counts; fault-tolerant five-source probes; canonical-total undateable accounting; AE4/AE6 and overflow reconciliation tests.
++- Fixed review P2: X freshness now reuses `latestBookmarkSyncAt` to choose the newer of full/incremental timestamps, with regression coverage.
+ Now:
+ - Ready to hand off validated coverage-footer implementation.
+ Next:
+diff --git a/src/daily/coverage.ts b/src/daily/coverage.ts
+index c45ed65b36ac9fdaf5b9a0c245df1c093bc4cb9a..e1f86438327bdde89810772df5156c11216845f0
+--- a/src/daily/coverage.ts
++++ b/src/daily/coverage.ts
+@@ -8,9 +8,11 @@
+ 
+ import { pathExists, readJson } from '../fs.js';
+ import { githubStarsMetaPath } from '../github-stars/paths.js';
++import { latestBookmarkSyncAt } from '../bookmarks.js';
+ import { twitterBookmarksMetaPath, youtubeStatePath } from '../paths.js';
+ import { projectsMetaPath } from '../projects/paths.js';
+ import { raindropMetaPath } from '../raindrop/paths.js';
++import type { BookmarkCacheMeta } from '../types.js';
+ 
+ export type CoverageFreshness = string | 'never synced' | 'unknown';
+ 
+@@ -58,9 +60,21 @@
+   }
+ }
+ 
++async function probeX(): Promise<CoverageFreshness> {
++  try {
++    if (!(await pathExists(twitterBookmarksMetaPath()))) return 'never synced';
++    const meta = await readJson<Pick<BookmarkCacheMeta, 'lastIncrementalSyncAt' | 'lastFullSyncAt'>>(twitterBookmarksMetaPath());
++    // A full sync can finish after the last incremental sync, so freshness is
++    // the newest valid timestamp across both fields.
++    return latestBookmarkSyncAt(meta) ?? 'unknown';
++  } catch {
++    return 'unknown';
++  }
++}
++
+ export async function collectDailyCoverage(counts: DailyCoverageCounts): Promise<DailyCoverage> {
+   const [x, raindrop, githubStars, youtube, projects] = await Promise.all([
+-    probeMeta(twitterBookmarksMetaPath(), (meta) => meta.lastIncrementalSyncAt ?? meta.lastFullSyncAt),
++    probeX(),
+     probeMeta(raindropMetaPath(), (meta) => meta.lastSyncedAt),
+     probeMeta(githubStarsMetaPath(), (meta) => meta.lastSyncAt),
+     probeYoutube(),
+@@ -68,4 +82,3 @@
+   ]);
+   return { freshness: { x, raindrop, 'github-stars': githubStars, youtube, projects }, counts };
+ }
+-
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index eecfc65d6ed0d9cf198766303799171175c9fcd6..7994db8990e5b1d20d36f3a08845179d9abb4695
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -8,6 +8,7 @@
+ import { readFile } from 'node:fs/promises';
+ import { collectDaily } from '../src/daily/collect.js';
+ import { connectDailyItems } from '../src/daily/connect.js';
++import { collectDailyCoverage } from '../src/daily/coverage.js';
+ import { extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+ import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+ 
+@@ -323,6 +324,25 @@
+   });
+ });
+ 
++test('daily: X coverage freshness uses the newest full or incremental sync timestamp', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeJson(path.join(dir, 'bookmarks-meta.json'), {
++      lastIncrementalSyncAt: '2026-07-06T10:00:00.000Z',
++      lastFullSyncAt: '2026-07-06T12:00:00.000Z',
++    });
++    const coverage = await collectDailyCoverage({
++      collected: 0,
++      themed: 0,
++      alsoSaved: 0,
++      carriedOver: 0,
++      citationsDropped: 0,
++      undateableExcluded: 0,
++      synthesis: 'mechanical',
++    });
++    assert.equal(coverage.freshness.x, '2026-07-06T12:00:00.000Z');
++  });
++});
++
+ test('daily: coverage counts canonical rows excluded for undateable first_saved_at', async () => {
+   await withIsolatedDataDir(async () => {
+     await writeStars(process.env.FT_DATA_DIR!, Array.from({ length: 4 }, (_, index) => starRecord({
+
+hook: Stop
+hook: Stop Completed
+tokens used
+1,61,729

@@ -1,0 +1,58 @@
+# Harness Worker Packet
+
+## Contract
+
+You are an internal worker for the use-harness router.
+Return a concise report to the router; do not address the end user directly.
+Do not claim success unless validation evidence is included.
+
+## Assignment
+
+- Run ID: codex-20260710T161931Z-bdczc2
+- Backend: codex
+- Task type: implement
+- Workspace: /Users/manik/Github/fieldtheory-cli
+- Permission mode: write-enabled
+- Model: gpt-5.6-terra
+
+## Objective
+
+Implement the 'watermark and overflow' slice of docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (read it first). Scope: R5-R7 + AE3, AE5 ONLY. The rendering guarantee (R1-R4) is already implemented — do not rework it. Do NOT implement the coverage footer (R8-R11).
+
+Requirements:
+- R5: The watermark must advance only past items actually collected. Today src/daily/collect.ts getCanonicalBookmarksSince caps at MAX_ITEMS=200 newest-first and src/daily/synthesize.ts unconditionally writes lastRunAt = collection.untilIso — when the window holds >200 items the excess silently falls behind the watermark. Fix: detect overflow at collection (fetch cap+1 or count), collect oldest-first-drains semantics per R6, expose carriedOver count + the correct next watermark on DailyCollection, and have synthesizeDaily write that watermark instead of untilIso when overflow occurred.
+- R6: repeated overflow windows must drain oldest carry-overs eventually (no starvation). Choose the simplest ordering that guarantees drainage; document the choice in a comment.
+- R7: ft daily --date runs (explicit historical date) must NOT move the live rolling watermark. Today synthesizeDaily always overwrites meta lastRunAt — running --date for a past day rewinds the watermark and causes re-digestion. Fix: collection knows whether it was an explicit-date run; synthesizeDaily must preserve the existing meta watermark in that case (lastDigestDate update policy: keep it reflecting the rolling run only — document choice).
+
+Tests in tests/daily.test.ts (existing patterns, isolated data dir, invoke seam): AE3 — window with more items than cap: collected=cap, carriedOver>0, watermark does not pass carried items, a subsequent collectDaily picks them up. AE5 — set a live watermark via a rolling run, then run an explicit --date synthesis for an earlier day with force; live watermark unchanged afterwards. Keep MAX_ITEMS at 200 in production but make the cap injectable for tests if needed.
+
+Run node --import tsx --test tests/daily.test.ts and npm run build; both must pass. Also run tests/canonical-bookmarks-db.test.ts if you touch canonical-bookmarks-db.ts. Concise summary of changes.
+
+## Scope
+
+Use the objective and named files as scope. Do not broaden unless required.
+
+## Constraints
+
+- Match existing repo patterns.
+- Do not commit changes.
+- If changing files, report exact files changed.
+- If validation cannot run, say why.
+
+## Expected deliverable
+
+1. Summary
+2. Evidence
+3. Files changed
+4. Commands run
+5. Verification status
+6. Blockers
+
+## Result shape
+
+summary: string
+evidence: string[]
+files_changed: string[]
+commands_run: { command: string, exit_code: number | null, summary: string }[]
+verification: { status: "passed" | "failed" | "not_run", details: string }
+blockers: string[]

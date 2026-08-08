@@ -1,0 +1,313 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: Field Theory Â· Ideation Â· Surprise-Me
+    - heading "Making the daily digest talk back" [level=1] [ref=e5]
+    - generic [ref=e6]: Bold, unexpected directions for daily synthesis & the second-brain loop â€” 2026-07-10
+    - generic [ref=e7]:
+      - generic [ref=e8]: surprise-me mode
+      - generic [ref=e9]: repo-grounded
+      - generic [ref=e10]: 1 foundation + 7 surprises + 1 stretch
+      - generic [ref=e11]: "engine: ft daily"
+  - paragraph [ref=e12]:
+    - text: Today's digest is a flat, passive, read-only list. It groups new saves into themes, then dumps 10+ unranked raw links under "connects to earlier saves" with no reason for the connection.
+    - code [ref=e13]: interests.md
+    - text: is mechanical term-counting â€” its top "interests" are junk tokens like
+    - emphasis [ref=e14]: stars
+    - text: ","
+    - emphasis [ref=e15]: code
+    - text: ","
+    - emphasis [ref=e16]: tool
+    - text: . Nothing takes a stance, nothing resurfaces, nothing closes a loop, and the digest is never read back. Meanwhile a working TTS client sits unused. Every idea below turns one of those gaps into a feature.
+  - heading "Foundation â€” fix trust before delight" [level=2] [ref=e17]
+  - generic [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e20]: "00"
+      - heading "The trustworthy coverage footer" [level=3] [ref=e21]
+    - generic [ref=e22]: The digest claims to be your whole day. It silently sees ~5 of 6 sources. Make it confess.
+    - paragraph [ref=e23]:
+      - text: "What â€” A mechanical (never LLM) provenance footer on every digest: which sources were indexed and how fresh, which are dark, and whether limits were hit."
+      - emphasis [ref=e24]: "\"Coverage: X âœ“ Â· Raindrop âœ— stale 8d Â· GitHub âœ“ Â· YouTube âœ“ Â· Projects âœ“ Â· x-list & following not indexed Â· 200-item cap hit (14 dropped).\""
+      - text: Optionally gate the digest on a freshness threshold and warn loudly when a source has gone silent.
+    - paragraph [ref=e25]:
+      - text: Why it's the foundation â€” Every other idea assumes the digest is
+      - emphasis [ref=e26]: complete
+      - text: . It isn't, and worse, a partial digest looks identical to a full one â€” you can't tell a quiet day from a broken sync. This is the correctness fix that makes audio briefings, verdicts, and tension detection
+      - emphasis [ref=e27]: trustworthy
+      - text: . Not surprising; load-bearing.
+    - generic [ref=e28]:
+      - text: "Basis (verified in code): (1)"
+      - code [ref=e29]: rebuildCanonicalIndex()
+      - text: ingests only 5 families â€” X, Raindrop, GitHub-stars, Projects, YouTube (
+      - code [ref=e30]: canonical-bookmarks-db.ts:662â€“700
+      - text: );
+      - code [ref=e31]: x-list
+      - text: and
+      - code [ref=e32]: following
+      - text: have zero canonical ingest. (2) Membership =
+      - code [ref=e33]: first_saved_at âˆˆ [watermark, now)
+      - text: with
+      - code [ref=e34]: MAX_ITEMS=200
+      - text: newest-first, oldest truncated silently (
+      - code [ref=e35]: daily/collect.ts
+      - text: ). (3) Cross-source merge keeps the
+      - emphasis [ref=e36]: earliest
+      - text: date (
+      - code [ref=e37]: :534
+      - text: ), so re-engaging a known URL is invisible. (4) No dead-source check anywhere â€” a never-synced Raindrop just vanishes from output.
+      - paragraph
+      - generic [ref=e38]:
+        - generic [ref=e39]: "Effort: low"
+        - generic [ref=e40]: "Type: correctness"
+        - generic [ref=e41]: "axis: ingestion / trust"
+    - paragraph [ref=e42]:
+      - text: "Related gaps this exposes, each a candidate fix in its own right: x-list + following ingest (2 dark sources), per-source watermark (late-landing items dropped), re-engagement surfacing (earliest-date masking), overflow signal (200-cap), null-date rescue ("
+      - code [ref=e43]: first_saved_at IS NULL
+      - text: = invisible forever).
+    - heading "Kept â€” ranked (the surprises)" [level=2] [ref=e44]
+    - generic [ref=e45]:
+      - generic [ref=e46]:
+        - generic [ref=e47]: "01"
+        - heading "The 3-minute morning briefing (audio)" [level=3] [ref=e48]
+      - generic [ref=e49]: Your digest, read to you while you make coffee â€” not a wall of text you'll skip.
+      - paragraph [ref=e50]:
+        - text: What â€” After
+        - code [ref=e51]: ft daily --write
+        - text: ", pipe the themed digest through a short \"radio host\" script prompt and the existing TTS client to a dated"
+        - code [ref=e52]: library/daily/YYYY-MM-DD.mp3
+        - text: ". A tight, spoken narration of the day's synthesis: three themes, the one connection that matters, one thing to act on. New"
+        - code [ref=e53]: ft daily --audio
+        - text: flag; nightly launchd writes it alongside the markdown.
+      - paragraph [ref=e54]:
+        - text: Why it's the pick â€” Highest delight-per-effort. Text digests get skimmed or ignored; audio you consume passively. It reframes the second brain from "a file I grep" to "a companion that briefs me." Nothing else on this list changes the
+        - emphasis [ref=e55]: relationship
+        - text: to the tool this cheaply.
+      - generic [ref=e56]:
+        - text: "Basis (verified):"
+        - code [ref=e57]: createTtsClient().synthesize(text, path)
+        - text: already ships and is used for YouTube overviews â€”
+        - code [ref=e58]: src/youtube/overview.ts:135â€“138, 286
+        - text: . Script-shaping prompt pattern exists in the same file. This is wiring, not new infra.
+      - generic [ref=e59]:
+        - generic [ref=e60]: "Effort: low"
+        - generic [ref=e61]: "Surprise: high"
+        - generic [ref=e62]: "axis: output format"
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - generic [ref=e65]: "02"
+        - heading "A digest with a verdict (front page, not a feed)" [level=3] [ref=e66]
+      - generic [ref=e67]: One hero story above the fold. Every theme ends with an opinion.
+      - paragraph [ref=e68]:
+        - text: What â€” Change the synthesis contract from "group into themes" to "edit a front page." Pick
+        - emphasis [ref=e69]: one
+        - text: "hero connection for the day (biggest cross-source signal) and lead with it. Each theme closes with an opinionated call:"
+        - emphasis [ref=e70]: "\"Read the Modal talk, skip the three rehashes\""
+        - text: Â·
+        - emphasis [ref=e71]: "\"This contradicts Tuesday\""
+        - text: Â·
+        - emphasis [ref=e72]: "\"Adjacent to your fieldtheory Now â€” worth 20 min.\""
+        - text: The LLM takes a stance instead of neutrally summarizing.
+      - paragraph [ref=e73]: Why â€” The current digest gives every theme and every link equal weight, so nothing stands out and everything gets skimmed. Editorial hierarchy + a stance is what makes a briefing worth reading. Pure prompt-contract change â€” no new plumbing.
+      - generic [ref=e74]:
+        - text: "Basis: Prompt lives in"
+        - code [ref=e75]: buildDailyPrompt()
+        - text: ","
+        - code [ref=e76]: src/daily/synthesize.ts
+        - text: . Themes already carry summary + itemIds; add a
+        - code [ref=e77]: verdict
+        - text: field + a
+        - code [ref=e78]: hero
+        - text: flag and validate them the same way citations are validated today.
+      - generic [ref=e79]:
+        - generic [ref=e80]: "Effort: low"
+        - generic [ref=e81]: "Surprise: med"
+        - generic [ref=e82]: "axis: synthesis quality"
+    - generic [ref=e83]:
+      - generic [ref=e84]:
+        - generic [ref=e85]: "03"
+        - heading "The tension detector" [level=3] [ref=e86]
+      - generic [ref=e87]: Surface where your saves disagree â€” with each other, or with last week.
+      - paragraph [ref=e88]:
+        - text: What â€” A dedicated pass that hunts for
+        - emphasis [ref=e89]: friction
+        - text: ", not consensus: two items this week that argue opposite sides (pro-MCP vs. \"skills > MCP\"), or a new save that contradicts something you saved and endorsed weeks ago. A \"âš¡ Tensions\" section:"
+        - emphasis [ref=e90]: "\"You saved both 'model selectors are the future' and 'model selectors are limiting' this week â€” here's the split.\""
+      - paragraph [ref=e91]:
+        - text: Why â€” Grouping similar things is what every feed reader does. Surfacing contradictions is what a
+        - emphasis [ref=e92]: thinking partner
+        - text: does â€” it's where learning actually happens, and it's genuinely differentiating. Directly usable against the connect-step data you already compute.
+      - generic [ref=e93]:
+        - text: "Basis:"
+        - code [ref=e94]: connect.ts
+        - text: already gives each new item its top-3 related past items via FTS. A second LLM sub-pass over those pairs asking "do these agree or conflict?" is the whole feature. Real signal exists in today's digest â€” MCP-vs-skills tension is sitting right there ungrouped.
+      - generic [ref=e95]:
+        - generic [ref=e96]: "Effort: med"
+        - generic [ref=e97]: "Surprise: high"
+        - generic [ref=e98]: "axis: synthesis quality"
+    - generic [ref=e99]:
+      - generic [ref=e100]:
+        - generic [ref=e101]: "04"
+        - 'heading "Anti-recency: resurface the thread you dropped" [level=3] [ref=e102]'
+      - generic [ref=e103]: Spaced repetition for bookmarks. The digest remembers what you forgot.
+      - paragraph [ref=e104]:
+        - text: "What â€” Each digest resurfaces one forgotten gem: a topic that was"
+        - emphasis [ref=e105]: rising
+        - text: a few weeks ago then went silent, or a strong item saved N weeks back that connects to today and was never revisited.
+        - emphasis [ref=e106]: "\"Three weeks ago you were deep in local model training â€” 4 saves, then nothing. Today's vLLM-MoE save reopens it.\""
+      - paragraph [ref=e107]: "Why â€” A recency-only digest is a leaky bucket: you save, it scrolls, it's gone. Deliberate resurfacing is the difference between a log and a memory. It's the second-brain promise the current pipeline doesn't yet keep."
+      - generic [ref=e108]:
+        - text: "Basis:"
+        - code [ref=e109]: interests.ts
+        - emphasis [ref=e110]: already computes
+        - text: rising / steady / fading topic velocity (
+        - code [ref=e111]: RECENT_DAYS=7
+        - text: vs
+        - code [ref=e112]: BASELINE_DAYS=30
+        - text: ). "Fading but reactivated today" is a query over data already in hand â€” see the
+        - code [ref=e113]: Fading
+        - text: block in current
+        - code [ref=e114]: interests.md
+        - text: .
+      - generic [ref=e115]:
+        - generic [ref=e116]: "Effort: med"
+        - generic [ref=e117]: "Surprise: high"
+        - generic [ref=e118]: "axis: temporal / memory"
+    - generic [ref=e119]:
+      - generic [ref=e120]:
+        - generic [ref=e121]: "05"
+        - heading "One sharp question a day" [level=3] [ref=e122]
+      - generic [ref=e123]: Turn consumption into thinking. The agent asks you something.
+      - paragraph [ref=e124]:
+        - text: What â€” Alongside the digest, the agent poses
+        - emphasis [ref=e125]: one
+        - text: "pointed question forced out of the day's material:"
+        - emphasis [ref=e126]: "\"You've saved 4 agent-harness talks this month but fieldtheory has no harness abstraction â€” is that a gap or a deliberate no?\""
+        - text: Answers get appended to a
+        - code [ref=e127]: library/reflections.md
+        - text: â€” a private thinking log that itself becomes a source.
+      - paragraph [ref=e128]:
+        - text: Why â€” Every other feature makes consuming easier. This one makes you
+        - emphasis [ref=e129]: synthesize
+        - text: . It's active recall â€” the single highest-leverage move for actually retaining what you read â€” and it flips the tool from output-only to a dialogue. Bold because it demands something of the user.
+      - generic [ref=e130]:
+        - text: "Basis: Same synthesis call and material; add a"
+        - code [ref=e131]: question
+        - text: to the output contract. Capture is a one-line
+        - code [ref=e132]: ft daily --answer "â€¦"
+        - text: append. Reflections feed back through the existing canonical index as a new source.
+      - generic [ref=e133]:
+        - generic [ref=e134]: "Effort: med"
+        - generic [ref=e135]: "Surprise: high"
+        - generic [ref=e136]: "axis: feedback loop"
+    - generic [ref=e137]:
+      - generic [ref=e138]:
+        - generic [ref=e139]: "06"
+        - heading "Novelty score â€” suppress the echo" [level=3] [ref=e140]
+      - generic [ref=e141]: Is this genuinely new, or the sixth rehash? Rank accordingly.
+      - paragraph [ref=e142]: "What â€” Score each new item by distance from what you already hold. The 6th \"train an LLM from scratch\" repo gets folded into a one-line \"+5 more like this,\" while a genuinely novel save gets a â\x90 and top billing. The digest stops treating the echo and the discovery as equals."
+      - paragraph [ref=e143]: "Why â€” Look at today's digest: the local-training theme lists six near-identical repos as if each were news. Signal drowns. A novelty gate is the cheapest way to make the digest denser and more honest about what actually moved."
+      - generic [ref=e144]:
+        - text: "Basis: FTS BM25 self-similarity (query the new item's terms against the pre-existing index; high overlap = echo) is pure SQL over"
+        - code [ref=e145]: canonical_bookmarks_fts
+        - text: â€” the same index
+        - code [ref=e146]: connect.ts
+        - text: already uses. No embeddings required for v1.
+      - generic [ref=e147]:
+        - generic [ref=e148]: "Effort: med"
+        - generic [ref=e149]: "Surprise: med"
+        - generic [ref=e150]: "axis: synthesis quality"
+    - generic [ref=e151]:
+      - generic [ref=e152]:
+        - generic [ref=e153]: "07"
+        - heading "The read-receipt loop (real interests, not word counts)" [level=3] [ref=e154]
+      - generic [ref=e155]: Learn what you actually open â€” kill the junk-token interest model.
+      - paragraph [ref=e156]:
+        - text: What â€” Track which digest links you actually open/click, and feed engagement back into the interest model. Themes you consistently ignore get down-weighted; items you open define your
+        - emphasis [ref=e157]: real
+        - text: interests â€” replacing today's mechanical term-frequency (which thinks "stars," "code," and "tool" are your passions).
+      - paragraph [ref=e158]:
+        - text: Why â€”
+        - code [ref=e159]: interests.md
+        - text: is the one artifact in the pipeline that's actively misleading â€” it counts words, not attention, so its top signals are noise. A behavioral signal, however coarse, beats a term count. Highest payoff, but needs a surface that observes opens.
+      - generic [ref=e160]:
+        - text: "Basis: Needs a reader that can log opens â€” dovetails with the planned bookmarks web interface ("
+        - code [ref=e161]: docs/plans/2026-06-24-bookmarks-web-interface.md
+        - text: "). Interim: a shell wrapper /"
+        - code [ref=e162]: ft open <id>
+        - text: that records the open before launching the URL. Interest model already regenerates each run in
+        - code [ref=e163]: interests.ts
+        - text: â€” just add an engagement input.
+      - generic [ref=e164]:
+        - generic [ref=e165]: "Effort: med-high"
+        - generic [ref=e166]: "Surprise: med"
+        - generic [ref=e167]: "axis: feedback loop"
+    - heading "Stretch â€” high ceiling, thinner grounding" [level=2] [ref=e168]
+    - generic [ref=e169]:
+      - generic [ref=e170]:
+        - generic [ref=e171]: "08"
+        - heading "Ambient project-sliced primer" [level=3] [ref=e172]
+      - generic [ref=e173]: When you open a repo, inject only the digest slice relevant to that repo.
+      - paragraph [ref=e174]:
+        - text: The north-star Layer 4. On entering any project session, surface just the recent-digest themes that touch
+        - emphasis [ref=e175]: this
+        - text: repo's Goal/Now/Next â€” plus a drift alert when your consumption diverges from what you're building (
+        - emphasis [ref=e176]: "\"heavy on local-training reads, none of your active repos touch it\""
+        - text: ). Extends
+        - code [ref=e177]: projects-active.md
+        - text: + the
+        - code [ref=e178]: second-brain
+        - text: recall skill from pull to push. Kept as stretch because the trigger surface (session-start hook injecting per-repo context) is the ambitious, less-proven part â€” but it's the direction everything else feeds.
+      - generic [ref=e179]:
+        - generic [ref=e180]: "Effort: high"
+        - generic [ref=e181]: "Surprise: med"
+        - generic [ref=e182]: "axis: ambient recall"
+    - heading "Rejected â€” and why" [level=2] [ref=e183]
+    - table [ref=e186]:
+      - rowgroup [ref=e187]:
+        - row [ref=e188]:
+          - columnheader "Idea" [ref=e189]
+          - columnheader "Reason cut" [ref=e190]
+      - rowgroup [ref=e191]:
+        - row [ref=e192]:
+          - cell "Interest forecast" [ref=e193]
+          - 'cell "Extrapolate topic velocity to predict next week''s rabbit hole. Too speculative â€” thin grounding, high hallucination risk, and the payoff over \"resurface the dropped thread\" (#4) is marginal. Folded intent into #4." [ref=e194]'
+        - row [ref=e195]:
+          - cell "Auto-write TODOs into repo CONTINUITY.md" [ref=e196]
+          - 'cell "Digest edits your project ledgers directly. Too invasive / hard to reverse for an unattended nightly job. The safer read-only version lives inside stretch #8." [ref=e197]'
+        - row [ref=e198]:
+          - cell "Editorial hero-story layout (standalone)" [ref=e199]
+          - 'cell "Good, but a subset of #2 â€” merged rather than listed twice." [ref=e200]'
+        - row [ref=e201]:
+          - cell "Weekly rollup as a bigger list" [ref=e202]
+          - cell [ref=e203]:
+            - text: The plan already defers this, and "more of the same, weekly" isn't surprising. If revisited, it should be a
+            - emphasis [ref=e204]: narrative arc
+            - text: "(\"this week you pivoted from X to Y\"), not a longer digest â€” but that's a variant of #2/#4, not its own idea."
+        - row [ref=e205]:
+          - cell "Zettelkasten permanent-note promotion" [ref=e206]
+          - 'cell "Compelling long-term, but overlaps #5''s reflections log and demands a note-lifecycle model the pipeline doesn''t have yet. Premature â€” reconsider after #5 ships." [ref=e207]'
+    - heading "Grounding context" [level=2] [ref=e208]
+    - generic [ref=e209]:
+      - paragraph [ref=e210]: "Subject (surprise-me): daily digest / second-brain synthesis in fieldtheory-cli. Decomposition skipped â€” surprise-me mode."
+      - paragraph [ref=e211]:
+        - text: "Current state:"
+        - code [ref=e212]: ft daily --write
+        - text: â†’ themed LLM digest (
+        - code [ref=e213]: "src/daily/{collect,connect,synthesize,interests}.ts"
+        - text: ) â†’
+        - code [ref=e214]: library/daily/YYYY-MM-DD.md
+        - text: +
+        - code [ref=e215]: interests.md
+        - text: ". Nightly launchd @ 09:00. 5 digests written so far. Model: droid + deepseek-v4-flash."
+      - paragraph [ref=e216]:
+        - text: "Observed gaps driving these ideas: (1) passive read-only artifact, never read back; (2) \"connects to earlier saves\" = 10+ unranked raw links, no stated reason; (3)"
+        - code [ref=e217]: interests.md
+        - text: ranks junk tokens (stars/code/tool); (4) no stance, no hierarchy â€” all themes equal-weight; (5) no contradiction/novelty detection; (6) no resurfacing/memory; (7) no engagement feedback; (8) unused TTS infra.
+      - paragraph [ref=e218]: "North star (memory): a companion agent that synthesizes daily consumption, tracks evolving interests, and proactively recalls during any project/research session."
+    - contentinfo [ref=e219]:
+      - text: "Generated by ce-ideate Â· surprise-me mode Â· adversarial critique â†’ 1 foundation + 7 surprises + 1 stretch + 5 rejected. #0 added after tracing the ingest path ("
+      - code [ref=e220]: collect.ts
+      - text: +
+      - code [ref=e221]: rebuildCanonicalIndex
+      - text: "). Next: pick one to run through"
+      - code [ref=e222]: ce-brainstorm
+      - text: for a requirements spec, or refine the set.

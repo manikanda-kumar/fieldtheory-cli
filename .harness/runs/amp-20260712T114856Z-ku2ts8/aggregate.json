@@ -1,0 +1,101 @@
+{
+  "run_id": "amp-20260712T114856Z-ku2ts8",
+  "harness": "amp",
+  "task": "review",
+  "status": "success",
+  "ok": true,
+  "route": {
+    "harness": "amp",
+    "task": "review",
+    "mode": "high",
+    "model": null,
+    "write": false,
+    "complexity": null,
+    "routing_source": "mode-override",
+    "rationale": "User selected amp with mode override: high. review task recommends codex, amp.",
+    "prompt_strategy": "wrapped",
+    "fallbacks": [],
+    "writeIsolation": "none",
+    "lockRequired": false,
+    "budget": {
+      "mode": "default",
+      "fallbackReason": null
+    }
+  },
+  "command": {
+    "bin": "amp",
+    "args": [
+      "review",
+      "--json",
+      "-i",
+      "# Harness Worker Packet\n\n## Contract\n\nYou are an internal worker for the use-harness router.\nReturn a concise report to the router; do not address the end user directly.\nDo not claim success unless validation evidence is included.\n\n## Assignment\n\n- Run ID: amp-20260712T114856Z-ku2ts8\n- Backend: amp\n- Task type: review\n- Workspace: /Users/manik/Github/fieldtheory-cli\n- Permission mode: read-only-by-default\n- Mode: high\n\n## Objective\n\nReview the unstaged changes in src/engine.ts, src/cli.ts, src/llm/droid-engine.ts, src/llm/opencode-client.ts, and tests/engine.test.ts. This commit wires a new 'agy' (Antigravity CLI, Gemini 3.5 Flash via subscription) LLM engine into Field Theory's engine registry, and adds an opt-in FT_DEEPSEEK_NO_REASONING=1 env flag that injects thinking:{type:'disabled'} into the OpenCode Go proxy request body (verified empirically against the proxy: reasoning_effort:'none' annihilates the response, but thinking:{type:'disabled'} cleanly returns message.content with no reasoning_content and no reasoning_tokens). Focus on: (1) correctness of the agy engine registry entry — args layout, --print-timeout, system-prompt folding (matching codex pattern); (2) the resolveEngine resolve() wiring for agy model defaults (FT_AGY_MODEL env override, AGY_DEFAULT_MODEL constant); (3) the duplicated thinkingDisabled()/THINKING_DISABLED_BODY block across droid-engine.ts and opencode-client.ts — is the duplication acceptable or should it be factored; (4) the new engine.test.ts agy cases (fakeBin override pattern, FT_AGY_MODEL restore); (5) any correctness issues with how thinking-disabled is gated (env var only, default-off preserves existing behavior); (6) help-text consistency in cli.ts. Verify the diff with git diff. Run npm run build and npx tsx --test tests/engine.test.ts if useful.\n\n## Scope\n\nUse the objective and named files as scope. Do not broaden unless required.\n\n## Constraints\n\n- Match existing repo patterns.\n- Do not commit changes.\n- If changing files, report exact files changed.\n- If validation cannot run, say why.\n\n## Expected deliverable\n\n1. Summary\n2. Evidence\n3. Files changed\n4. Commands run\n5. Verification status\n6. Blockers\n\n## Result shape\n\nsummary: string\nevidence: string[]\nfiles_changed: string[]\ncommands_run: { command: string, exit_code: number | null, summary: string }[]\nverification: { status: \"passed\" | \"failed\" | \"not_run\", details: string }\nblockers: string[]"
+    ],
+    "native": false,
+    "cwd": "/Users/manik/Github/fieldtheory-cli",
+    "model": null,
+    "mode": "high",
+    "task": "review",
+    "display": "amp review --json -i '# Harness Worker Packet\n\n## Contract\n\nYou are an internal worker for the use-harness router.\nReturn a concise report to the router; do not address the end user directly.\nDo not claim success unless validation evidence is included.\n\n## Assignment\n\n- Run ID: amp-20260712T114856Z-ku2ts8\n- Backend: amp\n- Task type: review\n- Workspace: /Users/manik/Github/fieldtheory-cli\n- Permission mode: read-only-by-default\n- Mode: high\n\n## Objective\n\nReview the unstaged changes in src/engine.ts, src/cli.ts, src/llm/droid-engine.ts, src/llm/opencode-client.ts, and tests/engine.test.ts. This commit wires a new '\\''agy'\\'' (Antigravity CLI, Gemini 3.5 Flash via subscription) LLM engine into Field Theory'\\''s engine registry, and adds an opt-in FT_DEEPSEEK_NO_REASONING=1 env flag that injects thinking:{type:'\\''disabled'\\''} into the OpenCode Go proxy request body (verified empirically against the proxy: reasoning_effort:'\\''none'\\'' annihilates the response, but thinking:{type:'\\''disabled'\\''} cleanly returns message.content with no reasoning_content and no reasoning_tokens). Focus on: (1) correctness of the agy engine registry entry — args layout, --print-timeout, system-prompt folding (matching codex pattern); (2) the resolveEngine resolve() wiring for agy model defaults (FT_AGY_MODEL env override, AGY_DEFAULT_MODEL constant); (3) the duplicated thinkingDisabled()/THINKING_DISABLED_BODY block across droid-engine.ts and opencode-client.ts — is the duplication acceptable or should it be factored; (4) the new engine.test.ts agy cases (fakeBin override pattern, FT_AGY_MODEL restore); (5) any correctness issues with how thinking-disabled is gated (env var only, default-off preserves existing behavior); (6) help-text consistency in cli.ts. Verify the diff with git diff. Run npm run build and npx tsx --test tests/engine.test.ts if useful.\n\n## Scope\n\nUse the objective and named files as scope. Do not broaden unless required.\n\n## Constraints\n\n- Match existing repo patterns.\n- Do not commit changes.\n- If changing files, report exact files changed.\n- If validation cannot run, say why.\n\n## Expected deliverable\n\n1. Summary\n2. Evidence\n3. Files changed\n4. Commands run\n5. Verification status\n6. Blockers\n\n## Result shape\n\nsummary: string\nevidence: string[]\nfiles_changed: string[]\ncommands_run: { command: string, exit_code: number | null, summary: string }[]\nverification: { status: \"passed\" | \"failed\" | \"not_run\", details: string }\nblockers: string[]'"
+  },
+  "result": {
+    "ok": true,
+    "path": "cli",
+    "harness": "amp",
+    "task": "review",
+    "mode": "high",
+    "command": "amp review --json -i # Harness Worker Packet\n\n## Contract\n\nYou are an internal worker for the use-harness router.\nReturn a concise report to the router; do not address the end user directly.\nDo not claim success unless validation evidence is included.\n\n## Assignment\n\n- Run ID: amp-20260712T114856Z-ku2ts8\n- Backend: amp\n- Task type: review\n- Workspace: /Users/manik/Github/fieldtheory-cli\n- Permission mode: read-only-by-default\n- Mode: high\n\n## Objective\n\nReview the unstaged changes in src/engine.ts, src/cli.ts, src/llm/droid-engine.ts, src/llm/opencode-client.ts, and tests/engine.test.ts. This commit wires a new 'agy' (Antigravity CLI, Gemini 3.5 Flash via subscription) LLM engine into Field Theory's engine registry, and adds an opt-in FT_DEEPSEEK_NO_REASONING=1 env flag that injects thinking:{type:'disabled'} into the OpenCode Go proxy request body (verified empirically against the proxy: reasoning_effort:'none' annihilates the response, but thinking:{type:'disabled'} cleanly returns message.content with no reasoning_content and no reasoning_tokens). Focus on: (1) correctness of the agy engine registry entry — args layout, --print-timeout, system-prompt folding (matching codex pattern); (2) the resolveEngine resolve() wiring for agy model defaults (FT_AGY_MODEL env override, AGY_DEFAULT_MODEL constant); (3) the duplicated thinkingDisabled()/THINKING_DISABLED_BODY block across droid-engine.ts and opencode-client.ts — is the duplication acceptable or should it be factored; (4) the new engine.test.ts agy cases (fakeBin override pattern, FT_AGY_MODEL restore); (5) any correctness issues with how thinking-disabled is gated (env var only, default-off preserves existing behavior); (6) help-text consistency in cli.ts. Verify the diff with git diff. Run npm run build and npx tsx --test tests/engine.test.ts if useful.\n\n## Scope\n\nUse the objective and named files as scope. Do not broaden unless required.\n\n## Constraints\n\n- Match existing repo patterns.\n- Do not commit changes.\n- If changing files, report exact files changed.\n- If validation cannot run, say why.\n\n## Expected deliverable\n\n1. Summary\n2. Evidence\n3. Files changed\n4. Commands run\n5. Verification status\n6. Blockers\n\n## Result shape\n\nsummary: string\nevidence: string[]\nfiles_changed: string[]\ncommands_run: { command: string, exit_code: number | null, summary: string }[]\nverification: { status: \"passed\" | \"failed\" | \"not_run\", details: string }\nblockers: string[]",
+    "exitCode": 0,
+    "text": "{\n  \"error\": null,\n  \"comments\": [\n    {\n      \"filename\": \"src/cli.ts\",\n      \"startLine\": 3180,\n      \"endLine\": 3180,\n      \"text\": \"This help text now says the wiki command requires “claude, codex, grok, droid, or agy CLI on PATH”, but `droid` is not a CLI-on-PATH engine; it is available via `OPENCODE_GO_API_KEY`/OpenCode auth. As written, `ft wiki --help` gives users the wrong setup requirement for droid.\",\n      \"commentType\": \"bug\",\n      \"severity\": \"low\",\n      \"why\": \"Misleading setup guidance can make users think the droid engine is unavailable unless a `droid` binary exists, even though `resolveEngine()` treats droid as a cloud API engine.\",\n      \"fix\": \"Rephrase to avoid tying every engine to PATH, e.g. “requires an available LLM engine: claude, codex, grok, agy, or droid via OpenCode Go auth”. \"\n    },\n    {\n      \"filename\": \"src/cli.ts\",\n      \"startLine\": 832,\n      \"endLine\": 832,\n      \"text\": \"The shared `engineOption()` help now includes `agy`, but there are still bespoke `--engine` option strings in this file that omit it (for example the daily digest option around line 1482 and ideas options around lines 3392/3554 still list only claude/codex/grok/droid).\",\n      \"commentType\": \"suggested_edit\",\n      \"severity\": \"low\",\n      \"why\": \"Users see different supported-engine lists depending on the command, even though all of these paths feed into `resolveEngine()` and can accept the new agy engine.\",\n      \"fix\": \"Update the remaining command-specific engine help strings to include `agy`, or route those commands through the shared `engineOption()` helper where possible.\"\n    }\n  ],\n  \"files\": [\n    {\n      \"path\": \"src/cli.ts\",\n      \"comments\": [\n        {\n          \"filename\": \"src/cli.ts\",\n          \"startLine\": 3180,\n          \"endLine\": 3180,\n          \"text\": \"This help text now says the wiki command requires “claude, codex, grok, droid, or agy CLI on PATH”, but `droid` is not a CLI-on-PATH engine; it is available via `OPENCODE_GO_API_KEY`/OpenCode auth. As written, `ft wiki --help` gives users the wrong setup requirement for droid.\",\n          \"commentType\": \"bug\",\n          \"severity\": \"low\",\n          \"why\": \"Misleading setup guidance can make users think the droid engine is unavailable unless a `droid` binary exists, even though `resolveEngine()` treats droid as a cloud API engine.\",\n          \"fix\": \"Rephrase to avoid tying every engine to PATH, e.g. “requires an available LLM engine: claude, codex, grok, agy, or droid via OpenCode Go auth”. \"\n        },\n        {\n          \"filename\": \"src/cli.ts\",\n          \"startLine\": 832,\n          \"endLine\": 832,\n          \"text\": \"The shared `engineOption()` help now includes `agy`, but there are still bespoke `--engine` option strings in this file that omit it (for example the daily digest option around line 1482 and ideas options around lines 3392/3554 still list only claude/codex/grok/droid).\",\n          \"commentType\": \"suggested_edit\",\n          \"severity\": \"low\",\n          \"why\": \"Users see different supported-engine lists depending on the command, even though all of these paths feed into `resolveEngine()` and can accept the new agy engine.\",\n          \"fix\": \"Update the remaining command-specific engine help strings to include `agy`, or route those commands through the shared `engineOption()` helper where possible.\"\n        }\n      ]\n    }\n  ],\n  \"checks\": []\n}",
+    "stderr": "\u001b[=0u\u001b[<u\u001b[?25h",
+    "run_id": "amp-20260712T114856Z-ku2ts8",
+    "paths": {
+      "run_dir": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8",
+      "receipt": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/receipt.json",
+      "input": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/input.md",
+      "prompt": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/prompt.md",
+      "route": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/route.json",
+      "command": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/command.json",
+      "events": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/events.jsonl",
+      "transcript": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/transcript.md",
+      "stdout": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/stdout.log",
+      "stderr": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/stderr.log",
+      "bridge": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/bridge.json",
+      "result": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/result.json",
+      "summary": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/summary.md",
+      "aggregate": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/aggregate.json"
+    },
+    "route": {
+      "harness": "amp",
+      "task": "review",
+      "mode": "high",
+      "model": null,
+      "write": false,
+      "complexity": null,
+      "routing_source": "mode-override",
+      "rationale": "User selected amp with mode override: high. review task recommends codex, amp.",
+      "prompt_strategy": "wrapped",
+      "fallbacks": [],
+      "writeIsolation": "none",
+      "lockRequired": false,
+      "budget": {
+        "mode": "default",
+        "fallbackReason": null
+      }
+    },
+    "status": "success",
+    "retryable": false,
+    "needsHuman": false
+  },
+  "events": {
+    "count": 7,
+    "last_type": "result.written"
+  },
+  "artifacts": {
+    "prompt": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/prompt.md",
+    "stdout": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/stdout.log",
+    "stderr": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/stderr.log",
+    "result": "/Users/manik/Github/fieldtheory-cli/.harness/runs/amp-20260712T114856Z-ku2ts8/result.json"
+  },
+  "verification": "not parsed",
+  "next_action": "Run completed successfully."
+}

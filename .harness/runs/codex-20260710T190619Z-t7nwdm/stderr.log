@@ -1,0 +1,705 @@
+2026-07-10T19:06:21.893284Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T19:06:21.893743Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T19:06:21.893744Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/cli-printing-press/testdata/golden/fixtures/dogfood-novel-doc-sync/cli/SKILL.md: missing YAML frontmatter delimited by ---
+OpenAI Codex v0.144.1
+--------
+workdir: /Users/manik/Github/fieldtheory-cli
+model: gpt-5.6-terra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f4d41-5c50-71b1-9b54-fa4454cc2f1f
+--------
+user
+# Harness Worker Packet
+
+## Contract
+
+You are an internal worker for the use-harness router.
+Return a concise report to the router; do not address the end user directly.
+Do not claim success unless validation evidence is included.
+
+## Assignment
+
+- Run ID: codex-20260710T190619Z-t7nwdm
+- Backend: codex
+- Task type: implement
+- Workspace: /Users/manik/Github/fieldtheory-cli
+- Permission mode: write-enabled
+- Model: gpt-5.6-terra
+
+## Objective
+
+Live-smoke found a calibration bug: deepseek-v4-flash (reasoning model) consumes ~600 tokens of reasoning on the enrichment summarization prompt, so message.content comes back empty at maxTokens 600 → every real enrichment fails. Verified: 600 → empty, 2000 → good summary. Fix: raise the enrichment completion budget to maxTokens 2000 (both the default in src/daily/enrich.ts's llm fallback and, if the client has its own default, src/llm/opencode-client.ts — make 2000 the client default, keep it option-overridable). Update any test pinning 600. Run node --import tsx --test tests/daily.test.ts tests/opencode-client.test.ts && npm run build. Concise summary.
+
+## Scope
+
+Use the objective and named files as scope. Do not broaden unless required.
+
+## Constraints
+
+- Match existing repo patterns.
+- Do not commit changes.
+- If changing files, report exact files changed.
+- If validation cannot run, say why.
+
+## Expected deliverable
+
+1. Summary
+2. Evidence
+3. Files changed
+4. Commands run
+5. Verification status
+6. Blockers
+
+## Result shape
+
+summary: string
+evidence: string[]
+files_changed: string[]
+commands_run: { command: string, exit_code: number | null, summary: string }[]
+verification: { status: "passed" | "failed" | "not_run", details: string }
+blockers: string[]
+
+codex
+I’m raising the enrichment completion budget to 2,000 tokens in both layers and updating the pinned client expectation before rerunning the focused checks.
+exec
+/bin/zsh -lc "sed -n '1,80p' CONTINUITY.md; rg -n \"maxTokens|max_tokens|600\" src/daily/enrich.ts src/llm/opencode-client.ts tests/daily.test.ts tests/opencode-client.test.ts" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+Goal (incl. success criteria): Daily digest "no-item-left-behind" hardening (plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md) — every collected item renders exactly once, overflow carries over, digests report coverage truthfully. Success: reconciliation invariant collected = themed + also-saved; 822/822 suite green.
+Constraints/Assumptions:
+- Orchestration: Codex gpt-5.6-terra medium via use-harness router; per task implement → review → fix → close. Orchestrator verifies independently (diff + full suite), never trusts worker self-report.
+Key decisions:
+- Orphans render in mechanical "## Also saved" (no LLM re-pass); cross-theme duplicate citations dedupe without polluting droppedCitations (invalid-alias drops only).
+- Overflow: oldest-first drain, `(first_saved_at, canonical id)` cursor persisted as lastRunAt + lastRunItemId; cursor applied only when effective sinceIso equals persisted watermark instant (clamp-safe). carriedOver=0 → watermark = untilIso, cursor cleared.
+- `ft daily --date` (historical) never writes daily meta (was rewinding live watermark — bug found during brainstorm, fixed).
+- Coverage footer mechanical, never LLM: 5-source freshness probes (per-source meta timestamps, try/catch → unknown/never synced), dark-sources line (x-list, following not in canonical), run counts in footer + frontmatter. Undateable count = canonical-total (labeled honestly; window attribution impossible for unparseable dates). X freshness = max(full, incremental) via latestBookmarkSyncAt.
+State: T1 (R1–R4), T2 (R5–R7), T3 (R8–R11) all implemented, reviewed (3 P2s found+fixed: droppedCitations semantics, stale clamp cursor, X freshness field pick), verified 822/822 + build green. UNCOMMITTED.
+Done:
+- Ideation doc docs/ideation/2026-07-10-daily-digest-surprise.html (idea #0 coverage + 7 surprises + skip-vector map).
+- Requirements plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (ce-brainstorm).
+- T1–T3 implemented via Codex; new module src/daily/coverage.ts.
+Now:
+- Thin-link enrichment review fixes complete: manual SSRF-safe redirects (hostname/IP-literal validation per hop; DNS rebinding explicitly out of scope), 30s default OpenCode timeout, and bounded no-body handling. Focused tests 30/30 + build pass. Uncommitted.
+Next:
+- Optional: commit; x-list/following canonical ingest (dark sources); per-source watermark; ideation ideas #1–8 (audio briefing top pick).
+Open questions (UNCONFIRMED if needed):
+- None.
+Working set (files/ids/commands):
+- src/daily/{coverage,collect,connect,enrich,synthesize}.ts; src/llm/opencode-client.ts; src/cli.ts; tests/{daily,opencode-client}.test.ts; `node --import tsx --test tests/daily.test.ts tests/opencode-client.test.ts` = 30/30; `npm run build` ✓; `.harness/runs/*` (codex receipts)
+
+VISION SESSION (2026-07-07) — daily-synthesis companion agent:
+- Goal: agent that synthesizes all consumed data (X bm, YT playlists, Raindrop, GitHub stars, following, x-lists) daily, learns interests, proactively recalls during any project/research ("we studied that last week", "gotcha in blog X", "hot on X right now").
+- Existing substrate: sync-all orchestrator, canonical FTS db (10k+ bookmarks), ft research/ask --json, library md wiki, following/experts index, x-list daily digests, daily-sync plan doc (docs/plans/2026-06-21-daily-sync-second-brain.md).
+- Grounding decision: NO project dumps — ingest from ground truth directly: ~/Github repos (248, 51 with CONTINUITY.md Goal/Now/Next), Claude JSONL (~/.claude/projects/*, 73 dirs, type:"user" lines), Codex ~/.codex/sessions, OpenCode opencode.db. github-sessions/agent-sessions apps = viewers only.
+- PLAN WRITTEN: docs/plans/2026-07-07-companion-agent-daily-synthesis.md — Phase A `ft sync-projects` (7th source, src/projects/, Claude sessions v1), Phase B `ft daily` (digest + interests.md, SQL connect + LLM synthesize w/ citation validation), Phase C global second-brain skill. 9-step build order.
+- APPROVED (2026-07-07): implement via codex (gpt-5.5, codex:codex-rescue subagent), fable reviews each step until OK, then next. Defaults locked: scan root ~/Github, 14d prompt retention, droid+deepseek-v4-flash digest model. Commit per step (no attribution trailer), no push until asked.
+- DONE Step 1 (COMMITTED c346a67): src/projects/ scanner. Codex implemented; fable review found+fixed 3 issues: (1) bare-label ledger headings "Goal (incl. success criteria):" no-dash format (dominant real format — regex made dash optional + sibling-label terminators), (2) bold "- **Goal:**" format, (3) README HTML lines leaking into description. Live verify: 152 repos/7s/0 errors, 26/26 ledgers extracted, active md clean, tests 10/10, full suite 778/778.
+- DONE Step 2 (COMMITTED 464c95c): src/projects/sessions.ts — Claude JSONL prompt extraction (encoded-dir decode strips scan-root prefix first, hyphen candidates; type:user filter; 14d retention; incremental mtime+size skip with prompt merge from previous records) + "Recent agent queries" md section + "Recent focus" active-list line + 0.5x prompt-recency ranking weight. Fable review fix: filter ALL '<'-leading content (task-[REDACTED] harness noise polluted prompts). Live: 10 repos w/ prompts, 104 prompts, ft-cli 26 real questions, incremental rerun faster. Tests 15/15, full 783/783.
+- DONE Step 3 (COMMITTED 9afe2a2): canonical integration (source='project', GitHub-remote dedupe merges w/ stars else project:<repo>, prompt text 4K cap) + `ft sync-projects` CLI (--root/--max-age-days/--no-sessions/--dry-run, canonical rebuild after) + sync-all 'projects' step + getProjectsStatus + remoteUrl normalization (git@→https). Codex hit SESSION LIMIT (resets 10am IST) mid-run but implementation was complete — fable verified: build clean, focused 71/71, live `ft sync-projects` 152 repos indexed, `ft list --unified --source project` + unified search return goals+prompts. Fable fix: filter "This session is being continued..." compaction-summary prompts. Full suite 790/790.
+- CODEX LIMIT: gpt-5.5 session limit until 10am IST. Steps 4+ = fable implements directly (user standing permission to override model choice) unless user prefers waiting.
+- Learnings: git add <dir> fails via git wrapper — add files individually. tsx -e no top-level await — use .mts script. dcg hook blocks rm -rf — use fresh scratch dir names. Live-verify scratch: scratchpad/step{1,2,3}-live via FT_DATA_DIR sandbox.
+- DONE Step 4 (COMMITTED 5708634, implemented by FABLE directly — codex limit): src/daily/{paths,collect,connect}.ts + canonical helpers getCanonicalBookmarksSince/findRelatedCanonicalBookmarks/relatedSeedTerms + `ft daily` CLI (--date/--window-hours/--json; watermark from daily/meta.json, 7d cap, digest write deferred to step 5). FIX during review: projectSourceFromRecord savedAt no longer falls back to scannedAt (commit-less repos flooded daily window as "new" every rescan — 138→6 items after fix). Tests tests/daily.test.ts 5/5, full 795/795. Live verified: related links sane (agent-sessions-active→agent-sessions).
+- DONE Step 5 (COMMITTED 5f2384f, fable): src/daily/synthesize.ts — buildDailyPrompt (withSystemOverride hardened), validateThemes (every cited id must exist in collected set; hallucinated ids dropped + counted; theme w/ zero valid items dropped), mechanical fallback on LLM failure, digest md w/ frontmatter (synthesis: llm|mechanical) + [[project:*]] wikilinks, watermark advance on write only. CLI: ft daily --write/--force/--engine/--model/--effort; existing digest guarded unless --force. LIVE VERIFIED droid/deepseek-v4-flash: 3 coherent themes from 6 items, valid citations, older-save connections. Tests 8/8, full 798/798.
+- DONE Step 6 (COMMITTED 0be6d70, fable): src/daily/interests.ts — topic velocity (7d vs 30d baseline, rising/steady/fading), active threads (terms in BOTH recent saves AND agent prompts), experts matched to rising topics from following.jsonl, ≤80-line hard cap, written to library/interests.md on every ft daily --write. Review fixes from real-data preview: exclude website hostnames (primary_domain holds "youtube.com") + "unclassified" from topics. Real preview sane: rising=technique/research/launch/security, steady=tool, fading=(github.com now filtered). Tests 9/9, full 799/799.
+- DONE Step 7 (COMMITTED 6aca30c, fable): sync-all tail step 'daily' (ft daily --write, after canonical-md, disabled by --no-synthesis). CRITICAL FIXES found via production run: (1) first_saved_at mixes ISO+offset and Twitter-format "Wed Sep 30..." strings — ALL windowing/beforeIso comparisons switched from string to Date.parse epochs (collect, getCanonicalBookmarksSince, findRelated beforeIso, interests) — before fix real digest had 0 items; (2) small models mangle long canonical hash ids — prompt now uses short aliases (i1/r1) mapped back locally (was 30 dropped citations→mechanical; after: 6 llm themes, 0 dropped); (3) multiline X titles broke md links — linkLabel one-lines. PRODUCTION LIVE: ~/.fieldtheory/library/daily/2026-07-06.md = 14 items, 6 themes (dream-mode stars ↔ X memory posts ↔ YT talk ↔ skills project — vision working), interests.md live. sync-all dry-run shows full 8-step plan. Tests 10/10 daily, full 801/801.
+- DONE Step 8 (COMMITTED 9471406, fable): global skill ~/.claude/skills/second-brain/SKILL.md (recall ladder: interests.md+projects-active.md always → daily digests for temporal → ft research/sqlite3 for topics → library md deep-read → conversational surfacing w/ dates; sqlite3 fallback for old ft binaries) + docs/AGENTS-recall.md (cross-agent contract: artifact table, ladder, rules incl. mixed-timestamp warning + prompt-privacy note) + CLAUDE.md pointer. Skill registered live this session. Verified artifacts: interests.md 25 lines, projects-active.md 57, 2 daily digests, repo ft research returns ranked hits.
+- ALL 8 STEPS COMPLETE. Commits: c346a67, 464c95c, 9afe2a2, 5708634, 5f2384f, 0be6d70, 6aca30c, 9471406 (8 commits on main, not pushed).
+- NOTE: global ft binary (1.3.22 npm) predates sync-projects/daily/research — user should npm update or run from repo until published.
+- DONE Step 9 (COMMITTED be3964e, fable): multi-agent session ingestion — codex (~/.codex/sessions/yyyy/mm/dd/rollout-*.jsonl, cwd in session_meta), amp (~/.local/share/amp/threads/T-*.json, repo from env.initial.trees uri, thread created ts), pi (~/.pi/agent/sessions/<enc>/, cwd in type:"session" header), droid (~/.factory/sessions — TWO layouts: current <encoded-cwd>/<id>.jsonl w/ cwd in session_start header + legacy flat via sessions-index.json). Per-BLOCK noise filtering (droid packs env-dump + real prompt in one message), '# Task Tool Invocation' subagent noise filtered. User decision: pi+droid in, opencode skipped (rarely used). Tests hermeticSessionRoots guard real stores; 25/25 projects, full 810/810. Live: claude 113 + codex 109 + pi 5 + droid 1 prompts (amp 0 = no threads in 14d window, verified legit). Production resync: 17 repos w/ prompts (was 10).
+- DONE Step 10 (COMMITTED 2e5094a): nightly sync-all launchd job LIVE.
+  - Wrapper ~/.fieldtheory/sync-all.sh: runs repo dist (node ~/Github/fieldtheory-cli/dist/cli.js — NOT stale global ft), --x-list 1979812953135497678 --playlist PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk --youtube-limit 8 --classify, extra args pass-through for smoke tests, log ~/.fieldtheory/sync-all.log.
+  - Plist ~/Library/LaunchAgents/dev.fieldtheory.sync-all-daily.plist @ 09:00 daily, loaded (launchctl bootstrap, state=waiting).
+  - Secrets: ~/.fieldtheory/.env (0600) w/ OPENCODE_GO_API_KEY + OPENROUTER_API_KEY (CLI auto-loads via config.ts). RAINDROP_TOKEN absent → raindrop step skips gracefully.
+  - Digest engine pinned via new FT_DAILY_ENGINE/FT_DAILY_MODEL/FT_DAILY_EFFORT env fallbacks (wrapper sets droid + deepseek-v4-flash) — unattended runs never fall back to claude CLI.
+  - RETIRED dev.fieldtheory.xlist-daily (booted out; plist moved to ~/.fieldtheory/x-lists/*.retired — x-list now inside sync-all, no double-fetch).
+  - Smoke test: wrapper --only projects --no-synthesis → exit 0, projects+index ran, plan printed correctly. Full suite 810/810.
+- State: companion pipeline FULLY WIRED: 7 sources incl. 5-agent session ingestion → nightly digest+interests @ 09:00 → recall via second-brain skill. 10 commits on main unpushed (c346a67..2e5094a).
+- RAINDROP LIVE (2026-07-08, COMMITTED f3e7371): user pointed at RAINDROP_TEST_TOKEN (client honors it alongside RAINDROP_TOKEN). Appended to ~/.fieldtheory/.env; wrapper now `set -a; source ~/.fieldtheory/.env` (CLI's own dotenv reads ~/.fieldtheory/bookmarks/.env — dataDir — NOT ~/.fieldtheory/.env, and sync-raindrop never calls loadEnv; sourcing in wrapper covers all subcommands). Verified clean-env dry-run OK. First full backfill: 13,378 raindrop bookmarks, 7 collections → canonical 21,735 rows, classified 7,503. FIX: syncRaindropBookmarks now mkdirs raindrop dir up front (resume state written per-page hit ENOENT on first-ever run). Suite 810/810.
+- PUSHED (2026-07-08): all 11 commits 183ad50..f3e7371 → origin/main. CONTINUITY.md + docs/plans left uncommitted per convention.
+- NIGHTLY RUN VERIFIED (2026-07-08): launchd fired 09:00, all 8 steps ✓, exit=0 09:35 (md export slow — first full 21.7k canonical export post-raindrop). Digest 2026-07-08.md written.
+- SLEEP-PROOFING (2026-07-08): launchd catches up missed 09:00 on wake (free). Self-wake needs user-run `sudo pmset repeat wakeorpoweron MTWRFSU 08:58:00` — suggested, UNCONFIRMED if user ran it. Pi 5 assessed as always-on alternative: chrome-cookies.ts HAS Linux path (v10/v11), residential IP safe; blocker = projects source (Mac repos+sessions) → would need Mac rsync of projects.jsonl. Cloud VM rejected (projects dead, X datacenter-IP risk).
+- DONE (COMMITTED 42399b7): daily digest links YouTube items/related refs to library notes md — extractYoutubeVideoId + buildYoutubeNotesLinks (state.json lookup, pathExists guard, digest-relative link) in src/daily/synthesize.ts. Live verified: 7 [notes](../youtube/...) links in regenerated 2026-07-08 digest, month segments correct. Tests 12/12 daily, full 812/812.
+- NOTEBOOKLM LIVE (2026-07-10): weekly-rotated digest auto-push wired. CLI = notebooklm-mcp-cli (`~/.local/bin/nlm`, uv tool, unofficial; auth via `nlm login`, expires periodically → sync-all.log shows "nlm: push FAILED"). sync-all.sh tail after exit 0: one notebook per ISO week "Field Theory <YYYY-Www>" (auto-created via `nlm notebook create` + jq, id cached ~/.fieldtheory/nlm/week-<w>.id; FT_NLM_NOTEBOOK overrides), pushes today's digest + every [notes](../youtube/*.md) file it references (title = notes H1), per-week manifest week-<w>.pushed dedupes. W28 notebook id a37e16ac-340d-4bf6-9f8e-7b2b1dd7a463, renamed "Field Theory 2026-W28", 11 sources live (digests 07-08/09/10 + 8 notes). Verified: smoke run pushed 8 notes, dedupe idempotent, manifest==source count. NOTE: 07-09/07-10 digests originally lacked notes links (launchd ran pre-feature dist); 07-10 regenerated --force. Source budget/wk ≈ 7 digests + ~40 notes < 50 free cap.
+- Next (optional): weekly rollups, x-list canonical ingest (GAP-3).
+
+SYNC-FAILURE DIAGNOSIS (2026-07-07) — why `ft sync` failed 6 Jul:
+- Symptom: user's `ft sync` (~23:28 IST 6 Jul) died mid-run. jsonl had 23 new records (checkpoint 18:14 UTC) but bookmarks-meta.json/backfill-state stuck at 4 Jul, bookmarks.db not rebuilt → hard abort BEFORE final writes (graphql-bookmarks.ts:799-817). 429 rate-limit is handled gracefully (writes meta), so NOT rate-limit stop → cause = thrown error, most likely undici `Error: fetch failed` (same error killed x-lists daily.log run 5 Jul 09:28) or Ctrl-C. No crash reports, no sync log exists to recover exact message.
+- Amplifier: 10,150 bookmarks ≥ 9,500 → auto-continue scans ~508 pages every incremental sync (~30 min with rate-limit backoffs) — huge window for network death. `fetchPageWithRetry` fetch() has NO timeout/AbortSignal (graphql-bookmarks.ts:444); `parseRetryAfterSec` honors x-rate-limit-reset unbounded (up to ~15 min × 4 attempts).
+- RECOVERED: reran `ft sync` (bg, 31 min, stopReason "max runtime reached" — normal) → exit 0, 0 new remote, 23 stranded bookmarks indexed, total 10150, media fetched, index rebuilt, meta/state now 2026-07-06T19:05Z. State healthy.
+- Possible fixes (not implemented): AbortSignal.timeout on fetch, cap retry-after wait, persist sync log, terminal-stop marker so auto-continue doesn't rescan 508 pages every run.
+
+SYNC SESSION (2026-07-01) — sync youtube playlist + github stars:
+- Goal: run `ft sync-github-stars` + `ft sync-youtube` for last playlist `PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk`.
+- Decision: youtube LLM notes via droid engine, model `deepseek-v4-flash` (user req).
+- Auth: gh authed (manikanda-kumar), OPENROUTER_API_KEY set. cookies-from-browser chrome + impersonate chrome for yt-dlp.
+- Done: github-stars sync — already current (fetched 0, total 2288, newest 2026-07-01). Canonical index rebuilt. Build clean.
+- Done: youtube sync complete (droid/deepseek-v4-flash) — 269 processed (211 done, 58 partial), 152 skipped-unchanged, 4 no-transcript, 0 failed. Index rebuilt ~/.fieldtheory/library/youtube/index.html.
+- Done: both sources synced. No commits.
+- FEATURE (2026-07-02) per-playlist index.html:
+  - paths.ts: `youtubeLibraryIndexHtmlPath(playlistId?)` → `index-<id>.html` (safePathSegment guarded).
+  - index-html.ts: extracted `toIndexEntry`; added `writeYoutubePlaylistIndex(playlistId)` — filters to `state.playlists[id].videoIds` (deduped via Set), returns null if no members have notes. `writeYoutubeIndexHtml` takes optional playlistId.
+  - cli.ts sync-youtube: after global index, also writes per-playlist index (skips for --video-ids-file).
+  - Notes markdown stays shared/deduped by videoId; only HTML index scoped. Cross-playlist video appears in both.
+  - Tests: tests/youtube-index-html.test.ts (+2 scope/dedup/null), tests/paths.test.ts (+2 path/traversal). paths 6/6, index 3/3, cli 33/33. Build clean.
+  - Verified live: index-PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk.html = 419 entries = global (playlist covers whole library). Dedup bug caught (was 420 from duplicate videoId in playlist.videoIds).
+- State: COMPLETE.
+
+OCR-FUSION SESSION (2026-07-02) — feed slide OCR into notes prompt for slide-heavy conf talks:
+tests/opencode-client.test.ts:14:  const result = await client.chat({ prompt: 'summarize', maxTokens: 12 });
+tests/opencode-client.test.ts:17:  assert.equal(request?.max_tokens, 600);
+src/llm/opencode-client.ts:16:  maxTokens?: number;
+src/llm/opencode-client.ts:62:          max_tokens: Math.max(600, chatOptions.maxTokens ?? 600),
+src/daily/enrich.ts:51:    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 600 })).text);
+
+apply patch
+patch: completed
+/Users/manik/Github/fieldtheory-cli/src/daily/enrich.ts
+/Users/manik/Github/fieldtheory-cli/src/llm/opencode-client.ts
+/Users/manik/Github/fieldtheory-cli/tests/opencode-client.test.ts
+diff --git a/src/daily/enrich.ts b/src/daily/enrich.ts
+index ee1b8b6fb864a5341f455ecd2330e20a524d5fbb..365c180aabb39119a170d6749cc3b73618ab5756
+--- a/src/daily/enrich.ts
++++ b/src/daily/enrich.ts
+@@ -48,7 +48,7 @@
+     const limit = parseLimit(options.limit);
+     const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+     const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+-    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 600 })).text);
++    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+     const updates = await mapConcurrent(misses, 4, async (item): Promise<LinkEnrichmentEntry> => {
+       const url = item.canonicalUrl!;
+       try {
+diff --git a/src/llm/opencode-client.ts b/src/llm/opencode-client.ts
+index 72ced85c17b6103289199f3b86a9c5105e6f7124..1910dce39003b5da6fbf8cde980bf5996502dbd4
+--- a/src/llm/opencode-client.ts
++++ b/src/llm/opencode-client.ts
+@@ -1,5 +1,6 @@
+ const OPENCODE_URL = 'https://opencode.ai/zen/go/v1/chat/completions';
+ const DEFAULT_MODEL = 'deepseek-v4-flash';
++const DEFAULT_MAX_TOKENS = 2000;
+ 
+ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+ 
+@@ -49,7 +50,8 @@
+     async chat(chatOptions) {
+       const key = openCodeApiKey(options);
+       if (!key) throw new OpenCodeAuthError();
+-      // deepseek-v4-flash reasons before answering; smaller budgets can produce
++      // deepseek-v4-flash reasons before answering; a 2k default reserves room
++      // for both reasoning and the final message.content answer.
+       // only reasoning_content and an empty message.content.
+       const controller = new AbortController();
+       const request = fetchFn(OPENCODE_URL, {
+@@ -59,7 +61,7 @@
+         body: JSON.stringify({
+           model,
+           messages: [{ role: 'user', content: chatOptions.prompt }],
+-          max_tokens: Math.max(600, chatOptions.maxTokens ?? 600),
++          max_tokens: Math.max(600, chatOptions.maxTokens ?? DEFAULT_MAX_TOKENS),
+           ...(chatOptions.temperature === undefined ? {} : { temperature: chatOptions.temperature }),
+         }),
+       });
+diff --git a/tests/opencode-client.test.ts b/tests/opencode-client.test.ts
+index 4a04aba3c7b706d8e2ce705ea2575c7bbd8db2a8..8a6fd53e0fffdbf4e11bab88c0ac9c4db64e3b79
+--- a/tests/opencode-client.test.ts
++++ b/tests/opencode-client.test.ts
+@@ -2,7 +2,7 @@
+ import assert from 'node:assert/strict';
+ import { createOpenCodeClient, OpenCodeRequestError } from '../src/llm/opencode-client.js';
+ 
+-test('OpenCode client uses message.content and reserves enough tokens for reasoning models', async () => {
++test('OpenCode client uses message.content and defaults enough tokens for reasoning models', async () => {
+   let request: Record<string, unknown> | undefined;
+   const client = createOpenCodeClient({
+     apiKey: 'test-key',
+@@ -11,10 +11,10 @@
+       return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { reasoning_content: 'private reasoning', content: 'final answer' } }] }));
+     },
+   });
+-  const result = await client.chat({ prompt: 'summarize', maxTokens: 12 });
++  const result = await client.chat({ prompt: 'summarize' });
+   assert.equal(result.text, 'final answer');
+   assert.equal(request?.model, 'deepseek-v4-flash');
+-  assert.equal(request?.max_tokens, 600);
++  assert.equal(request?.max_tokens, 2000);
+ });
+ 
+ test('OpenCode client rejects reasoning-only responses', async () => {
+
+diff --git a/src/daily/enrich.ts b/src/daily/enrich.ts
+index ee1b8b6fb864a5341f455ecd2330e20a524d5fbb..365c180aabb39119a170d6749cc3b73618ab5756
+--- a/src/daily/enrich.ts
++++ b/src/daily/enrich.ts
+@@ -48,7 +48,7 @@
+     const limit = parseLimit(options.limit);
+     const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+     const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+-    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 600 })).text);
++    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+     const updates = await mapConcurrent(misses, 4, async (item): Promise<LinkEnrichmentEntry> => {
+       const url = item.canonicalUrl!;
+       try {
+diff --git a/src/llm/opencode-client.ts b/src/llm/opencode-client.ts
+index 72ced85c17b6103289199f3b86a9c5105e6f7124..1910dce39003b5da6fbf8cde980bf5996502dbd4
+--- a/src/llm/opencode-client.ts
++++ b/src/llm/opencode-client.ts
+@@ -1,5 +1,6 @@
+ const OPENCODE_URL = 'https://opencode.ai/zen/go/v1/chat/completions';
+ const DEFAULT_MODEL = 'deepseek-v4-flash';
++const DEFAULT_MAX_TOKENS = 2000;
+ 
+ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+ 
+@@ -49,7 +50,8 @@
+     async chat(chatOptions) {
+       const key = openCodeApiKey(options);
+       if (!key) throw new OpenCodeAuthError();
+-      // deepseek-v4-flash reasons before answering; smaller budgets can produce
++      // deepseek-v4-flash reasons before answering; a 2k default reserves room
++      // for both reasoning and the final message.content answer.
+       // only reasoning_content and an empty message.content.
+       const controller = new AbortController();
+       const request = fetchFn(OPENCODE_URL, {
+@@ -59,7 +61,7 @@
+         body: JSON.stringify({
+           model,
+           messages: [{ role: 'user', content: chatOptions.prompt }],
+-          max_tokens: Math.max(600, chatOptions.maxTokens ?? 600),
++          max_tokens: Math.max(600, chatOptions.maxTokens ?? DEFAULT_MAX_TOKENS),
+           ...(chatOptions.temperature === undefined ? {} : { temperature: chatOptions.temperature }),
+         }),
+       });
+diff --git a/tests/opencode-client.test.ts b/tests/opencode-client.test.ts
+index 4a04aba3c7b706d8e2ce705ea2575c7bbd8db2a8..8a6fd53e0fffdbf4e11bab88c0ac9c4db64e3b79
+--- a/tests/opencode-client.test.ts
++++ b/tests/opencode-client.test.ts
+@@ -2,7 +2,7 @@
+ import assert from 'node:assert/strict';
+ import { createOpenCodeClient, OpenCodeRequestError } from '../src/llm/opencode-client.js';
+ 
+-test('OpenCode client uses message.content and reserves enough tokens for reasoning models', async () => {
++test('OpenCode client uses message.content and defaults enough tokens for reasoning models', async () => {
+   let request: Record<string, unknown> | undefined;
+   const client = createOpenCodeClient({
+     apiKey: 'test-key',
+@@ -11,10 +11,10 @@
+       return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { reasoning_content: 'private reasoning', content: 'final answer' } }] }));
+     },
+   });
+-  const result = await client.chat({ prompt: 'summarize', maxTokens: 12 });
++  const result = await client.chat({ prompt: 'summarize' });
+   assert.equal(result.text, 'final answer');
+   assert.equal(request?.model, 'deepseek-v4-flash');
+-  assert.equal(request?.max_tokens, 600);
++  assert.equal(request?.max_tokens, 2000);
+ });
+ 
+ test('OpenCode client rejects reasoning-only responses', async () => {
+
+exec
+/bin/zsh -lc 'node --import tsx --test tests/daily.test.ts tests/opencode-client.test.ts && npm run build && git diff --check' in /Users/manik/Github/fieldtheory-cli
+diff --git a/src/daily/enrich.ts b/src/daily/enrich.ts
+index ee1b8b6fb864a5341f455ecd2330e20a524d5fbb..365c180aabb39119a170d6749cc3b73618ab5756
+--- a/src/daily/enrich.ts
++++ b/src/daily/enrich.ts
+@@ -48,7 +48,7 @@
+     const limit = parseLimit(options.limit);
+     const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+     const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+-    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 600 })).text);
++    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+     const updates = await mapConcurrent(misses, 4, async (item): Promise<LinkEnrichmentEntry> => {
+       const url = item.canonicalUrl!;
+       try {
+diff --git a/src/llm/opencode-client.ts b/src/llm/opencode-client.ts
+index 72ced85c17b6103289199f3b86a9c5105e6f7124..1910dce39003b5da6fbf8cde980bf5996502dbd4
+--- a/src/llm/opencode-client.ts
++++ b/src/llm/opencode-client.ts
+@@ -1,5 +1,6 @@
+ const OPENCODE_URL = 'https://opencode.ai/zen/go/v1/chat/completions';
+ const DEFAULT_MODEL = 'deepseek-v4-flash';
++const DEFAULT_MAX_TOKENS = 2000;
+ 
+ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+ 
+@@ -49,7 +50,8 @@
+     async chat(chatOptions) {
+       const key = openCodeApiKey(options);
+       if (!key) throw new OpenCodeAuthError();
+-      // deepseek-v4-flash reasons before answering; smaller budgets can produce
++      // deepseek-v4-flash reasons before answering; a 2k default reserves room
++      // for both reasoning and the final message.content answer.
+       // only reasoning_content and an empty message.content.
+       const controller = new AbortController();
+       const request = fetchFn(OPENCODE_URL, {
+@@ -59,7 +61,7 @@
+         body: JSON.stringify({
+           model,
+           messages: [{ role: 'user', content: chatOptions.prompt }],
+-          max_tokens: Math.max(600, chatOptions.maxTokens ?? 600),
++          max_tokens: Math.max(600, chatOptions.maxTokens ?? DEFAULT_MAX_TOKENS),
+           ...(chatOptions.temperature === undefined ? {} : { temperature: chatOptions.temperature }),
+         }),
+       });
+diff --git a/tests/opencode-client.test.ts b/tests/opencode-client.test.ts
+index 4a04aba3c7b706d8e2ce705ea2575c7bbd8db2a8..8a6fd53e0fffdbf4e11bab88c0ac9c4db64e3b79
+--- a/tests/opencode-client.test.ts
++++ b/tests/opencode-client.test.ts
+@@ -2,7 +2,7 @@
+ import assert from 'node:assert/strict';
+ import { createOpenCodeClient, OpenCodeRequestError } from '../src/llm/opencode-client.js';
+ 
+-test('OpenCode client uses message.content and reserves enough tokens for reasoning models', async () => {
++test('OpenCode client uses message.content and defaults enough tokens for reasoning models', async () => {
+   let request: Record<string, unknown> | undefined;
+   const client = createOpenCodeClient({
+     apiKey: 'test-key',
+@@ -11,10 +11,10 @@
+       return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { reasoning_content: 'private reasoning', content: 'final answer' } }] }));
+     },
+   });
+-  const result = await client.chat({ prompt: 'summarize', maxTokens: 12 });
++  const result = await client.chat({ prompt: 'summarize' });
+   assert.equal(result.text, 'final answer');
+   assert.equal(request?.model, 'deepseek-v4-flash');
+-  assert.equal(request?.max_tokens, 600);
++  assert.equal(request?.max_tokens, 2000);
+ });
+ 
+ test('OpenCode client rejects reasoning-only responses', async () => {
+
+ succeeded in 2094ms:
+(node:69566) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ daily: collect windows on first_saved_at and gathers project deltas (71.488541ms)
+✔ daily: collect uses watermark when no date given and caps at 7 days (26.36525ms)
+✔ daily: overflow advances only through the oldest collected items and drains on the next run (37.907958ms)
+✔ daily: explicit date synthesis does not move the rolling watermark (37.27ms)
+✔ daily: connect links new items to older related items only (23.476458ms)
+✔ daily: collect handles Twitter-format and offset-ISO timestamps in first_saved_at (37.924916ms)
+✔ daily: relatedSeedTerms drops stopwords, short words, and numbers (0.146167ms)
+✔ daily: digest path validates date shape (0.170334ms)
+✔ daily: synthesize validates citations, writes digest, and advances the rolling watermark (35.694791ms)
+✔ daily: synthesize falls back to mechanical themes when the LLM fails (27.729667ms)
+✔ daily: X coverage freshness uses the newest full or incremental sync timestamp (7.704916ms)
+✔ daily: coverage counts canonical rows excluded for undateable first_saved_at (37.323625ms)
+✔ daily: synthesize suppresses duplicate valid citations without counting them as dropped (26.9525ms)
+✔ daily: synthesize renders uncited items under Also saved (36.974666ms)
+✔ daily: synthesize renders items from themes dropped by the cap under Also saved (28.124083ms)
+✔ daily: thin bare links are excluded from synthesis and reconciled into Also saved (29.9455ms)
+✔ daily: URL plus substantial commentary remains eligible for synthesis (25.854834ms)
+✔ daily: skips the LLM when every item is thin (27.808292ms)
+✔ daily: enriches a thin link into the prompt and reuses its durable cache (62.079833ms)
+✔ daily: empty enrichment completion is cached as failed and leaves the item thin (43.145334ms)
+✔ daily: enrichment silently no-ops without an OpenCode key (0.237875ms)
+✔ daily: enrichment never fetches private IPs or redirects to them (31.213542ms)
+✔ daily: an OpenCode timeout records a failed enrichment without hanging (34.039416ms)
+✔ daily: interests classifies rising/steady/fading topics and finds active threads (51.6405ms)
+✔ daily: synthesize skips when the window is empty (14.052625ms)
+✔ daily: extractYoutubeVideoId handles watch, short, shorts, and embed URLs (0.184458ms)
+✔ daily: digest links youtube items to their library notes when notes exist (29.384333ms)
+(node:69567) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ OpenCode client uses message.content and defaults enough tokens for reasoning models (8.582459ms)
+✔ OpenCode client rejects reasoning-only responses (0.303291ms)
+✔ OpenCode client aborts a stalled completion request (4.568708ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 934.680083
+npm notice run fieldtheory@1.3.20 build
+npm notice run tsc -p tsconfig.json
+
+codex
+The calibrated 2,000-token default is now validated: 30/30 focused tests and the build pass.
+Raised the enrichment budget and completed the requested focused validation.
+  ✓ Raise enrichment/client completion defaults to 2000
+  ✓ Update expectation and run focused validation
+apply patch
+patch: completed
+/Users/manik/Github/fieldtheory-cli/CONTINUITY.md
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 5fd396e1a896fc7b5a511e4d59ac1cd2df8bfd4b..0fca81300004ccd12641b14fa23e4b26abc4648f
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -12,7 +12,7 @@
+ - Requirements plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (ce-brainstorm).
+ - T1–T3 implemented via Codex; new module src/daily/coverage.ts.
+ Now:
+-- Thin-link enrichment review fixes complete: manual SSRF-safe redirects (hostname/IP-literal validation per hop; DNS rebinding explicitly out of scope), 30s default OpenCode timeout, and bounded no-body handling. Focused tests 30/30 + build pass. Uncommitted.
++- Thin-link enrichment calibrated for live deepseek-v4-flash: client/enrichment default max tokens raised from 600 to 2000 so reasoning leaves room for `message.content`. Security review fixes retained. Focused tests 30/30 + build pass. Uncommitted.
+ Next:
+ - Optional: commit; x-list/following canonical ingest (dark sources); per-source watermark; ideation ideas #1–8 (audio briefing top pick).
+ Open questions (UNCONFIRMED if needed):
+diff --git a/src/daily/enrich.ts b/src/daily/enrich.ts
+index ee1b8b6fb864a5341f455ecd2330e20a524d5fbb..365c180aabb39119a170d6749cc3b73618ab5756
+--- a/src/daily/enrich.ts
++++ b/src/daily/enrich.ts
+@@ -48,7 +48,7 @@
+     const limit = parseLimit(options.limit);
+     const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+     const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+-    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 600 })).text);
++    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+     const updates = await mapConcurrent(misses, 4, async (item): Promise<LinkEnrichmentEntry> => {
+       const url = item.canonicalUrl!;
+       try {
+diff --git a/src/llm/opencode-client.ts b/src/llm/opencode-client.ts
+index 72ced85c17b6103289199f3b86a9c5105e6f7124..1910dce39003b5da6fbf8cde980bf5996502dbd4
+--- a/src/llm/opencode-client.ts
++++ b/src/llm/opencode-client.ts
+@@ -1,5 +1,6 @@
+ const OPENCODE_URL = 'https://opencode.ai/zen/go/v1/chat/completions';
+ const DEFAULT_MODEL = 'deepseek-v4-flash';
++const DEFAULT_MAX_TOKENS = 2000;
+ 
+ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+ 
+@@ -49,7 +50,8 @@
+     async chat(chatOptions) {
+       const key = openCodeApiKey(options);
+       if (!key) throw new OpenCodeAuthError();
+-      // deepseek-v4-flash reasons before answering; smaller budgets can produce
++      // deepseek-v4-flash reasons before answering; a 2k default reserves room
++      // for both reasoning and the final message.content answer.
+       // only reasoning_content and an empty message.content.
+       const controller = new AbortController();
+       const request = fetchFn(OPENCODE_URL, {
+@@ -59,7 +61,7 @@
+         body: JSON.stringify({
+           model,
+           messages: [{ role: 'user', content: chatOptions.prompt }],
+-          max_tokens: Math.max(600, chatOptions.maxTokens ?? 600),
++          max_tokens: Math.max(600, chatOptions.maxTokens ?? DEFAULT_MAX_TOKENS),
+           ...(chatOptions.temperature === undefined ? {} : { temperature: chatOptions.temperature }),
+         }),
+       });
+diff --git a/tests/opencode-client.test.ts b/tests/opencode-client.test.ts
+index 4a04aba3c7b706d8e2ce705ea2575c7bbd8db2a8..8a6fd53e0fffdbf4e11bab88c0ac9c4db64e3b79
+--- a/tests/opencode-client.test.ts
++++ b/tests/opencode-client.test.ts
+@@ -2,7 +2,7 @@
+ import assert from 'node:assert/strict';
+ import { createOpenCodeClient, OpenCodeRequestError } from '../src/llm/opencode-client.js';
+ 
+-test('OpenCode client uses message.content and reserves enough tokens for reasoning models', async () => {
++test('OpenCode client uses message.content and defaults enough tokens for reasoning models', async () => {
+   let request: Record<string, unknown> | undefined;
+   const client = createOpenCodeClient({
+     apiKey: 'test-key',
+@@ -11,10 +11,10 @@
+       return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { reasoning_content: 'private reasoning', content: 'final answer' } }] }));
+     },
+   });
+-  const result = await client.chat({ prompt: 'summarize', maxTokens: 12 });
++  const result = await client.chat({ prompt: 'summarize' });
+   assert.equal(result.text, 'final answer');
+   assert.equal(request?.model, 'deepseek-v4-flash');
+-  assert.equal(request?.max_tokens, 600);
++  assert.equal(request?.max_tokens, 2000);
+ });
+ 
+ test('OpenCode client rejects reasoning-only responses', async () => {
+
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 5fd396e1a896fc7b5a511e4d59ac1cd2df8bfd4b..0fca81300004ccd12641b14fa23e4b26abc4648f
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -12,7 +12,7 @@
+ - Requirements plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (ce-brainstorm).
+ - T1–T3 implemented via Codex; new module src/daily/coverage.ts.
+ Now:
+-- Thin-link enrichment review fixes complete: manual SSRF-safe redirects (hostname/IP-literal validation per hop; DNS rebinding explicitly out of scope), 30s default OpenCode timeout, and bounded no-body handling. Focused tests 30/30 + build pass. Uncommitted.
++- Thin-link enrichment calibrated for live deepseek-v4-flash: client/enrichment default max tokens raised from 600 to 2000 so reasoning leaves room for `message.content`. Security review fixes retained. Focused tests 30/30 + build pass. Uncommitted.
+ Next:
+ - Optional: commit; x-list/following canonical ingest (dark sources); per-source watermark; ideation ideas #1–8 (audio briefing top pick).
+ Open questions (UNCONFIRMED if needed):
+diff --git a/src/daily/enrich.ts b/src/daily/enrich.ts
+index ee1b8b6fb864a5341f455ecd2330e20a524d5fbb..365c180aabb39119a170d6749cc3b73618ab5756
+--- a/src/daily/enrich.ts
++++ b/src/daily/enrich.ts
+@@ -48,7 +48,7 @@
+     const limit = parseLimit(options.limit);
+     const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+     const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+-    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 600 })).text);
++    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+     const updates = await mapConcurrent(misses, 4, async (item): Promise<LinkEnrichmentEntry> => {
+       const url = item.canonicalUrl!;
+       try {
+diff --git a/src/llm/opencode-client.ts b/src/llm/opencode-client.ts
+index 72ced85c17b6103289199f3b86a9c5105e6f7124..1910dce39003b5da6fbf8cde980bf5996502dbd4
+--- a/src/llm/opencode-client.ts
++++ b/src/llm/opencode-client.ts
+@@ -1,5 +1,6 @@
+ const OPENCODE_URL = 'https://opencode.ai/zen/go/v1/chat/completions';
+ const DEFAULT_MODEL = 'deepseek-v4-flash';
++const DEFAULT_MAX_TOKENS = 2000;
+ 
+ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+ 
+@@ -49,7 +50,8 @@
+     async chat(chatOptions) {
+       const key = openCodeApiKey(options);
+       if (!key) throw new OpenCodeAuthError();
+-      // deepseek-v4-flash reasons before answering; smaller budgets can produce
++      // deepseek-v4-flash reasons before answering; a 2k default reserves room
++      // for both reasoning and the final message.content answer.
+       // only reasoning_content and an empty message.content.
+       const controller = new AbortController();
+       const request = fetchFn(OPENCODE_URL, {
+@@ -59,7 +61,7 @@
+         body: JSON.stringify({
+           model,
+           messages: [{ role: 'user', content: chatOptions.prompt }],
+-          max_tokens: Math.max(600, chatOptions.maxTokens ?? 600),
++          max_tokens: Math.max(600, chatOptions.maxTokens ?? DEFAULT_MAX_TOKENS),
+           ...(chatOptions.temperature === undefined ? {} : { temperature: chatOptions.temperature }),
+         }),
+       });
+diff --git a/tests/opencode-client.test.ts b/tests/opencode-client.test.ts
+index 4a04aba3c7b706d8e2ce705ea2575c7bbd8db2a8..8a6fd53e0fffdbf4e11bab88c0ac9c4db64e3b79
+--- a/tests/opencode-client.test.ts
++++ b/tests/opencode-client.test.ts
+@@ -2,7 +2,7 @@
+ import assert from 'node:assert/strict';
+ import { createOpenCodeClient, OpenCodeRequestError } from '../src/llm/opencode-client.js';
+ 
+-test('OpenCode client uses message.content and reserves enough tokens for reasoning models', async () => {
++test('OpenCode client uses message.content and defaults enough tokens for reasoning models', async () => {
+   let request: Record<string, unknown> | undefined;
+   const client = createOpenCodeClient({
+     apiKey: 'test-key',
+@@ -11,10 +11,10 @@
+       return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { reasoning_content: 'private reasoning', content: 'final answer' } }] }));
+     },
+   });
+-  const result = await client.chat({ prompt: 'summarize', maxTokens: 12 });
++  const result = await client.chat({ prompt: 'summarize' });
+   assert.equal(result.text, 'final answer');
+   assert.equal(request?.model, 'deepseek-v4-flash');
+-  assert.equal(request?.max_tokens, 600);
++  assert.equal(request?.max_tokens, 2000);
+ });
+ 
+ test('OpenCode client rejects reasoning-only responses', async () => {
+
+codex
+summary: "Raised the OpenCode enrichment completion default from 600 to 2,000 tokens so deepseek-v4-flash has room for both reasoning and `message.content`."
+evidence:
+  - "Daily enrichment now explicitly requests `maxTokens: 2000`."
+  - "OpenCode client defaults to 2,000 while retaining caller overrides (with the existing 600-token safety floor)."
+  - "Client regression test now asserts the 2,000-token default."
+files_changed:
+  - "CONTINUITY.md"
+  - "src/daily/enrich.ts"
+  - "src/llm/opencode-client.ts"
+  - "tests/opencode-client.test.ts"
+commands_run:
+  - command: "node --import tsx --test tests/daily.test.ts tests/opencode-client.test.ts"
+    exit_code: 0
+    summary: "30 passed, 0 failed."
+  - command: "npm run build"
+    exit_code: 0
+    summary: "TypeScript build passed."
+  - command: "git diff --check"
+    exit_code: 0
+    summary: "No whitespace errors."
+verification:
+  status: "passed"
+  details: "Required focused tests and build pass."
+blockers: []
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 5fd396e1a896fc7b5a511e4d59ac1cd2df8bfd4b..0fca81300004ccd12641b14fa23e4b26abc4648f
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -12,7 +12,7 @@
+ - Requirements plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (ce-brainstorm).
+ - T1–T3 implemented via Codex; new module src/daily/coverage.ts.
+ Now:
+-- Thin-link enrichment review fixes complete: manual SSRF-safe redirects (hostname/IP-literal validation per hop; DNS rebinding explicitly out of scope), 30s default OpenCode timeout, and bounded no-body handling. Focused tests 30/30 + build pass. Uncommitted.
++- Thin-link enrichment calibrated for live deepseek-v4-flash: client/enrichment default max tokens raised from 600 to 2000 so reasoning leaves room for `message.content`. Security review fixes retained. Focused tests 30/30 + build pass. Uncommitted.
+ Next:
+ - Optional: commit; x-list/following canonical ingest (dark sources); per-source watermark; ideation ideas #1–8 (audio briefing top pick).
+ Open questions (UNCONFIRMED if needed):
+diff --git a/src/daily/enrich.ts b/src/daily/enrich.ts
+index ee1b8b6fb864a5341f455ecd2330e20a524d5fbb..365c180aabb39119a170d6749cc3b73618ab5756
+--- a/src/daily/enrich.ts
++++ b/src/daily/enrich.ts
+@@ -48,7 +48,7 @@
+     const limit = parseLimit(options.limit);
+     const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
+     const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+-    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 600 })).text);
++    const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+     const updates = await mapConcurrent(misses, 4, async (item): Promise<LinkEnrichmentEntry> => {
+       const url = item.canonicalUrl!;
+       try {
+diff --git a/src/llm/opencode-client.ts b/src/llm/opencode-client.ts
+index 72ced85c17b6103289199f3b86a9c5105e6f7124..1910dce39003b5da6fbf8cde980bf5996502dbd4
+--- a/src/llm/opencode-client.ts
++++ b/src/llm/opencode-client.ts
+@@ -1,5 +1,6 @@
+ const OPENCODE_URL = 'https://opencode.ai/zen/go/v1/chat/completions';
+ const DEFAULT_MODEL = 'deepseek-v4-flash';
++const DEFAULT_MAX_TOKENS = 2000;
+ 
+ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+ 
+@@ -49,7 +50,8 @@
+     async chat(chatOptions) {
+       const key = openCodeApiKey(options);
+       if (!key) throw new OpenCodeAuthError();
+-      // deepseek-v4-flash reasons before answering; smaller budgets can produce
++      // deepseek-v4-flash reasons before answering; a 2k default reserves room
++      // for both reasoning and the final message.content answer.
+       // only reasoning_content and an empty message.content.
+       const controller = new AbortController();
+       const request = fetchFn(OPENCODE_URL, {
+@@ -59,7 +61,7 @@
+         body: JSON.stringify({
+           model,
+           messages: [{ role: 'user', content: chatOptions.prompt }],
+-          max_tokens: Math.max(600, chatOptions.maxTokens ?? 600),
++          max_tokens: Math.max(600, chatOptions.maxTokens ?? DEFAULT_MAX_TOKENS),
+           ...(chatOptions.temperature === undefined ? {} : { temperature: chatOptions.temperature }),
+         }),
+       });
+diff --git a/tests/opencode-client.test.ts b/tests/opencode-client.test.ts
+index 4a04aba3c7b706d8e2ce705ea2575c7bbd8db2a8..8a6fd53e0fffdbf4e11bab88c0ac9c4db64e3b79
+--- a/tests/opencode-client.test.ts
++++ b/tests/opencode-client.test.ts
+@@ -2,7 +2,7 @@
+ import assert from 'node:assert/strict';
+ import { createOpenCodeClient, OpenCodeRequestError } from '../src/llm/opencode-client.js';
+ 
+-test('OpenCode client uses message.content and reserves enough tokens for reasoning models', async () => {
++test('OpenCode client uses message.content and defaults enough tokens for reasoning models', async () => {
+   let request: Record<string, unknown> | undefined;
+   const client = createOpenCodeClient({
+     apiKey: 'test-key',
+@@ -11,10 +11,10 @@
+       return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { reasoning_content: 'private reasoning', content: 'final answer' } }] }));
+     },
+   });
+-  const result = await client.chat({ prompt: 'summarize', maxTokens: 12 });
++  const result = await client.chat({ prompt: 'summarize' });
+   assert.equal(result.text, 'final answer');
+   assert.equal(request?.model, 'deepseek-v4-flash');
+-  assert.equal(request?.max_tokens, 600);
++  assert.equal(request?.max_tokens, 2000);
+ });
+ 
+ test('OpenCode client rejects reasoning-only responses', async () => {
+
+hook: Stop
+hook: Stop Completed
+tokens used
+1,45,615

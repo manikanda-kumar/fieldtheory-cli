@@ -120,6 +120,18 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       reason: options.xList ? undefined : 'pass --x-list <id> to include',
     },
     {
+      id: 'x-list-summary',
+      label: 'Summarize X list digest',
+      source: 'x-list',
+      // Reads the `<listId>-latest.json` written by the x-list step above and
+      // produces the daily markdown briefing (LLM with mechanical fallback).
+      command: ['x-list-summary', ...(options.xList ? [options.xList] : [])],
+      enabled: enabled('x-list') && Boolean(options.xList) && !options.noSynthesis,
+      reason: !options.xList
+        ? 'pass --x-list <id> to include'
+        : options.noSynthesis ? 'disabled by --no-synthesis' : undefined,
+    },
+    {
       id: 'raindrop',
       label: 'Sync Raindrop bookmarks',
       source: 'raindrop',

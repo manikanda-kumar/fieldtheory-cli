@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Field Theory CLI — SQLite Schema Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f1ec;
+    --surface: #fffdf9;
+    --surface-2: #ebe6de;
+    --border: #d4cdc2;
+    --text: #1c1917;
+    --text-dim: #57534e;
+    --accent: #1d4ed8;
+    --accent-soft: #dbeafe;
+    --pk: #b45309;
+    --pk-soft: #fef3c7;
+    --idx: #047857;
+    --idx-soft: #d1fae5;
+    --fts: #7c3aed;
+    --fts-soft: #ede9fe;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'Source Sans 3', system-ui, sans-serif;
+    --serif: 'Instrument Serif', Georgia, serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141210;
+      --surface: #1c1917;
+      --surface-2: #292524;
+      --border: #44403c;
+      --text: #fafaf9;
+      --text-dim: #a8a29e;
+      --accent: #60a5fa;
+      --accent-soft: #1e3a5f;
+      --pk: #fbbf24;
+      --pk-soft: #422006;
+      --idx: #34d399;
+      --idx-soft: #064e3b;
+      --fts: #c4b5fd;
+      --fts-soft: #2e1065;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: -1px -1px;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  header {
+    margin-bottom: 40px;
+    padding-bottom: 28px;
+    border-bottom: 2px solid var(--border);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    font-weight: 400;
+    line-height: 1.05;
+    margin-bottom: 12px;
+  }
+
+  .lede {
+    max-width: 62ch;
+    color: var(--text-dim);
+    font-size: 1.05rem;
+  }
+
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .meta-row span {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    margin-bottom: 36px;
+  }
+
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+
+  .stat .num {
+    font-family: var(--serif);
+    font-size: 2rem;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .stat .label {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
+  section {
+    margin-bottom: 44px;
+  }
+
+  h2 {
+    font-family: var(--serif);
+    font-size: 1.8rem;
+    font-weight: 400;
+    margin-bottom: 8px;
+  }
+
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 28px 0 10px;
+  }
+
+  .section-intro {
+    color: var(--text-dim);
+    margin-bottom: 18px;
+    max-width: 70ch;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    margin-bottom: 18px;
+  }
+
+  .db-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .db-path {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 5px 10px;
+    border-radius: 6px;
+    word-break: break-all;
+  }
+
+  .table-block {
+    border-top: 1px solid var(--border);
+    padding-top: 18px;
+    margin-top: 18px;
+  }
+
+  .table-block:first-of-type {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+  }
+
+  .table-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .table-title code {
+    font-family: var(--mono);
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+  }
+
+  .badge-table { background: var(--surface-2); color: var(--text-dim); border-color: var(--border); }
+  .badge-fts { background: var(--fts-soft); color: var(--fts); border-color: color-mix(in srgb, var(--fts) 30%, transparent); }
+  .badge-meta { background: var(--accent-soft); color: var(--accent); }
+
+  .table-desc {
+    color: var(--text-dim);
+    font-size: 0.92rem;
+    margin-bottom: 12px;
+    max-width: 72ch;
+  }
+
+  .source-ref {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  table.schema {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+
+  table.schema th,
+  table.schema td {
+    text-align: left;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  table.schema th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    background: var(--surface-2);
+  }
+
+  table.schema tr:last-child td { border-bottom: none; }
+
+  .col-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .col-type {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+  }
+
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 4px;
+  }
+
+  .tag-pk { background: var(--pk-soft); color: var(--pk); }
+  .tag-idx { background: var(--idx-soft); color: var(--idx); }
+  .tag-json { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border); }
+
+  .index-list,
+  .note-list {
+    margin-top: 10px;
+    padding-left: 18px;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+
+  .index-list li,
+  .note-list li { margin-bottom: 4px; }
+
+  .diagram-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    overflow-x: auto;
+  }
+
+  .flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+  }
+
+  .flow-item {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 0.9rem;
+  }
+
+  .flow-item strong {
+    display: block;
+    font-family: var(--mono);
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+
+  .rel-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .rel-table th,
+  .rel-table td {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .rel-table th {
+    background: var(--surface-2);
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  code.inline {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 28px;
+  }
+
+  .toc a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.9rem;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+  }
+
+  .toc a:hover { background: var(--accent-soft); }
+
+  footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="eyebrow">Field Theory CLI</div>
+    <h1>SQLite Schema Reference</h1>
+    <p class="lede">
+      Field Theory stores bookmark search indexes in SQLite files under
+      <code class="inline">~/.fieldtheory/bookmarks/</code>. All databases use
+      <code class="inline">sql.js-fts5</code> (WASM SQLite with FTS5) via
+      <code class="inline">src/db.ts</code>, with file locking and crash-durable writes.
+    </p>
+    <div class="meta-row">
+      <span>Generated 2026-07-11</span>
+      <span>bookmarks schema v6</span>
+      <span>following schema v1</span>
+      <span>FTS tokenizer: porter unicode61</span>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="num">2</div><div class="label">SQLite files</div></div>
+    <div class="stat"><div class="num">7</div><div class="label">Content tables</div></div>
+    <div class="stat"><div class="num">3</div><div class="label">FTS5 indexes</div></div>
+    <div class="stat"><div class="num">11</div><div class="label">B-tree indexes</div></div>
+  </div>
+
+  <nav class="toc">
+    <a href="#overview">Overview</a>
+    <a href="#bookmarks-db">bookmarks.db</a>
+    <a href="#following-db">following.db</a>
+    <a href="#relationships">Relationships</a>
+    <a href="#sources">Source modules</a>
+    <a href="#migrations">Migrations</a>
+  </nav>
+
+  <section id="overview">
+    <h2>Overview</h2>
+    <p class="section-intro">
+      The primary database (<code class="inline">bookmarks.db</code>) holds three layers:
+      X/Twitter bookmark rows, a unified canonical layer that deduplicates across sources,
+      and link enrichment cache for daily digest generation. A separate
+      <code class="inline">following.db</code> indexes the X following roster.
+    </p>
+
+    <div class="card">
+      <h3>Data flow</h3>
+      <div class="flow-grid">
+        <div class="flow-item">
+          <strong>JSONL caches</strong>
+          bookmarks.jsonl, raindrop, github-stars, projects → indexed into SQLite
+        </div>
+        <div class="flow-item">
+          <strong>bookmarks table</strong>
+          Per-tweet X bookmark records with classification and article enrichment
+        </div>
+        <div class="flow-item">
+          <strong>canonical layer</strong>
+          bookmark_sources → canonical_bookmarks (dedupe by url or tweet id)
+        </div>
+        <div class="flow-item">
+          <strong>Search</strong>
+          FTS5 virtual tables with BM25 ranking; external-content FTS (no triggers)
+        </div>
+      </div>
+    </div>
+
+    <div class="diagram-wrap">
+      <pre class="mermaid">
+erDiagram
+  bookmarks ||--o| bookmarks_fts : "rowid (content=)"
+  canonical_bookmarks ||--o| canonical_bookmarks_fts : "rowid (content=)"
+  canonical_bookmarks ||--o{ bookmark_sources : "canonical_id"
+  bookmark_sources }o--|| canonical_bookmarks : "dedupe_key groups"
+  link_enrichment }o--o| canonical_bookmarks : "url lookup (no FK)"
+  following ||--o| following_fts : "rowid (content=)"
+  meta ||--|| bookmarks : "schema_version"
+  meta ||--|| following : "schema_version"
+
+  bookmarks {
+    TEXT id PK
+    TEXT tweet_id
+    TEXT text
+    TEXT author_handle
+    TEXT primary_category
+    TEXT primary_domain
+  }
+
+  bookmark_sources {
+    TEXT id PK
+    TEXT source
+    TEXT dedupe_key
+    TEXT canonical_id FK
+    INTEGER active
+  }
+
+  canonical_bookmarks {
+    TEXT id PK
+    TEXT dedupe_key UK
+    TEXT search_text
+    INTEGER source_count
+  }
+
+  link_enrichment {
+    TEXT url PK
+    TEXT summary
+    TEXT status
+  }
+
+  following {
+    TEXT user_id PK
+    TEXT handle
+    TEXT bio
+    INTEGER bookmark_overlap
+  }
+      </pre>
+    </div>
+  </section>
+
+  <section id="bookmarks-db">
+    <h2>bookmarks.db</h2>
+    <p class="section-intro">
+      Path: <code class="inline">~/.fieldtheory/bookmarks/bookmarks.db</code>
+      (override with <code class="inline">FT_DATA_DIR</code>).
+      Resolved by <code class="inline">twitterBookmarksIndexPath()</code> in <code class="inline">src/paths.ts</code>.
+    </p>
+
+    <div class="card">
+      <div class="db-header">
+        <h3>meta</h3>
+        <span class="badge badge-meta">Key-value</span>
+      </div>
+      <p class="table-desc">Stores schema version and other internal metadata.</p>
+      <p class="source-ref">src/bookmarks-db.ts · src/canonical-bookmarks-db.ts (reads only)</p>
+      <table class="schema">
+        <thead><tr><th>Column</th><th>Type</th><th>Constraints</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="col-name">key</td><td class="col-type">TEXT</td>
+            <td><span class="tag tag-pk">PK</span></td>
+            <td>Currently <code class="inline">schema_version</code></td>
+          </tr>
+          <tr>
+            <td class="col-name">value</td><td class="col-type">TEXT</td><td></td>
+            <td>Bookmarks schema version = <strong>6</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="table-block">
+        <div class="table-title">
+          <code>bookmarks</code>
+          <span class="badge badge-table">Content</span>
+        </div>
+        <p class="table-desc">
+          One row per X/Twitter bookmark. Built from <code class="inline">bookmarks.jsonl</code> cache.
+          Classification fields are populated by regex classifier; article fields by link enrichment.
+        </p>
+        <p class="source-ref">src/bookmarks-db.ts — SCHEMA_VERSION 6</p>
+        <table class="schema">
+          <thead><tr><th>Column</th><th>Type</th><th>Constraints</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="col-name">id</td><td class="col-type">TEXT</td><td><span class="tag tag-pk">PK</span></td><td>Bookmark record id</td></tr>
+            <tr><td class="col-name">tweet_id</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>X status id</td></tr>
+            <tr><td class="col-name">url</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>Tweet permalink</td></tr>
+            <tr><td class="col-name">text</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>Tweet body</td></tr>
+            <tr><td class="col-name">author_handle</td><td class="col-type">TEXT</td><td><span class="tag tag-idx">idx</span></td><td>Without @</td></tr>
+            <tr><td class="col-name">author_name</td><td class="col-type">TEXT</td><td></td><td>Display name</td></tr>
+            <tr><td class="col-name">author_profile_image_url</td><td class="col-type">TEXT</td><td></td><td>Avatar URL</td></tr>
+            <tr><td class="col-name">posted_at</td><td class="col-type">TEXT</td><td><span class="tag tag-idx">idx</span></td><td>ISO-ish timestamp</td></tr>
+            <tr><td class="col-name">bookmarked_at</td><td class="col-type">TEXT</td><td></td><td>When user saved</td></tr>
+            <tr><td class="col-name">synced_at</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>Last sync time</td></tr>
+            <tr><td class="col-name">conversation_id</td><td class="col-type">TEXT</td><td></td><td>Thread root</td></tr>
+            <tr><td class="col-name">in_reply_to_status_id</td><td class="col-type">TEXT</td><td></td><td>Reply parent</td></tr>
+            <tr><td class="col-name">quoted_status_id</td><td class="col-type">TEXT</td><td></td><td>Quoted tweet id</td></tr>
+            <tr><td class="col-name">language</td><td class="col-type">TEXT</td><td><span class="tag tag-idx">idx</span></td><td>Detected language</td></tr>
+            <tr><td class="col-name">like_count</td><td class="col-type">INTEGER</td><td></td><td>Engagement</td></tr>
+            <tr><td class="col-name">repost_count</td><td class="col-type">INTEGER</td><td></td><td></td></tr>
+            <tr><td class="col-name">reply_count</td><td class="col-type">INTEGER</td><td></td><td></td></tr>
+            <tr><td class="col-name">quote_count</td><td class="col-type">INTEGER</td><td></td><td></td></tr>
+            <tr><td class="col-name">bookmark_count</td><td class="col-type">INTEGER</td><td></td><td></td></tr>
+            <tr><td class="col-name">view_count</td><td class="col-type">INTEGER</td><td></td><td></td></tr>
+            <tr><td class="col-name">media_count</td><td class="col-type">INTEGER</td><td>DEFAULT 0</td><td>Attached media count</td></tr>
+            <tr><td class="col-name">link_count</td><td class="col-type">INTEGER</td><td>DEFAULT 0</td><td>External links count</td></tr>
+            <tr><td class="col-name">links_json</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>String array of URLs</td></tr>
+            <tr><td class="col-name">tags_json</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>Hashtag array</td></tr>
+            <tr><td class="col-name">ingested_via</td><td class="col-type">TEXT</td><td></td><td>Sync source (graphql, oauth, etc.)</td></tr>
+            <tr><td class="col-name">categories</td><td class="col-type">TEXT</td><td></td><td>Comma-separated classifier labels</td></tr>
+            <tr><td class="col-name">primary_category</td><td class="col-type">TEXT</td><td><span class="tag tag-idx">idx</span></td><td>Top category; default <code class="inline">unclassified</code></td></tr>
+            <tr><td class="col-name">github_urls</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>Extracted GitHub repo URLs</td></tr>
+            <tr><td class="col-name">domains</td><td class="col-type">TEXT</td><td></td><td>Comma-separated hostnames</td></tr>
+            <tr><td class="col-name">primary_domain</td><td class="col-type">TEXT</td><td><span class="tag tag-idx">idx</span></td><td>Primary link domain</td></tr>
+            <tr><td class="col-name">quoted_tweet_json</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>QuotedTweetSnapshot</td></tr>
+            <tr><td class="col-name">article_title</td><td class="col-type">TEXT</td><td></td><td>Extracted article headline</td></tr>
+            <tr><td class="col-name">article_text</td><td class="col-type">TEXT</td><td></td><td>Extracted article body</td></tr>
+            <tr><td class="col-name">article_site</td><td class="col-type">TEXT</td><td></td><td>Publisher hostname</td></tr>
+            <tr><td class="col-name">enriched_at</td><td class="col-type">TEXT</td><td></td><td>Article enrichment timestamp</td></tr>
+            <tr><td class="col-name">folder_ids</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>X bookmark folder ids</td></tr>
+            <tr><td class="col-name">folder_names</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>X bookmark folder names</td></tr>
+          </tbody>
+        </table>
+        <ul class="index-list">
+          <li><code>idx_bookmarks_author</code> ON (author_handle)</li>
+          <li><code>idx_bookmarks_posted</code> ON (posted_at)</li>
+          <li><code>idx_bookmarks_language</code> ON (language)</li>
+          <li><code>idx_bookmarks_category</code> ON (primary_category)</li>
+          <li><code>idx_bookmarks_domain</code> ON (primary_domain)</li>
+        </ul>
+      </div>
+
+      <div class="table-block">
+        <div class="table-title">
+          <code>bookmarks_fts</code>
+          <span class="badge badge-fts">FTS5</span>
+        </div>
+        <p class="table-desc">
+          Full-text search over tweet text, author fields, and article body.
+          External-content FTS: indexes mirror <code class="inline">bookmarks</code> via
+          <code class="inline">content=bookmarks</code> and <code class="inline">content_rowid=rowid</code>.
+          Rebuilt with <code class="inline">INSERT INTO bookmarks_fts(bookmarks_fts) VALUES('rebuild')</code>.
+        </p>
+        <table class="schema">
+          <thead><tr><th>Indexed column</th><th>BM25 weight</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="col-name">text</td><td>5.0</td><td>Tweet body (highest weight)</td></tr>
+            <tr><td class="col-name">author_handle</td><td>1.0</td><td></td></tr>
+            <tr><td class="col-name">author_name</td><td>1.0</td><td></td></tr>
+            <tr><td class="col-name">article_text</td><td>3.0</td><td>Extracted article content</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-block">
+        <div class="table-title">
+          <code>bookmark_sources</code>
+          <span class="badge badge-table">Content</span>
+        </div>
+        <p class="table-desc">
+          One row per saved item from any source before deduplication.
+          Sources: <code class="inline">x</code>, <code class="inline">raindrop</code>,
+          <code class="inline">github-stars</code>, <code class="inline">project</code>.
+        </p>
+        <p class="source-ref">src/canonical-bookmarks-db.ts</p>
+        <table class="schema">
+          <thead><tr><th>Column</th><th>Type</th><th>Constraints</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="col-name">id</td><td class="col-type">TEXT</td><td><span class="tag tag-pk">PK</span></td><td>e.g. <code class="inline">x:{bookmarkId}</code>, <code class="inline">raindrop:{id}</code></td></tr>
+            <tr><td class="col-name">source</td><td class="col-type">TEXT</td><td>NOT NULL, <span class="tag tag-idx">idx</span></td><td>Source system identifier</td></tr>
+            <tr><td class="col-name">profile</td><td class="col-type">TEXT</td><td><span class="tag tag-idx">idx</span></td><td>Browser profile or account scope</td></tr>
+            <tr><td class="col-name">source_item_id</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>Native id in source system</td></tr>
+            <tr><td class="col-name">source_url</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>Canonical URL in source</td></tr>
+            <tr><td class="col-name">target_url</td><td class="col-type">TEXT</td><td></td><td>Resolved external URL if different</td></tr>
+            <tr><td class="col-name">dedupe_key</td><td class="col-type">TEXT</td><td>NOT NULL, <span class="tag tag-idx">idx</span></td><td><code class="inline">url:{normalized}</code> or <code class="inline">x:{tweetId}</code></td></tr>
+            <tr><td class="col-name">title</td><td class="col-type">TEXT</td><td></td><td>Display title</td></tr>
+            <tr><td class="col-name">text</td><td class="col-type">TEXT</td><td></td><td>Body / excerpt / note text</td></tr>
+            <tr><td class="col-name">author_handle</td><td class="col-type">TEXT</td><td></td><td>For X-sourced items</td></tr>
+            <tr><td class="col-name">saved_at</td><td class="col-type">TEXT</td><td></td><td>When user saved</td></tr>
+            <tr><td class="col-name">created_at</td><td class="col-type">TEXT</td><td></td><td>Content creation time</td></tr>
+            <tr><td class="col-name">modified_at</td><td class="col-type">TEXT</td><td></td><td>Last modified in source</td></tr>
+            <tr><td class="col-name">folder_path_json</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>Folder path segments</td></tr>
+            <tr><td class="col-name">links_json</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>Related URLs</td></tr>
+            <tr><td class="col-name">content_path</td><td class="col-type">TEXT</td><td></td><td>Path to markdown library file</td></tr>
+            <tr><td class="col-name">metadata_json</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>Source-specific metadata blob</td></tr>
+            <tr><td class="col-name">active</td><td class="col-type">INTEGER</td><td>NOT NULL DEFAULT 1</td><td>0 = soft-deleted source row</td></tr>
+            <tr><td class="col-name">canonical_id</td><td class="col-type">TEXT</td><td><span class="tag tag-idx">idx</span></td><td>FK → canonical_bookmarks.id (logical, not enforced)</td></tr>
+          </tbody>
+        </table>
+        <ul class="index-list">
+          <li><code>idx_bookmark_sources_dedupe_key</code> ON (dedupe_key)</li>
+          <li><code>idx_bookmark_sources_canonical_id</code> ON (canonical_id)</li>
+          <li><code>idx_bookmark_sources_source</code> ON (source, profile)</li>
+        </ul>
+      </div>
+
+      <div class="table-block">
+        <div class="table-title">
+          <code>canonical_bookmarks</code>
+          <span class="badge badge-table">Content</span>
+        </div>
+        <p class="table-desc">
+          Deduplicated bookmarks grouped by <code class="inline">dedupe_key</code>.
+          <code class="inline">id</code> is deterministic: <code class="inline">canonical:{sha256(dedupe_key)}</code>.
+          Classification fields preserved across rebuilds.
+        </p>
+        <table class="schema">
+          <thead><tr><th>Column</th><th>Type</th><th>Constraints</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="col-name">id</td><td class="col-type">TEXT</td><td><span class="tag tag-pk">PK</span></td><td>Deterministic canonical id</td></tr>
+            <tr><td class="col-name">dedupe_key</td><td class="col-type">TEXT</td><td>UNIQUE NOT NULL</td><td>Grouping key</td></tr>
+            <tr><td class="col-name">canonical_url</td><td class="col-type">TEXT</td><td></td><td>Best representative URL</td></tr>
+            <tr><td class="col-name">display_title</td><td class="col-type">TEXT</td><td></td><td>Merged title across sources</td></tr>
+            <tr><td class="col-name">search_text</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>Concatenated searchable text</td></tr>
+            <tr><td class="col-name">categories</td><td class="col-type">TEXT</td><td></td><td>Comma-separated labels</td></tr>
+            <tr><td class="col-name">primary_category</td><td class="col-type">TEXT</td><td></td><td>Top classifier label</td></tr>
+            <tr><td class="col-name">domains</td><td class="col-type">TEXT</td><td></td><td>Comma-separated hostnames</td></tr>
+            <tr><td class="col-name">primary_domain</td><td class="col-type">TEXT</td><td></td><td>Primary hostname</td></tr>
+            <tr><td class="col-name">source_count</td><td class="col-type">INTEGER</td><td>NOT NULL</td><td>Active sources in group</td></tr>
+            <tr><td class="col-name">first_saved_at</td><td class="col-type">TEXT</td><td></td><td>Earliest saved_at</td></tr>
+            <tr><td class="col-name">last_saved_at</td><td class="col-type">TEXT</td><td></td><td>Latest saved_at</td></tr>
+            <tr><td class="col-name">sources_json</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>Array of source identifiers</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-block">
+        <div class="table-title">
+          <code>canonical_bookmarks_fts</code>
+          <span class="badge badge-fts">FTS5</span>
+        </div>
+        <p class="table-desc">
+          FTS over <code class="inline">display_title</code> and <code class="inline">search_text</code>.
+          Powers <code class="inline">ft list --unified</code> and canonical search APIs.
+        </p>
+        <table class="schema">
+          <thead><tr><th>Indexed column</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="col-name">display_title</td><td>Title field</td></tr>
+            <tr><td class="col-name">search_text</td><td>Aggregated body from all sources</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-block">
+        <div class="table-title">
+          <code>link_enrichment</code>
+          <span class="badge badge-table">Cache</span>
+        </div>
+        <p class="table-desc">
+          Cached page summaries for daily digest link enrichment. Lives in the same
+          <code class="inline">bookmarks.db</code> file. Status is <code class="inline">ok</code> or <code class="inline">failed</code>.
+        </p>
+        <p class="source-ref">src/daily/enrich.ts</p>
+        <table class="schema">
+          <thead><tr><th>Column</th><th>Type</th><th>Constraints</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="col-name">url</td><td class="col-type">TEXT</td><td><span class="tag tag-pk">PK</span></td><td>Normalized fetch URL</td></tr>
+            <tr><td class="col-name">summary</td><td class="col-type">TEXT</td><td></td><td>LLM-generated page summary</td></tr>
+            <tr><td class="col-name">status</td><td class="col-type">TEXT</td><td>NOT NULL</td><td><code class="inline">ok</code> | <code class="inline">failed</code></td></tr>
+            <tr><td class="col-name">enriched_at</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>ISO timestamp</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="following-db">
+    <h2>following.db</h2>
+    <p class="section-intro">
+      Path: <code class="inline">~/.fieldtheory/bookmarks/following/following.db</code>.
+      Separate database for the X following roster. Bookmark overlap is computed
+      at index time by counting matching <code class="inline">author_handle</code> values in
+      <code class="inline">bookmarks.db</code>.
+    </p>
+
+    <div class="card">
+      <div class="table-block">
+        <div class="table-title">
+          <code>meta</code>
+          <span class="badge badge-meta">Key-value</span>
+        </div>
+        <p class="table-desc">Schema version = <strong>1</strong></p>
+        <p class="source-ref">src/following/db.ts</p>
+      </div>
+
+      <div class="table-block">
+        <div class="table-title">
+          <code>following</code>
+          <span class="badge badge-table">Content</span>
+        </div>
+        <p class="table-desc">One row per followed X account. Built from <code class="inline">following.jsonl</code>.</p>
+        <table class="schema">
+          <thead><tr><th>Column</th><th>Type</th><th>Constraints</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="col-name">user_id</td><td class="col-type">TEXT</td><td><span class="tag tag-pk">PK</span></td><td>X user id</td></tr>
+            <tr><td class="col-name">handle</td><td class="col-type">TEXT</td><td>NOT NULL, <span class="tag tag-idx">idx</span></td><td>@handle without @</td></tr>
+            <tr><td class="col-name">name</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>Display name</td></tr>
+            <tr><td class="col-name">bio</td><td class="col-type">TEXT</td><td></td><td>Profile bio</td></tr>
+            <tr><td class="col-name">profile_image_url</td><td class="col-type">TEXT</td><td></td><td>Avatar</td></tr>
+            <tr><td class="col-name">follower_count</td><td class="col-type">INTEGER</td><td></td><td></td></tr>
+            <tr><td class="col-name">following_count</td><td class="col-type">INTEGER</td><td></td><td></td></tr>
+            <tr><td class="col-name">verified</td><td class="col-type">INTEGER</td><td>DEFAULT 0</td><td>Boolean (0/1)</td></tr>
+            <tr><td class="col-name">synced_at</td><td class="col-type">TEXT</td><td>NOT NULL</td><td>Last roster sync</td></tr>
+            <tr><td class="col-name">domains</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>Inferred expertise domains</td></tr>
+            <tr><td class="col-name">primary_domain</td><td class="col-type">TEXT</td><td><span class="tag tag-idx">idx</span></td><td>Top domain</td></tr>
+            <tr><td class="col-name">expertise</td><td class="col-type">TEXT</td><td><span class="tag tag-json">JSON</span></td><td>Expertise tags array</td></tr>
+            <tr><td class="col-name">expertise_summary</td><td class="col-type">TEXT</td><td></td><td>One-line expertise blurb</td></tr>
+            <tr><td class="col-name">bookmark_overlap</td><td class="col-type">INTEGER</td><td>DEFAULT 0</td><td>Count of bookmarks by this author</td></tr>
+          </tbody>
+        </table>
+        <ul class="index-list">
+          <li><code>idx_following_handle</code> ON (handle)</li>
+          <li><code>idx_following_domain</code> ON (primary_domain)</li>
+        </ul>
+      </div>
+
+      <div class="table-block">
+        <div class="table-title">
+          <code>following_fts</code>
+          <span class="badge badge-fts">FTS5</span>
+        </div>
+        <p class="table-desc">
+          FTS over handle, name, bio, domains, expertise, and expertise_summary.
+          External-content FTS linked to <code class="inline">following</code> via rowid.
+        </p>
+        <table class="schema">
+          <thead><tr><th>Indexed column</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="col-name">handle</td><td></td></tr>
+            <tr><td class="col-name">name</td><td></td></tr>
+            <tr><td class="col-name">bio</td><td></td></tr>
+            <tr><td class="col-name">domains</td><td>JSON string indexed as text</td></tr>
+            <tr><td class="col-name">expertise</td><td>JSON string indexed as text</td></tr>
+            <tr><td class="col-name">expertise_summary</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="relationships">
+    <h2>Relationships &amp; query patterns</h2>
+    <div class="card">
+      <table class="rel-table">
+        <thead>
+          <tr><th>From</th><th>To</th><th>Join</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>bookmarks</code></td>
+            <td><code>bookmarks_fts</code></td>
+            <td><code>bookmarks_fts.rowid = bookmarks.rowid</code></td>
+            <td><code>ft search</code> with BM25 ranking</td>
+          </tr>
+          <tr>
+            <td><code>bookmark_sources</code></td>
+            <td><code>canonical_bookmarks</code></td>
+            <td><code>bookmark_sources.canonical_id = canonical_bookmarks.id</code></td>
+            <td>Unified list per source filter</td>
+          </tr>
+          <tr>
+            <td><code>canonical_bookmarks</code></td>
+            <td><code>canonical_bookmarks_fts</code></td>
+            <td><code>canonical_bookmarks_fts.rowid = canonical_bookmarks.rowid</code></td>
+            <td><code>ft list --unified</code> search</td>
+          </tr>
+          <tr>
+            <td><code>link_enrichment</code></td>
+            <td><code>canonical_bookmarks</code></td>
+            <td><code>url = canonical_url</code> (lookup)</td>
+            <td>Digest summary injection; no FK</td>
+          </tr>
+          <tr>
+            <td><code>following</code></td>
+            <td><code>bookmarks</code></td>
+            <td><code>following.handle = bookmarks.author_handle</code></td>
+            <td>bookmark_overlap at index time</td>
+          </tr>
+          <tr>
+            <td><code>following</code></td>
+            <td><code>following_fts</code></td>
+            <td><code>following_fts.rowid = following.rowid</code></td>
+            <td>Following roster search</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Dedupe key rules</h3>
+      <ul class="note-list">
+        <li>URL sources: <code class="inline">url:{normalized-url}</code> — lowercase host, strip tracking params, no fragment</li>
+        <li>Ambiguous X bookmarks: <code class="inline">x:{tweetId}</code> when no single clear external link</li>
+        <li>Canonical id: <code class="inline">canonical:{sha256(dedupe_key)}</code></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="sources">
+    <h2>Source modules</h2>
+    <div class="card">
+      <table class="rel-table">
+        <thead>
+          <tr><th>Module</th><th>Database</th><th>Responsibility</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>src/db.ts</code></td><td>All</td><td>WASM SQLite open/save, file locking (<code class="inline">.lock</code>), crash-durable writes</td></tr>
+          <tr><td><code>src/bookmarks-db.ts</code></td><td>bookmarks.db</td><td>X bookmark index, search, list, stats, classification preservation</td></tr>
+          <tr><td><code>src/canonical-bookmarks-db.ts</code></td><td>bookmarks.db</td><td>Unified canonical rebuild from x / raindrop / github-stars / projects</td></tr>
+          <tr><td><code>src/daily/enrich.ts</code></td><td>bookmarks.db</td><td><code>link_enrichment</code> cache for digest summaries</td></tr>
+          <tr><td><code>src/following/db.ts</code></td><td>following.db</td><td>Following roster index and FTS search</td></tr>
+          <tr><td><code>src/paths.ts</code></td><td>—</td><td>Path resolution: <code class="inline">twitterBookmarksIndexPath()</code></td></tr>
+          <tr><td><code>src/following/paths.ts</code></td><td>—</td><td>Path resolution: <code class="inline">followingIndexPath()</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="migrations">
+    <h2>Migrations &amp; operational notes</h2>
+    <div class="card">
+      <h3>bookmarks schema migrations</h3>
+      <p class="table-desc">
+        <code class="inline">ensureMigrations()</code> in <code class="inline">bookmarks-db.ts</code> is column-driven, not version-gated.
+        It adds missing columns and rebuilds FTS when <code class="inline">article_text</code> is absent from the FTS table.
+      </p>
+      <ul class="note-list">
+        <li>Added: <code class="inline">domains</code>, <code class="inline">primary_domain</code> + index</li>
+        <li>Added: <code class="inline">quoted_tweet_json</code></li>
+        <li>Added: <code class="inline">article_title</code>, <code class="inline">article_text</code>, <code class="inline">article_site</code>, <code class="inline">enriched_at</code></li>
+        <li>Added: <code class="inline">folder_ids</code>, <code class="inline">folder_names</code></li>
+        <li>FTS rebuild drops and recreates <code class="inline">bookmarks_fts</code> when schema drifts</li>
+      </ul>
+
+      <h3>canonical schema migrations</h3>
+      <ul class="note-list">
+        <li><code class="inline">bookmark_sources</code>: <code class="inline">content_path</code>, <code class="inline">metadata_json</code> added via <code class="inline">ALTER TABLE</code></li>
+        <li><code class="inline">canonical_bookmarks</code>: <code class="inline">categories</code>, <code class="inline">primary_category</code>, <code class="inline">domains</code>, <code class="inline">primary_domain</code></li>
+      </ul>
+
+      <h3>Concurrency</h3>
+      <ul class="note-list">
+        <li>Lock file: <code class="inline">{dbPath}.lock</code> with 10-minute stale detection</li>
+        <li>Canonical rebuild and enrichment writes use <code class="inline">acquireDbLock()</code></li>
+        <li>Save pattern: write temp → fsync → rename → fsync parent directory</li>
+      </ul>
+
+      <h3>JSON column conventions</h3>
+      <ul class="note-list">
+        <li>Arrays stored as JSON strings: <code class="inline">links_json</code>, <code class="inline">tags_json</code>, <code class="inline">github_urls</code>, <code class="inline">folder_*</code></li>
+        <li>Some fields use comma-separated strings instead: <code class="inline">categories</code>, <code class="inline">domains</code></li>
+        <li>Booleans stored as INTEGER 0/1: <code class="inline">verified</code>, <code class="inline">active</code></li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    Derived from <code class="inline">src/bookmarks-db.ts</code>,
+    <code class="inline">src/canonical-bookmarks-db.ts</code>,
+    <code class="inline">src/daily/enrich.ts</code>,
+    <code class="inline">src/following/db.ts</code>, and
+    <code class="inline">src/db.ts</code>.
+    Open this file in a browser for the interactive ER diagram.
+  </footer>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      fontFamily: 'Source Sans 3, system-ui, sans-serif',
+      fontSize: '14px',
+      primaryColor: '#dbeafe',
+      primaryTextColor: '#1c1917',
+      primaryBorderColor: '#1d4ed8',
+      lineColor: '#57534e',
+      secondaryColor: '#ede9fe',
+      tertiaryColor: '#fef3c7',
+    },
+    er: { useMaxWidth: true },
+  });
+</script>
+</body>
+</html>

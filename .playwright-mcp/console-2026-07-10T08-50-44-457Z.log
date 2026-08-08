@@ -1,0 +1,2 @@
+[      41ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://localhost:8792/favicon.ico:0
+[    6622ms] [ERROR] Failed to load resource: net::ERR_FAILED @ https://www.google.com/s2/favicons?domain=x.com&sz=64:0

@@ -1,0 +1,2937 @@
+Reading additional input from stdin...
+2026-07-11T03:05:12.769088Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-07-11T03:05:12.772373Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-07-11T03:05:13.445857Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-11T03:05:13.445870Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-11T03:05:13.445872Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/cli-printing-press/testdata/golden/fixtures/dogfood-novel-doc-sync/cli/SKILL.md: missing YAML frontmatter delimited by ---
+OpenAI Codex v0.144.1
+--------
+workdir: /Users/manik/Github/fieldtheory-cli
+model: gpt-5.6-terra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 019f4f22-dd44-7660-bf0e-e35ca91a61b3
+--------
+user
+# Harness Worker Packet
+
+## Contract
+
+You are an internal worker for the use-harness router.
+Return a concise report to the router; do not address the end user directly.
+Do not claim success unless validation evidence is included.
+
+## Assignment
+
+- Run ID: codex-20260711T030507Z-78lekv
+- Backend: codex
+- Task type: review
+- Workspace: /Users/manik/Github/fieldtheory-cli
+- Permission mode: read-only-by-default
+- Model: gpt-5.6-terra
+
+## Objective
+
+Review commit 02d5ef8 (git show 02d5ef8 — enrichment hardening: eligibility exclusions, error column, transient retries with backoff, --concurrency/--retry-failed, scoped crash guards, failed-row pruning). Hunt: (1) retry logic retrying non-transient causes or double-counting attempts, (2) crash-guard handlers swallowing errors from OTHER concurrent code or not removed on exit, (3) ALTER TABLE error-column migration failing on fresh dbs or races with the advisory lock, (4) pruning deleting rows it shouldn't (ok rows, still-eligible failures), (5) backoff sleeping inside the db lock, (6) --retry-failed re-attempting non-transient errors. file:line ranked; 'no findings' if clean. Do not edit.
+
+## Scope
+
+Use the objective and named files as scope. Do not broaden unless required.
+
+## Constraints
+
+- Match existing repo patterns.
+- Do not commit changes.
+- If changing files, report exact files changed.
+- If validation cannot run, say why.
+
+## Expected deliverable
+
+1. Summary
+2. Evidence
+3. Files changed
+4. Commands run
+5. Verification status
+6. Blockers
+
+## Result shape
+
+summary: string
+evidence: string[]
+files_changed: string[]
+commands_run: { command: string, exit_code: number | null, summary: string }[]
+verification: { status: "passed" | "failed" | "not_run", details: string }
+blockers: string[]
+warning: Exceeded skills context budget of 2%. All skill descriptions were removed and 136 additional skills were not included in the model-visible skills list.
+codex
+I’m reviewing the target commit for the specified retry, migration, guard, pruning, and locking failure modes.
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/manik/.agents/skills/swyx-skills/autoreview/SKILL.md && git status --short && git show --stat --oneline --decorate --no-renames 02d5ef8 && git show --format=fuller --no-ext-diff --unified=80 02d5ef8" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+---
+name: autoreview
+description: Run structured closeout code review after non-trivial code edits, branch or PR work, or commits using an autoreview helper. Use when the user asks for autoreview, Codex review, Claude review, second-model review, or a final review before commit, ship, merge, or release.
+---
+
+# Auto Review
+
+Run the bundled structured review helper as a closeout check. This is code review, not Guardian `auto_review` approval routing.
+
+Source attribution:
+
+- Adapted from OpenClaw's `autoreview` skill: https://github.com/openclaw/agent-skills/blob/main/skills/autoreview/SKILL.md
+- Requested source attribution: https://x.com/steipete/status/2059453909819654554
+
+Codex review is the default when no engine is set. It usually delivers the best review results and should remain the normal final closeout engine.
+
+Use when:
+
+- user asks for Codex review / Claude review / autoreview / second-model review
+- after non-trivial code edits, before final/commit/ship
+- reviewing a local branch or PR branch after fixes
+
+## Contract
+
+- Treat review output as advisory. Never blindly apply it.
+- Verify every finding by reading the real code path and adjacent files.
+- Read dependency docs/source/types when the finding depends on external behavior.
+- Reject unrealistic edge cases, speculative risks, broad rewrites, and fixes that over-complicate the codebase.
+- Prefer small fixes at the right ownership boundary; no refactor unless it clearly improves the bug class.
+- Keep going until structured review returns no accepted/actionable findings.
+- If a review-triggered fix changes code, rerun focused tests and rerun the structured review helper.
+- For security-audit suppression changes, verify accepted findings remain auditable: suppressed findings stay in structured output, active output keeps an unsuppressible suppression notice, and aggregate findings cannot hide unrelated active risk.
+- Never switch or override the requested review engine/model. If the review hits model capacity, retry the same command a few times with the same engine/model.
+- Be patient with large bundles. Structured review can take up to 30 minutes while the model call is active, especially with Codex tools or web search.
+- Treat heartbeat lines like `review still running: ... elapsed=... pid=...` as healthy progress, not a hang. Let the helper continue while heartbeats are advancing. Pass `--stream-engine-output` when live engine text is useful; Codex and Claude filter tool/file chatter, other engines pass raw output through.
+- Do not kill a review just because it has been quiet for 2-5 minutes, or because it is still running under the 30-minute window. Inspect the process only after missing multiple expected heartbeats, after 30 minutes, or after an obviously failed subprocess; prefer letting the same helper command finish.
+- Tools are useful in review mode. The helper allows read-only inspection tools and web search by default so reviewers can check dependency contracts, upstream docs, and current behavior.
+- Security perspective is always included, but it should not cripple legitimate functionality. Report security findings only when the change creates a concrete, actionable risk or removes an important safety check.
+- For regression provenance, keep roles separate: blamed code author, blamed PR author, PR merger/committer, current PR author, and PR/date. If no blamed PR is traceable, use the blamed commit as the provenance: commit SHA, date, and author username. Do not guess a merger or frame missing PR metadata as a separate finding.
+- If the blamed PR was merged by `clawsweeper[bot]` or another automation, identify the human trigger when practical. Check timeline/comments first; if rate-limited, use gitcrawl/cache or public PR HTML. Look for maintainer commands such as `@clawsweeper automerge`, `/landpr`, or labels/status comments that armed automerge. Report `automerge triggered by @login`; if not found, say trigger unknown.
+- Do not invoke built-in `codex review`, nested reviewers, or reviewer panels from inside the review. The helper builds one bundle, calls one selected engine, validates one structured result, and stops.
+- Stop as soon as the helper exits 0 with no accepted/actionable findings. Do not run an extra review just to get a nicer "clean" line, a second opinion, or clearer closeout wording.
+- Treat the helper's successful exit plus absence of actionable findings as the clean review result, even if the underlying Codex CLI output is terse.
+- Multi-reviewer panels are opt-in only. Use them when explicitly requested or when risk justifies the extra spend; the main agent still verifies every accepted finding before fixing.
+- If rejecting a finding as intentional/not worth fixing, add a brief inline code comment only when it explains a real invariant or ownership decision that future reviewers should know.
+- If `gh`/Gitcrawl reports `database disk image is malformed`, run `gitcrawl doctor --json` once to let the portable cache repair before retrying review; do not bypass the shim unless repair fails and freshness requires live GitHub.
+- If Gitcrawl reports a portable manifest mismatch, source/runtime DB health error, or stale portable-store checkout, run `gitcrawl doctor --json` and inspect `source_db_health`, `runtime_db_health`, and `portable_store_status` before falling back to live GitHub.
+- Do not push just to review. Push only when the user requested push/ship/PR update.
+
+## Pick Target
+
+Dirty local work:
+
+```bash
+<autoreview-helper> --mode local
+```
+
+Use this only when the patch is actually unstaged/staged/untracked in the current checkout. For committed, pushed, or PR work, point the helper at the commit or branch diff instead; do not force `--mode local` / `--uncommitted` just because the helper docs mention dirty work first. A clean local review only proves there is no local patch.
+
+Branch/PR work:
+
+```bash
+<autoreview-helper> --mode branch --base origin/main
+```
+
+Optional review context is first-class:
+
+```bash
+<autoreview-helper> --mode branch --base origin/main --prompt-file /tmp/review-notes.md --dataset /tmp/evidence.json
+```
+
+If an open PR exists, use its actual base:
+
+```bash
+base=$(gh pr view --json baseRefName --jq .baseRefName)
+<autoreview-helper> --mode branch --base "origin/$base"
+```
+
+Committed single change:
+
+```bash
+<autoreview-helper> --mode commit --commit HEAD
+```
+
+or with the helper:
+
+```bash
+/Users/steipete/Projects/agent-scripts/skills/autoreview/scripts/autoreview --mode commit --commit HEAD
+```
+
+Use commit review for already-landed or already-pushed work on `main`. Reviewing clean `main` against `origin/main` is usually an empty diff after push. For a small stack, review each commit explicitly or review the branch before merging with `--base`.
+
+## Parallel Closeout
+
+Format first if formatting can change line locations. Then it is OK to run tests and review in parallel:
+
+```bash
+scripts/autoreview --parallel-tests "<focused test command>"
+```
+
+Tradeoff: tests may force code changes that stale the review. If tests or review lead to code edits, rerun the affected tests and rerun review until no accepted/actionable findings remain. Once that rerun exits cleanly, stop; do not spend another long review cycle on redundant confirmation.
+
+## Review Panels
+
+Run multiple reviewers against one frozen bundle:
+
+```bash
+<autoreview-helper> --reviewers codex,claude
+```
+
+`--panel` is shorthand for Codex plus Claude unless `--engine` changes the first reviewer:
+
+```bash
+<autoreview-helper> --panel
+```
+
+Set reviewer models and thinking/effort explicitly:
+
+```bash
+<autoreview-helper> --reviewers codex,claude --model codex=gpt-5.1 --thinking codex=high --model claude=sonnet --thinking claude=max
+```
+
+Inline syntax is also supported:
+
+```bash
+<autoreview-helper> --reviewers codex:gpt-5.1:high,claude:sonnet:max
+```
+
+Codex maps thinking to `model_reasoning_effort` and accepts `low`, `medium`, `high`, or `xhigh`. Claude maps thinking to `--effort` and also accepts `max`. Engines without a real thinking knob reject `--thinking`.
+
+## Context Efficiency
+
+Run the helper directly so target selection, engine choice, structured validation, and exit status all stay in one path. If output is noisy, summarize the completed helper output after it returns; do not ask another agent or reviewer to rerun the review.
+
+## Helper
+
+OpenClaw repo-local helper:
+
+```bash
+.agents/skills/autoreview/scripts/autoreview --help
+```
+
+`agent-scripts` checkout helper:
+
+```bash
+skills/autoreview/scripts/autoreview --help
+```
+
+Global helper from `agent-scripts`:
+
+```bash
+~/.codex/skills/agent-scripts/autoreview/scripts/autoreview --help
+```
+
+If installed from `agent-scripts`, path is:
+
+```bash
+/Users/steipete/Projects/agent-scripts/skills/autoreview/scripts/autoreview --help
+```
+
+The helper:
+
+- chooses dirty local changes first
+- otherwise uses current PR base if `gh pr view` works
+- otherwise uses `origin/main` for non-main branches
+- supports `--engine codex`, `claude`, `droid`, and `copilot`; default is `AUTOREVIEW_ENGINE` or `codex`; Codex should remain the default when nothing is set
+- use `--mode commit --commit <ref>` for already-committed work, especially clean `main` after landing
+- should be left in `--mode auto` or forced to `--mode branch` for PR/branch work; do not force `--mode local` after committing
+- writes only to stdout unless `--output`, `--json-output`, or live streamed engine stderr is set
+- supports `--dry-run`, `--parallel-tests`, `--prompt`, `--prompt-file`, `--dataset`, `--no-tools`, `--no-web-search`, and commit refs
+- supports `--stream-engine-output` or `AUTOREVIEW_STREAM_ENGINE_OUTPUT=1` for live engine text while preserving structured validation; Codex and Claude hide tool/file event details, emit compact activity summaries, and report usage at turn completion
+- supports opt-in review panels with `--panel` / `--reviewers`, plus per-engine `--model` and `--thinking`
+- allows read-only tools and web search by default where the selected CLI supports them; forbids nested review in the prompt; Codex is run through `codex exec` with read-only sandbox and structured output
+- prints `review still running: <engine> elapsed=<seconds>s pid=<pid>` to stderr at long-running intervals while waiting for the selected review engine, unless streamed output or compact Codex activity has been visible recently
+- prints `autoreview clean: no accepted/actionable findings reported` when the selected review command exits 0
+- exits nonzero when accepted/actionable findings are present
+
+## Final Report
+
+Include:
+
+- review command used
+- tests/proof run
+- findings accepted/rejected, briefly why
+- the clean review result from the final helper/review run, or why a remaining finding was consciously rejected
+
+Do not run another review solely to improve the final report wording. If the final helper run exited 0 and produced no accepted/actionable findings, report that exact run as clean.
+?? .harness/
+?? .playwright-mcp/
+?? birdclaw-home.png
+?? docs/plans/2026-06-21-daily-sync-second-brain.md
+?? docs/plans/2026-06-24-bookmarks-web-interface.md
+?? docs/plans/2026-06-24-list-today-web-features.md
+?? docs/plans/2026-06-24-today-graphql-feed.md
+?? docs/plans/2026-07-07-companion-agent-daily-synthesis.md
+?? docs/reviews/
+?? docs/specs/db-schema-reference.html
+?? ft-analyze-birdclaw-style.png
+?? ft-home-birdclaw-style.png
+?? ft-home-redesign.png
+?? ft-today-birdclaw-style.png
+02d5ef8 (HEAD -> main, origin/main, origin/HEAD) fix: harden link enrichment after live backfill failures
+ CONTINUITY.md       |   2 +-
+ src/cli.ts          |  28 ++++++++---
+ src/daily/enrich.ts | 131 +++++++++++++++++++++++++++++++++++++++++++---------
+ tests/cli.test.ts   |   4 +-
+ tests/daily.test.ts |  50 ++++++++++++++++++--
+ 5 files changed, 179 insertions(+), 36 deletions(-)
+commit 02d5ef8ad426f0233635034b24e6203ba754f8da
+Author:     Manikanda Kumar <manikandakumar@gmail.com>
+AuthorDate: Sat Jul 11 08:34:52 2026 +0530
+Commit:     Manikanda Kumar <manikandakumar@gmail.com>
+CommitDate: Sat Jul 11 08:34:52 2026 +0530
+
+    fix: harden link enrichment after live backfill failures
+    
+    First 3.7k backfill run: 79% failures + crash. Root causes and fixes:
+    
+    - Eligibility excluded only /status/ tweets; x.com/i/article (551
+      auth-walled failures), YouTube pages, and PDFs now excluded too.
+    - ~500 regular-web failures were load-induced zen/go throttling with
+      no cause recorded: link_enrichment gains an error column
+      (stage-prefixed), transient causes (429/5xx/network/empty
+      completion) retry twice with backoff+jitter, backfill default
+      concurrency drops to 2 with per-worker pacing (--concurrency flag).
+    - Process died from an HTTP/2 stream 'error' event escaping fetch's
+      promise chain: backfill installs scoped uncaughtException/
+      unhandledRejection guards for the long run.
+    - Backfill start prunes cached failures that are no longer eligible;
+      --retry-failed re-attempts transient failures without the 7-day
+      wait. Exit summary reports top error kinds.
+    
+    Suite: 842/842.
+
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 80ff475..a3abc11 100644
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -1,95 +1,95 @@
+ Goal (incl. success criteria): Daily digest "no-item-left-behind" hardening (plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md) — every collected item renders exactly once, overflow carries over, digests report coverage truthfully. Success: reconciliation invariant collected = themed + also-saved; 822/822 suite green.
+ Constraints/Assumptions:
+ - Orchestration: Codex gpt-5.6-terra medium via use-harness router; per task implement → review → fix → close. Orchestrator verifies independently (diff + full suite), never trusts worker self-report.
+ Key decisions:
+ - Orphans render in mechanical "## Also saved" (no LLM re-pass); cross-theme duplicate citations dedupe without polluting droppedCitations (invalid-alias drops only).
+ - Overflow: oldest-first drain, `(first_saved_at, canonical id)` cursor persisted as lastRunAt + lastRunItemId; cursor applied only when effective sinceIso equals persisted watermark instant (clamp-safe). carriedOver=0 → watermark = untilIso, cursor cleared.
+ - `ft daily --date` (historical) never writes daily meta (was rewinding live watermark — bug found during brainstorm, fixed).
+ - Coverage footer mechanical, never LLM: 5-source freshness probes (per-source meta timestamps, try/catch → unknown/never synced), dark-sources line (x-list, following not in canonical), run counts in footer + frontmatter. Undateable count = canonical-total (labeled honestly; window attribution impossible for unparseable dates). X freshness = max(full, incremental) via latestBookmarkSyncAt.
+ State: T1 (R1–R4), T2 (R5–R7), T3 (R8–R11) committed 6b7a247, pushed. T4 (thin-content filter: contentLength strips URLs, THIN_CONTENT_CHARS=120, thin items skip LLM prompt → Also saved, thin_skipped count) + T5 (link enrichment: src/llm/opencode-client.ts zen/go deepseek-v4-flash, src/daily/enrich.ts fetch+summarize thin links, link_enrichment cache table survives rebuilds, SSRF guards, 30s LLM timeout, 200KB body cap everywhere, maxTokens 2000 — 600 starved reasoning model to empty content, found via live smoke) verified 833/833 + live E2E (real page → real summary cached ok).
+ Done:
+ - Ideation doc docs/ideation/2026-07-10-daily-digest-surprise.html (idea #0 coverage + 7 surprises + skip-vector map).
+ - Requirements plan docs/plans/2026-07-10-001-fix-daily-digest-no-item-left-behind-plan.md (ce-brainstorm).
+ - T1–T3 implemented via Codex; new module src/daily/coverage.ts.
+ Now:
+-- Sql.js writer hardening complete: unique atomic save temp names; advisory lock (2m wait, 250ms poll, 10m stale takeover warning); canonical rebuild + enrichment cache writes lock the whole open→modify→save window; cache batches are 50. Requested tests/build pass. No commit.
++- Link-enrichment backfill hardening complete (uncommitted): excludes X/Twitter, YouTube, PDFs; cache error migration and top errors; transient retries; default concurrency 2 + retry-failed; scoped process crash logging. Focused daily/CLI tests 66/66 and build pass.
+ Next:
+ - Hand off worker report; user may review/commit then run the backfill.
+ Open questions (UNCONFIRMED if needed):
+ - None.
+ Working set (files/ids/commands):
+ - src/daily/{coverage,collect,connect,enrich,synthesize}.ts; src/llm/opencode-client.ts; src/cli.ts; tests/{daily,opencode-client}.test.ts; `node --import tsx --test tests/daily.test.ts tests/opencode-client.test.ts` = 30/30; `npm run build` ✓; `.harness/runs/*` (codex receipts)
+ 
+ VISION SESSION (2026-07-07) — daily-synthesis companion agent:
+ - Goal: agent that synthesizes all consumed data (X bm, YT playlists, Raindrop, GitHub stars, following, x-lists) daily, learns interests, proactively recalls during any project/research ("we studied that last week", "gotcha in blog X", "hot on X right now").
+ - Existing substrate: sync-all orchestrator, canonical FTS db (10k+ bookmarks), ft research/ask --json, library md wiki, following/experts index, x-list daily digests, daily-sync plan doc (docs/plans/2026-06-21-daily-sync-second-brain.md).
+ - Grounding decision: NO project dumps — ingest from ground truth directly: ~/Github repos (248, 51 with CONTINUITY.md Goal/Now/Next), Claude JSONL (~/.claude/projects/*, 73 dirs, type:"user" lines), Codex ~/.codex/sessions, OpenCode opencode.db. github-sessions/agent-sessions apps = viewers only.
+ - PLAN WRITTEN: docs/plans/2026-07-07-companion-agent-daily-synthesis.md — Phase A `ft sync-projects` (7th source, src/projects/, Claude sessions v1), Phase B `ft daily` (digest + interests.md, SQL connect + LLM synthesize w/ citation validation), Phase C global second-brain skill. 9-step build order.
+ - APPROVED (2026-07-07): implement via codex (gpt-5.5, codex:codex-rescue subagent), fable reviews each step until OK, then next. Defaults locked: scan root ~/Github, 14d prompt retention, droid+deepseek-v4-flash digest model. Commit per step (no attribution trailer), no push until asked.
+ - DONE Step 1 (COMMITTED c346a67): src/projects/ scanner. Codex implemented; fable review found+fixed 3 issues: (1) bare-label ledger headings "Goal (incl. success criteria):" no-dash format (dominant real format — regex made dash optional + sibling-label terminators), (2) bold "- **Goal:**" format, (3) README HTML lines leaking into description. Live verify: 152 repos/7s/0 errors, 26/26 ledgers extracted, active md clean, tests 10/10, full suite 778/778.
+ - DONE Step 2 (COMMITTED 464c95c): src/projects/sessions.ts — Claude JSONL prompt extraction (encoded-dir decode strips scan-root prefix first, hyphen candidates; type:user filter; 14d retention; incremental mtime+size skip with prompt merge from previous records) + "Recent agent queries" md section + "Recent focus" active-list line + 0.5x prompt-recency ranking weight. Fable review fix: filter ALL '<'-leading content (task-[REDACTED] harness noise polluted prompts). Live: 10 repos w/ prompts, 104 prompts, ft-cli 26 real questions, incremental rerun faster. Tests 15/15, full 783/783.
+ - DONE Step 3 (COMMITTED 9afe2a2): canonical integration (source='project', GitHub-remote dedupe merges w/ stars else project:<repo>, prompt text 4K cap) + `ft sync-projects` CLI (--root/--max-age-days/--no-sessions/--dry-run, canonical rebuild after) + sync-all 'projects' step + getProjectsStatus + remoteUrl normalization (git@→https). Codex hit SESSION LIMIT (resets 10am IST) mid-run but implementation was complete — fable verified: build clean, focused 71/71, live `ft sync-projects` 152 repos indexed, `ft list --unified --source project` + unified search return goals+prompts. Fable fix: filter "This session is being continued..." compaction-summary prompts. Full suite 790/790.
+ - CODEX LIMIT: gpt-5.5 session limit until 10am IST. Steps 4+ = fable implements directly (user standing permission to override model choice) unless user prefers waiting.
+ - Learnings: git add <dir> fails via git wrapper — add files individually. tsx -e no top-level await — use .mts script. dcg hook blocks rm -rf — use fresh scratch dir names. Live-verify scratch: scratchpad/step{1,2,3}-live via FT_DATA_DIR sandbox.
+ - DONE Step 4 (COMMITTED 5708634, implemented by FABLE directly — codex limit): src/daily/{paths,collect,connect}.ts + canonical helpers getCanonicalBookmarksSince/findRelatedCanonicalBookmarks/relatedSeedTerms + `ft daily` CLI (--date/--window-hours/--json; watermark from daily/meta.json, 7d cap, digest write deferred to step 5). FIX during review: projectSourceFromRecord savedAt no longer falls back to scannedAt (commit-less repos flooded daily window as "new" every rescan — 138→6 items after fix). Tests tests/daily.test.ts 5/5, full 795/795. Live verified: related links sane (agent-sessions-active→agent-sessions).
+ - DONE Step 5 (COMMITTED 5f2384f, fable): src/daily/synthesize.ts — buildDailyPrompt (withSystemOverride hardened), validateThemes (every cited id must exist in collected set; hallucinated ids dropped + counted; theme w/ zero valid items dropped), mechanical fallback on LLM failure, digest md w/ frontmatter (synthesis: llm|mechanical) + [[project:*]] wikilinks, watermark advance on write only. CLI: ft daily --write/--force/--engine/--model/--effort; existing digest guarded unless --force. LIVE VERIFIED droid/deepseek-v4-flash: 3 coherent themes from 6 items, valid citations, older-save connections. Tests 8/8, full 798/798.
+ - DONE Step 6 (COMMITTED 0be6d70, fable): src/daily/interests.ts — topic velocity (7d vs 30d baseline, rising/steady/fading), active threads (terms in BOTH recent saves AND agent prompts), experts matched to rising topics from following.jsonl, ≤80-line hard cap, written to library/interests.md on every ft daily --write. Review fixes from real-data preview: exclude website hostnames (primary_domain holds "youtube.com") + "unclassified" from topics. Real preview sane: rising=technique/research/launch/security, steady=tool, fading=(github.com now filtered). Tests 9/9, full 799/799.
+ - DONE Step 7 (COMMITTED 6aca30c, fable): sync-all tail step 'daily' (ft daily --write, after canonical-md, disabled by --no-synthesis). CRITICAL FIXES found via production run: (1) first_saved_at mixes ISO+offset and Twitter-format "Wed Sep 30..." strings — ALL windowing/beforeIso comparisons switched from string to Date.parse epochs (collect, getCanonicalBookmarksSince, findRelated beforeIso, interests) — before fix real digest had 0 items; (2) small models mangle long canonical hash ids — prompt now uses short aliases (i1/r1) mapped back locally (was 30 dropped citations→mechanical; after: 6 llm themes, 0 dropped); (3) multiline X titles broke md links — linkLabel one-lines. PRODUCTION LIVE: ~/.fieldtheory/library/daily/2026-07-06.md = 14 items, 6 themes (dream-mode stars ↔ X memory posts ↔ YT talk ↔ skills project — vision working), interests.md live. sync-all dry-run shows full 8-step plan. Tests 10/10 daily, full 801/801.
+ - DONE Step 8 (COMMITTED 9471406, fable): global skill ~/.claude/skills/second-brain/SKILL.md (recall ladder: interests.md+projects-active.md always → daily digests for temporal → ft research/sqlite3 for topics → library md deep-read → conversational surfacing w/ dates; sqlite3 fallback for old ft binaries) + docs/AGENTS-recall.md (cross-agent contract: artifact table, ladder, rules incl. mixed-timestamp warning + prompt-privacy note) + CLAUDE.md pointer. Skill registered live this session. Verified artifacts: interests.md 25 lines, projects-active.md 57, 2 daily digests, repo ft research returns ranked hits.
+ - ALL 8 STEPS COMPLETE. Commits: c346a67, 464c95c, 9afe2a2, 5708634, 5f2384f, 0be6d70, 6aca30c, 9471406 (8 commits on main, not pushed).
+ - NOTE: global ft binary (1.3.22 npm) predates sync-projects/daily/research — user should npm update or run from repo until published.
+ - DONE Step 9 (COMMITTED be3964e, fable): multi-agent session ingestion — codex (~/.codex/sessions/yyyy/mm/dd/rollout-*.jsonl, cwd in session_meta), amp (~/.local/share/amp/threads/T-*.json, repo from env.initial.trees uri, thread created ts), pi (~/.pi/agent/sessions/<enc>/, cwd in type:"session" header), droid (~/.factory/sessions — TWO layouts: current <encoded-cwd>/<id>.jsonl w/ cwd in session_start header + legacy flat via sessions-index.json). Per-BLOCK noise filtering (droid packs env-dump + real prompt in one message), '# Task Tool Invocation' subagent noise filtered. User decision: pi+droid in, opencode skipped (rarely used). Tests hermeticSessionRoots guard real stores; 25/25 projects, full 810/810. Live: claude 113 + codex 109 + pi 5 + droid 1 prompts (amp 0 = no threads in 14d window, verified legit). Production resync: 17 repos w/ prompts (was 10).
+ - DONE Step 10 (COMMITTED 2e5094a): nightly sync-all launchd job LIVE.
+   - Wrapper ~/.fieldtheory/sync-all.sh: runs repo dist (node ~/Github/fieldtheory-cli/dist/cli.js — NOT stale global ft), --x-list 1979812953135497678 --playlist PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk --youtube-limit 8 --classify, extra args pass-through for smoke tests, log ~/.fieldtheory/sync-all.log.
+   - Plist ~/Library/LaunchAgents/dev.fieldtheory.sync-all-daily.plist @ 09:00 daily, loaded (launchctl bootstrap, state=waiting).
+   - Secrets: ~/.fieldtheory/.env (0600) w/ OPENCODE_GO_API_KEY + OPENROUTER_API_KEY (CLI auto-loads via config.ts). RAINDROP_TOKEN absent → raindrop step skips gracefully.
+   - Digest engine pinned via new FT_DAILY_ENGINE/FT_DAILY_MODEL/FT_DAILY_EFFORT env fallbacks (wrapper sets droid + deepseek-v4-flash) — unattended runs never fall back to claude CLI.
+   - RETIRED dev.fieldtheory.xlist-daily (booted out; plist moved to ~/.fieldtheory/x-lists/*.retired — x-list now inside sync-all, no double-fetch).
+   - Smoke test: wrapper --only projects --no-synthesis → exit 0, projects+index ran, plan printed correctly. Full suite 810/810.
+ - State: companion pipeline FULLY WIRED: 7 sources incl. 5-agent session ingestion → nightly digest+interests @ 09:00 → recall via second-brain skill. 10 commits on main unpushed (c346a67..2e5094a).
+ - RAINDROP LIVE (2026-07-08, COMMITTED f3e7371): user pointed at RAINDROP_TEST_TOKEN (client honors it alongside RAINDROP_TOKEN). Appended to ~/.fieldtheory/.env; wrapper now `set -a; source ~/.fieldtheory/.env` (CLI's own dotenv reads ~/.fieldtheory/bookmarks/.env — dataDir — NOT ~/.fieldtheory/.env, and sync-raindrop never calls loadEnv; sourcing in wrapper covers all subcommands). Verified clean-env dry-run OK. First full backfill: 13,378 raindrop bookmarks, 7 collections → canonical 21,735 rows, classified 7,503. FIX: syncRaindropBookmarks now mkdirs raindrop dir up front (resume state written per-page hit ENOENT on first-ever run). Suite 810/810.
+ - PUSHED (2026-07-08): all 11 commits 183ad50..f3e7371 → origin/main. CONTINUITY.md + docs/plans left uncommitted per convention.
+ - NIGHTLY RUN VERIFIED (2026-07-08): launchd fired 09:00, all 8 steps ✓, exit=0 09:35 (md export slow — first full 21.7k canonical export post-raindrop). Digest 2026-07-08.md written.
+ - SLEEP-PROOFING (2026-07-08): launchd catches up missed 09:00 on wake (free). Self-wake needs user-run `sudo pmset repeat wakeorpoweron MTWRFSU 08:58:00` — suggested, UNCONFIRMED if user ran it. Pi 5 assessed as always-on alternative: chrome-cookies.ts HAS Linux path (v10/v11), residential IP safe; blocker = projects source (Mac repos+sessions) → would need Mac rsync of projects.jsonl. Cloud VM rejected (projects dead, X datacenter-IP risk).
+ - DONE (COMMITTED 42399b7): daily digest links YouTube items/related refs to library notes md — extractYoutubeVideoId + buildYoutubeNotesLinks (state.json lookup, pathExists guard, digest-relative link) in src/daily/synthesize.ts. Live verified: 7 [notes](../youtube/...) links in regenerated 2026-07-08 digest, month segments correct. Tests 12/12 daily, full 812/812.
+ - NOTEBOOKLM LIVE (2026-07-10): weekly-rotated digest auto-push wired. CLI = notebooklm-mcp-cli (`~/.local/bin/nlm`, uv tool, unofficial; auth via `nlm login`, expires periodically → sync-all.log shows "nlm: push FAILED"). sync-all.sh tail after exit 0: one notebook per ISO week "Field Theory <YYYY-Www>" (auto-created via `nlm notebook create` + jq, id cached ~/.fieldtheory/nlm/week-<w>.id; FT_NLM_NOTEBOOK overrides), pushes today's digest + every [notes](../youtube/*.md) file it references (title = notes H1), per-week manifest week-<w>.pushed dedupes. W28 notebook id a37e16ac-340d-4bf6-9f8e-7b2b1dd7a463, renamed "Field Theory 2026-W28", 11 sources live (digests 07-08/09/10 + 8 notes). Verified: smoke run pushed 8 notes, dedupe idempotent, manifest==source count. NOTE: 07-09/07-10 digests originally lacked notes links (launchd ran pre-feature dist); 07-10 regenerated --force. Source budget/wk ≈ 7 digests + ~40 notes < 50 free cap.
+ - Next (optional): weekly rollups, x-list canonical ingest (GAP-3).
+ 
+ SYNC-FAILURE DIAGNOSIS (2026-07-07) — why `ft sync` failed 6 Jul:
+ - Symptom: user's `ft sync` (~23:28 IST 6 Jul) died mid-run. jsonl had 23 new records (checkpoint 18:14 UTC) but bookmarks-meta.json/backfill-state stuck at 4 Jul, bookmarks.db not rebuilt → hard abort BEFORE final writes (graphql-bookmarks.ts:799-817). 429 rate-limit is handled gracefully (writes meta), so NOT rate-limit stop → cause = thrown error, most likely undici `Error: fetch failed` (same error killed x-lists daily.log run 5 Jul 09:28) or Ctrl-C. No crash reports, no sync log exists to recover exact message.
+ - Amplifier: 10,150 bookmarks ≥ 9,500 → auto-continue scans ~508 pages every incremental sync (~30 min with rate-limit backoffs) — huge window for network death. `fetchPageWithRetry` fetch() has NO timeout/AbortSignal (graphql-bookmarks.ts:444); `parseRetryAfterSec` honors x-rate-limit-reset unbounded (up to ~15 min × 4 attempts).
+ - RECOVERED: reran `ft sync` (bg, 31 min, stopReason "max runtime reached" — normal) → exit 0, 0 new remote, 23 stranded bookmarks indexed, total 10150, media fetched, index rebuilt, meta/state now 2026-07-06T19:05Z. State healthy.
+ - Possible fixes (not implemented): AbortSignal.timeout on fetch, cap retry-after wait, persist sync log, terminal-stop marker so auto-continue doesn't rescan 508 pages every run.
+ 
+ SYNC SESSION (2026-07-01) — sync youtube playlist + github stars:
+ - Goal: run `ft sync-github-stars` + `ft sync-youtube` for last playlist `PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk`.
+ - Decision: youtube LLM notes via droid engine, model `deepseek-v4-flash` (user req).
+ - Auth: gh authed (manikanda-kumar), OPENROUTER_API_KEY set. cookies-from-browser chrome + impersonate chrome for yt-dlp.
+ - Done: github-stars sync — already current (fetched 0, total 2288, newest 2026-07-01). Canonical index rebuilt. Build clean.
+ - Done: youtube sync complete (droid/deepseek-v4-flash) — 269 processed (211 done, 58 partial), 152 skipped-unchanged, 4 no-transcript, 0 failed. Index rebuilt ~/.fieldtheory/library/youtube/index.html.
+ - Done: both sources synced. No commits.
+ - FEATURE (2026-07-02) per-playlist index.html:
+   - paths.ts: `youtubeLibraryIndexHtmlPath(playlistId?)` → `index-<id>.html` (safePathSegment guarded).
+   - index-html.ts: extracted `toIndexEntry`; added `writeYoutubePlaylistIndex(playlistId)` — filters to `state.playlists[id].videoIds` (deduped via Set), returns null if no members have notes. `writeYoutubeIndexHtml` takes optional playlistId.
+   - cli.ts sync-youtube: after global index, also writes per-playlist index (skips for --video-ids-file).
+   - Notes markdown stays shared/deduped by videoId; only HTML index scoped. Cross-playlist video appears in both.
+   - Tests: tests/youtube-index-html.test.ts (+2 scope/dedup/null), tests/paths.test.ts (+2 path/traversal). paths 6/6, index 3/3, cli 33/33. Build clean.
+   - Verified live: index-PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk.html = 419 entries = global (playlist covers whole library). Dedup bug caught (was 420 from duplicate videoId in playlist.videoIds).
+ - State: COMPLETE.
+ 
+ OCR-FUSION SESSION (2026-07-02) — feed slide OCR into notes prompt for slide-heavy conf talks:
+ - Goal: AI Engineer conf playlist PLcfpQ4tk2k0V1LNigteMgExP1rb4Hy8wn (82 vids, slide-heavy). Slide OCR text was captured but never fed to notes LLM.
+ - Change:
+   - notes.ts: GenerateNotesInput +optional `slides?: SlideImage[]`; generateNotes builds `<untrusted_slide_ocr>` block (timestamped, deduped, budget 12K via buildSlideOcrBlock) + fusion instruction; block omitted when no OCR. New opt slideOcrCharBudget.
+   - overview.ts: REORDERED — capture slides BEFORE generateNotes (slide gate uses classifyYoutubeVideoType(meta) pre-notes), then generateNotes({...fetched, slides: slideImages}).
+   - Tests: youtube-notes.test.ts +1 (OCR inject/dedup/omit) 7/7. Build clean.
+ - VERIFIED live (flash, video LC3-P7v3yoI): slides 9, OCR rich; note now cites slide-only facts (50% traffic from agents, HTML 1993→React, 40% ctx utilization, YAML ~100 tokens), each keypoint tagged (Slide [MM:SS]). Big quality win vs transcript-only.
+ - Model comparison in progress: deepseek-v4-flash (done), deepseek-v4-pro + mimo-v2.5 (running). Isolated FT_DATA_DIR per model under scratchpad/mt-<model>/. Sample ids: UNzCG3lw6O0, LC3-P7v3yoI.
+ - MUST use `--overview slides` (default none = no slides captured). Deps present: yt-dlp, ffmpeg, summarize.
+ - Model compare done: all 3 fuse OCR identically (3/5 slide facts); flash best value (pro=+30% prose only, 12x cost; mimo lean, no upside). Comparison HTML: scratchpad/model-comparison.html.
+ - CHOSEN: deepseek-v4-flash + --overview slides for full run.
+ - Now: full 82-vid playlist sync running bg (task b3xgqt73j), real library, log scratchpad/full-run.log. First video done (6 slides). On completion writes global index.html + per-playlist index-PLcfpQ4tk2k0V1LNigteMgExP1rb4Hy8wn.html.
+ - DONE: full 82-vid run complete — 73 done, 2 partial, 6 skipped, 1 no-transcript, 0 failed. 75/82 have slides+OCR. Global index.html + index-PLcfpQ4tk2k0V1LNigteMgExP1rb4Hy8wn.html written.
+ - COMMITTED + PUSHED (2026-07-05): `183ad50 feat: OCR-fuse slides into notes and per-playlist index` (8 files, +197 -28). Both features (per-playlist index + OCR-fusion) in one commit. Build clean, 768/768 tests. origin/main efb94e7..183ad50. CONTINUITY.md + pngs/docs left uncommitted per convention.
+ - State: COMPLETE.
+ 
+diff --git a/src/cli.ts b/src/cli.ts
+index 06624fa..379a094 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -1257,174 +1257,188 @@ export function buildCli() {
+           .filter((n) => !Number.isNaN(n));
+       }
+ 
+       const result = await syncRaindropBookmarks(syncOptions);
+ 
+       if (options.dryRun) {
+         console.log(`  Dry run complete:`);
+         console.log(`    Total fetched:   ${result.total}`);
+         console.log(`    New:             ${result.newCount}`);
+         console.log(`    Modified:        ${result.modifiedCount}`);
+         console.log(`    Collections:     ${result.collections}`);
+         return;
+       }
+ 
+       console.log(`  Raindrop sync complete:`);
+       console.log(`    Total bookmarks: ${result.total}`);
+       console.log(`    New this sync:   ${result.newCount}`);
+       console.log(`    Modified:        ${result.modifiedCount}`);
+       console.log(`    Collections:     ${result.collections}`);
+ 
+       await rebuildCanonicalIndex();
+       console.log(`  ✓ Canonical index rebuilt`);
+ 
+       if (options.classify) {
+         const classifyResult = await classifyCanonicalBookmarks();
+         console.log(`  ✓ Classified ${classifyResult.classified}/${classifyResult.total} bookmarks`);
+       }
+     }));
+ 
+   // ── sync-github-stars ──────────────────────────────────────────────────
+ 
+   program
+     .command('sync-github-stars')
+     .description('Sync GitHub starred repositories into the canonical bookmark index')
+     .option('--rebuild', 'Ignore the incremental checkpoint and refetch all current stars')
+     .option('--dry-run', 'Fetch and report without writing cache files or rebuilding the canonical index')
+     .option('--limit <n>', 'Max repositories to fetch (useful for testing)', (v: string) => Number(v))
+     .option('--classify', 'Run regex classification after rebuilding the canonical index')
+     .action(safe(async (options) => {
+       ensureDataDir();
+ 
+       const syncOptions: SyncGitHubStarsOptions = {
+         rebuild: Boolean(options.rebuild),
+         dryRun: Boolean(options.dryRun),
+         limit: typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : undefined,
+       };
+ 
+       const result = await syncGitHubStars(syncOptions);
+ 
+       console.log(`  GitHub Stars sync complete:`);
+       console.log(`    fetched: ${result.fetched}`);
+       console.log(`    added: ${result.added}`);
+       console.log(`    updated: ${result.updated}`);
+       if (result.skipped > 0) console.log(`    ⚠ skipped (malformed/missing repo URL): ${result.skipped}`);
+       console.log(`    total: ${result.total}`);
+       if (result.newestStarredAt) console.log(`    newest starred_at: ${result.newestStarredAt}`);
+       console.log(`    data: ${result.cachePath}`);
+ 
+       if (options.dryRun) {
+         console.log(`    Canonical index not rebuilt (dry run)`);
+         return;
+       }
+ 
+       await rebuildCanonicalIndex();
+       console.log(`  ✓ Canonical index rebuilt`);
+ 
+       if (options.classify) {
+         const classifyResult = await classifyCanonicalBookmarks();
+         console.log(`  ✓ Classified ${classifyResult.classified}/${classifyResult.total} bookmarks`);
+       }
+     }));
+ 
+   // ── daily ─────────────────────────────────────────────────────────────
+ 
+   program
+     .command('enrich-backfill')
+     .description('Enrich all eligible thin canonical links, resumably')
+     .option('--limit <n>', 'Maximum links to attempt', (v: string) => Number(v), 100)
+     .option('--dry-run', 'Print eligible and pending counts without enriching', false)
+     .option('--all', 'Attempt every pending eligible link', false)
++    .option('--concurrency <n>', 'Concurrent backfill workers (default: 2)', (v: string) => Number(v), 2)
++    .option('--retry-failed', 'Immediately retry cached transient failures', false)
+     .action(safe(async (options) => {
+       ensureDataDir();
+-      const result = await enrichBackfill({
+-        limit: typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : 100,
+-        all: Boolean(options.all),
+-        dryRun: Boolean(options.dryRun),
+-        onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
+-        onProgress: ({ attempted, ok, failed }) => console.log(`  progress: processed ${attempted} / ok ${ok} / failed ${failed}`),
+-      });
++      const crashGuard = (kind: string) => (error: unknown) => console.error(`  enrich-backfill ${kind}: ${error instanceof Error ? error.message : String(error)}`);
++      const onUncaughtException = crashGuard('uncaught exception');
++      const onUnhandledRejection = crashGuard('unhandled rejection');
++      process.on('uncaughtException', onUncaughtException);
++      process.on('unhandledRejection', onUnhandledRejection);
++      let result;
++      try {
++        result = await enrichBackfill({
++          limit: typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : 100,
++          all: Boolean(options.all), dryRun: Boolean(options.dryRun), retryFailed: Boolean(options.retryFailed),
++          concurrency: typeof options.concurrency === 'number' && Number.isFinite(options.concurrency) ? Math.max(1, Math.floor(options.concurrency)) : 2,
++          onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
++          onProgress: ({ attempted, ok, failed }) => console.log(`  progress: processed ${attempted} / ok ${ok} / failed ${failed}`),
++        });
++      } finally {
++        process.removeListener('uncaughtException', onUncaughtException);
++        process.removeListener('unhandledRejection', onUnhandledRejection);
++      }
+       if (options.dryRun) {
+         console.log(`eligible: ${result.eligible}; pending: ${result.pending}`);
+         return;
+       }
+       console.log(`eligible: ${result.eligible}; attempted: ${result.attempted}; ok: ${result.ok}; failed: ${result.failed}; skipped-cached: ${result.skippedCached}`);
++      if (result.errorKinds.length) console.log(`top errors: ${result.errorKinds.map(({ error, count }) => `${count}× ${error}`).join('; ')}`);
+     }));
+ 
+   program
+     .command('daily')
+     .description('Collect what was saved today across all sources and connect it to older items')
+     .option('--date <date>', 'Digest a specific UTC day (YYYY-MM-DD) instead of the rolling window')
+     .option('--window-hours <n>', 'Rolling window size in hours when no watermark exists', (v: string) => Number(v), 24)
+     .option('--write', 'Synthesize the digest markdown and advance the watermark', false)
+     .option('--force', 'Overwrite an existing digest for the same date', false)
+     .option('--engine <engine>', 'LLM engine for digest synthesis (claude, codex, droid)')
+     .option('--model <model>', 'Model override for digest synthesis')
+     .option('--effort <effort>', 'Effort override for digest synthesis')
+     .option('--json', 'JSON output')
+     .action(safe(async (options) => {
+       ensureDataDir();
+       const collection = await collectDaily({
+         date: stringOption(options.date),
+         windowHours: typeof options.windowHours === 'number' && Number.isFinite(options.windowHours) ? options.windowHours : 24,
+       });
+       const enrichment = await enrichThinItems(collection.items, {
+         onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
+       });
+       // This remains useful before a backfilled summary has been folded into the
+       // canonical index by the next rebuild.
+       mergeEnrichmentSummaries(collection.items, enrichment.summaries);
+       const connected = await connectDailyItems(collection);
+ 
+       if (options.write) {
+         const digestPath = dailyDigestPath(collection.date);
+         if (fs.existsSync(digestPath) && !options.force) {
+           console.log(`  Digest already exists for ${collection.date}: ${digestPath}`);
+           console.log('  Re-run with --force to regenerate.');
+           return;
+         }
+         // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin a cheap
+         // engine without baking flags into the sync-all step list.
+         const result = await synthesizeDaily(collection, connected, {
+           enrichedCount: enrichment.enrichedCount,
+           enrichedItemIds: collection.items.filter((item) => item.canonicalUrl && enrichment.summaries.has(item.canonicalUrl)).map((item) => item.id),
+           profile: {
+             engine: stringOption(options.engine) ?? stringOption(process.env.FT_DAILY_ENGINE),
+             model: stringOption(options.model) ?? stringOption(process.env.FT_DAILY_MODEL),
+             effort: stringOption(options.effort) ?? stringOption(process.env.FT_DAILY_EFFORT),
+           },
+         });
+         if (result.skipped) {
+           console.log(`  Nothing new in this window — no digest written.`);
+           return;
+         }
+         console.log(`  ✓ Digest written: ${result.digestPath}`);
+         console.log(`    themes: ${result.themes.length} (${result.usedLlm ? 'llm' : 'mechanical'})`);
+         if (result.enrichedCount > 0) console.log(`    enriched links available: ${result.enrichedCount}`);
+         if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);
+         const interests = await writeInterests();
+         console.log(`  ✓ Interests updated: ${interests.path}`);
+         return;
+       }
+ 
+       if (options.json) {
+         console.log(JSON.stringify({
+           date: collection.date,
+           sinceIso: collection.sinceIso,
+           untilIso: collection.untilIso,
+           items: connected.map(({ item, related }) => ({ ...item, related })),
+           projectDeltas: collection.projectDeltas,
+         }, null, 2));
+         return;
+       }
+ 
+       console.log(`  Daily collection for ${collection.date} (${collection.sinceIso} → ${collection.untilIso})`);
+       console.log(`    new items: ${collection.items.length}`);
+       console.log(`    active projects: ${collection.projectDeltas.length}`);
+       for (const { item, related } of connected) {
+         const sources = item.sources.join(',');
+         console.log(`\n  • [${sources}] ${item.displayTitle ?? item.canonicalUrl ?? item.id}`);
+         if (item.canonicalUrl) console.log(`    ${item.canonicalUrl}`);
+         for (const ref of related) {
+           console.log(`    ↳ related: ${ref.title ?? ref.url ?? ref.id}${ref.url ? `  ${ref.url}` : ''}`);
+         }
+       }
+diff --git a/src/daily/enrich.ts b/src/daily/enrich.ts
+index fb17a71..7539c84 100644
+--- a/src/daily/enrich.ts
++++ b/src/daily/enrich.ts
+@@ -1,332 +1,417 @@
+ import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+ import type { Database } from 'sql.js';
+ import { acquireDbLock, openDb, releaseDbLock, saveDb } from '../db.js';
+ import { twitterBookmarksIndexPath } from '../paths.js';
+ import { createOpenCodeClient, openCodeApiKey } from '../llm/opencode-client.js';
+ import { THIN_CONTENT_CHARS, contentLength } from './synthesize.js';
+ 
+ const FAILED_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+ const BODY_LIMIT_BYTES = 200_000;
+ const DEFAULT_LIMIT = 25;
++const BACKFILL_DEFAULT_CONCURRENCY = 2;
++const DAILY_DEFAULT_CONCURRENCY = 4;
+ 
+ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+ 
+ export interface LinkEnrichmentEntry {
+   url: string;
+   summary: string | null;
+   status: 'ok' | 'failed';
+   enrichedAt: string;
++  error: string | null;
+ }
+ 
+ export interface EnrichThinItemsOptions {
+   fetch?: FetchFn;
+   llm?: (prompt: string) => Promise<string>;
+   limit?: number;
+   now?: Date;
+   onMissingKey?: () => void;
+ }
+ 
+ export interface EnrichThinItemsResult {
+   /** Items with a usable cached or newly generated summary in this digest. */
+   enrichedCount: number;
+   summaries: Map<string, string>;
+ }
+ 
+ export interface EnrichmentBackfillResult {
+   eligible: number;
+   pending: number;
+   attempted: number;
+   ok: number;
+   failed: number;
+   skippedCached: number;
++  errorKinds: Array<{ error: string; count: number }>;
+ }
+ 
+ export interface EnrichBackfillOptions extends EnrichThinItemsOptions {
+   all?: boolean;
+   dryRun?: boolean;
++  retryFailed?: boolean;
++  concurrency?: number;
+   onProgress?: (result: Pick<EnrichmentBackfillResult, 'attempted' | 'ok' | 'failed'>) => void;
+ }
+ 
+ /** Fetch/cache summaries for otherwise-thin daily items. This function never throws. */
+ export async function enrichThinItems(items: CanonicalRecentItem[], options: EnrichThinItemsOptions = {}): Promise<EnrichThinItemsResult> {
+   const eligible = items.filter((item) => isEligible(item));
+   if (eligible.length === 0) return { enrichedCount: 0, summaries: new Map() };
+   if (!options.llm && !openCodeApiKey()) {
+     options.onMissingKey?.();
+     return { enrichedCount: 0, summaries: new Map() };
+   }
+ 
+   try {
+     const now = options.now ?? new Date();
++    await ensureEnrichmentSchema();
+     const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
+-    await enrichEligibleItems(eligible, cached, options, now, parseLimit(options.limit));
++    await enrichEligibleItems(eligible, cached, options, now, parseLimit(options.limit), undefined, DAILY_DEFAULT_CONCURRENCY);
+     const finalSummaries = usableSummaries(eligible, cached);
+     return { enrichedCount: finalSummaries.size, summaries: finalSummaries };
+   } catch {
+     return { enrichedCount: 0, summaries: new Map() };
+   }
+ }
+ 
+ /** Enrich every eligible canonical row, while retaining the daily flow's fetch/cache core. */
+ export async function enrichBackfill(options: EnrichBackfillOptions = {}): Promise<EnrichmentBackfillResult> {
+   const items = await readCanonicalItems();
+   const eligible = items.filter(isEligible);
++  await ensureEnrichmentSchema();
++  await removeNowIneligibleFailures(items);
+   const now = options.now ?? new Date();
+   const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
+-  const pending = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now));
++  const pending = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, options.retryFailed));
+   const skippedCached = eligible.filter((item) => {
+     const entry = cached.get(item.canonicalUrl!);
+     return entry?.status === 'ok' && Boolean(entry.summary?.trim());
+   }).length;
+-  const base = { eligible: eligible.length, pending: pending.length, attempted: 0, ok: 0, failed: 0, skippedCached };
++  const base = { eligible: eligible.length, pending: pending.length, attempted: 0, ok: 0, failed: 0, skippedCached, errorKinds: [] };
+   if (options.dryRun || pending.length === 0) return base;
+   if (!options.llm && !openCodeApiKey()) {
+     options.onMissingKey?.();
+     return base;
+   }
+   const limit = options.all ? Number.POSITIVE_INFINITY : parseLimit(options.limit ?? 100);
+-  const updates = await enrichEligibleItems(eligible, cached, options, now, limit, options.onProgress);
++  const updates = await enrichEligibleItems(eligible, cached, options, now, limit, options.onProgress, options.concurrency ?? BACKFILL_DEFAULT_CONCURRENCY, options.retryFailed);
+   return {
+     ...base,
+     attempted: updates.length,
+     ok: updates.filter((entry) => entry.status === 'ok').length,
+     failed: updates.filter((entry) => entry.status === 'failed').length,
++    errorKinds: topErrorKinds(updates),
+   };
+ }
+ 
+ /** Append summaries to only the current collection's in-memory search text. */
+ export function mergeEnrichmentSummaries(items: CanonicalRecentItem[], summaries: Map<string, string>): void {
+   for (const item of items) {
+     const summary = item.canonicalUrl ? summaries.get(item.canonicalUrl) : undefined;
+     if (summary && !item.searchText.includes(` summary: ${summary}`)) item.searchText = `${item.searchText} summary: ${summary}`.trim();
+   }
+ }
+ 
+ export function isEnrichmentEligible(item: CanonicalRecentItem): boolean {
+   if (contentLength(item.searchText) >= THIN_CONTENT_CHARS || !item.canonicalUrl) return false;
+   try {
+     const url = new URL(item.canonicalUrl);
+-    return (url.protocol === 'http:' || url.protocol === 'https:') && !isTweetStatusUrl(url);
++    // Exclude auth-walled X/Twitter, video-only YouTube, PDFs, and existing non-web/long-content cases.
++    return (url.protocol === 'http:' || url.protocol === 'https:') && !isExcludedEnrichmentUrl(url);
+   } catch {
+     return false;
+   }
+ }
+ 
+ const isEligible = isEnrichmentEligible;
+ 
+-function isTweetStatusUrl(url: URL): boolean {
+-  return /(^|\.)((x|twitter)\.com)$/i.test(url.hostname) && /\/status\/\d+/i.test(url.pathname);
++function isExcludedEnrichmentUrl(url: URL): boolean {
++  const host = url.hostname.toLowerCase();
++  return /(^|\.)(x|twitter)\.com$/.test(host) || /(^|\.)(youtube\.com|youtu\.be)$/.test(host) || /\.pdf$/i.test(url.pathname);
+ }
+ 
+-function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date): boolean {
++function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date, retryFailed = false): boolean {
+   if (!cached) return true;
+   if (cached.status === 'ok' && cached.summary?.trim()) return false;
+-  return !Number.isFinite(Date.parse(cached.enrichedAt)) || Date.parse(cached.enrichedAt) <= now.getTime() - FAILED_RETRY_MS;
++  return (retryFailed && isTransientError(cached.error)) || !Number.isFinite(Date.parse(cached.enrichedAt)) || Date.parse(cached.enrichedAt) <= now.getTime() - FAILED_RETRY_MS;
+ }
+ 
+ function parseLimit(value: number | undefined): number {
+   const raw = value ?? Number(process.env.FT_ENRICH_LIMIT ?? DEFAULT_LIMIT);
+   return Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : DEFAULT_LIMIT;
+ }
+ 
+ function usableSummaries(items: CanonicalRecentItem[], cache: Map<string, LinkEnrichmentEntry>, into = new Map<string, string>()): Map<string, string> {
+   for (const item of items) {
+     const entry = item.canonicalUrl ? cache.get(item.canonicalUrl) : undefined;
+     if (item.canonicalUrl && entry?.status === 'ok' && entry.summary?.trim()) into.set(item.canonicalUrl, entry.summary.trim());
+   }
+   return into;
+ }
+ 
+ async function readCache(urls: string[]): Promise<Map<string, LinkEnrichmentEntry>> {
+   if (urls.length === 0) return new Map();
+   const dbPath = twitterBookmarksIndexPath();
+   const db = await openDb(dbPath);
+   try {
+     let rows: unknown[][];
+     try {
+-      rows = db.exec(`SELECT url, summary, status, enriched_at FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
++      rows = db.exec(`SELECT url, summary, status, enriched_at, error FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
+     } catch (error) {
+       if (!isMissingTableError(error)) throw error;
+       rows = [];
+     }
+-    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? '') }]));
++    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? ''), error: row[4] == null ? null : String(row[4]) }]));
+   } finally {
+     db.close();
+   }
+ }
+ 
+ function isMissingTableError(error: unknown): boolean {
+   return (error instanceof Error ? error.message : String(error)).toLowerCase().includes('no such table');
+ }
+ 
+ async function readCanonicalItems(): Promise<CanonicalRecentItem[]> {
+   const db = await openDb(twitterBookmarksIndexPath());
+   try {
+     const rows = db.exec(`SELECT id, canonical_url, display_title, search_text, sources_json,
+       first_saved_at, last_saved_at, primary_category, primary_domain FROM canonical_bookmarks`)[0]?.values ?? [];
+     return rows.map((row) => ({
+       id: String(row[0]), canonicalUrl: row[1] == null ? null : String(row[1]), displayTitle: row[2] == null ? null : String(row[2]),
+       searchText: String(row[3] ?? ''), sources: parseSources(row[4]), firstSavedAt: row[5] == null ? null : String(row[5]),
+       lastSavedAt: row[6] == null ? null : String(row[6]), primaryCategory: row[7] == null ? null : String(row[7]), primaryDomain: row[8] == null ? null : String(row[8]),
+     }));
+   } finally {
+     db.close();
+   }
+ }
+ 
+ async function enrichEligibleItems(
+   eligible: CanonicalRecentItem[],
+   cached: Map<string, LinkEnrichmentEntry>,
+   options: EnrichThinItemsOptions,
+   now: Date,
+   limit: number,
+   onProgress?: (result: { attempted: number; ok: number; failed: number }) => void,
++  concurrency = DAILY_DEFAULT_CONCURRENCY,
++  retryFailed = false,
+ ): Promise<LinkEnrichmentEntry[]> {
+-  const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
++  const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, retryFailed)).slice(0, limit);
+   const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+   const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+   let attempted = 0;
+   let ok = 0;
+   let failed = 0;
+   const enrichOne = async (item: CanonicalRecentItem): Promise<LinkEnrichmentEntry> => {
+     const url = item.canonicalUrl!;
+     let update: LinkEnrichmentEntry;
+     try {
+-      const material = await extractPageMaterial(url, fetchFn);
+-      const summary = (await llm(buildEnrichmentPrompt(material))).trim();
+-      if (!summary) throw new Error('empty enrichment completion');
+-      update = { url, summary, status: 'ok', enrichedAt: now.toISOString() };
+-    } catch {
+-      update = { url, summary: null, status: 'failed', enrichedAt: now.toISOString() };
++      const material = await retryTransient('fetch', () => extractPageMaterial(url, fetchFn));
++      await delay(250);
++      const summary = await retryTransient('llm', async () => {
++        const value = (await llm(buildEnrichmentPrompt(material))).trim();
++        if (!value) throw new Error('empty completion');
++        return value;
++      });
++      update = { url, summary, status: 'ok', enrichedAt: now.toISOString(), error: null };
++    } catch (error) {
++      update = { url, summary: null, status: 'failed', enrichedAt: now.toISOString(), error: formatFailure(error) };
+     }
+     attempted += 1;
+     if (update.status === 'ok') ok += 1;
+     else failed += 1;
+     if (onProgress && attempted % 25 === 0) onProgress({ attempted, ok, failed });
+     return update;
+   };
+   const updates: LinkEnrichmentEntry[] = [];
+   for (let start = 0; start < misses.length; start += 50) {
+-    const batch = await mapConcurrent(misses.slice(start, start + 50), 4, enrichOne);
++    const batch = await mapConcurrent(misses.slice(start, start + 50), concurrency, enrichOne);
+     await writeCache(batch);
+     updates.push(...batch);
+   }
+   for (const update of updates) if (update.status === 'ok' && update.summary) cached.set(update.url, update);
+   return updates;
+ }
+ 
+ function parseSources(value: unknown): string[] {
+   if (typeof value !== 'string') return [];
+   try {
+     const parsed = JSON.parse(value);
+     return Array.isArray(parsed) ? parsed.filter((source): source is string => typeof source === 'string') : [];
+   } catch {
+     return [];
+   }
+ }
+ 
+ async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
+   if (entries.length === 0) return;
+   const dbPath = twitterBookmarksIndexPath();
+   const lock = await acquireDbLock(dbPath);
+   const db = await openDb(dbPath);
+   try {
+     initEnrichmentSchema(db);
+-    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at) VALUES (?, ?, ?, ?)
+-      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at`);
++    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at, error) VALUES (?, ?, ?, ?, ?)
++      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at, error = excluded.error`);
+     try {
+-      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt]);
++      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt, entry.error]);
+     } finally {
+       statement.free();
+     }
+     saveDb(db, dbPath);
+   } finally {
+     db.close();
+     releaseDbLock(lock);
+   }
+ }
+ 
+ function initEnrichmentSchema(db: Database): void {
+-  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL)');
++  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL, error TEXT)');
++  try { db.run('ALTER TABLE link_enrichment ADD COLUMN error TEXT'); } catch (error) { if (!String(error).toLowerCase().includes('duplicate column')) throw error; }
++}
++
++async function ensureEnrichmentSchema(): Promise<void> {
++  const dbPath = twitterBookmarksIndexPath();
++  const lock = await acquireDbLock(dbPath);
++  const db = await openDb(dbPath);
++  try {
++    initEnrichmentSchema(db);
++    saveDb(db, dbPath);
++  } finally {
++    db.close();
++    releaseDbLock(lock);
++  }
++}
++
++async function removeNowIneligibleFailures(items: CanonicalRecentItem[]): Promise<void> {
++  const urls = items.filter((item) => item.canonicalUrl && !isEligible(item)).map((item) => item.canonicalUrl!);
++  if (!urls.length) return;
++  const dbPath = twitterBookmarksIndexPath();
++  const lock = await acquireDbLock(dbPath);
++  const db = await openDb(dbPath);
++  try {
++    initEnrichmentSchema(db);
++    for (let start = 0; start < urls.length; start += 500) {
++      const batch = urls.slice(start, start + 500);
++      db.run(`DELETE FROM link_enrichment WHERE status = 'failed' AND url IN (${batch.map(() => '?').join(',')})`, batch);
++    }
++    saveDb(db, dbPath);
++  } finally {
++    db.close();
++    releaseDbLock(lock);
++  }
+ }
+ 
++function formatFailure(error: unknown): string {
++  const message = error instanceof Error ? error.message : String(error);
++  if (message === 'empty completion' || message.endsWith(': empty completion')) return 'empty completion';
++  const stage = message.startsWith('fetch:') || message.startsWith('llm:') ? '' : 'fetch: ';
++  return `${stage}${message}`.slice(0, 500);
++}
++
++async function retryTransient<T>(stage: 'fetch' | 'llm', operation: () => Promise<T>): Promise<T> {
++  let lastError: unknown;
++  for (let attempt = 0; attempt < 3; attempt += 1) {
++    try { return await operation(); } catch (error) {
++      lastError = error;
++      if (attempt === 2 || !isTransientError(error)) throw new Error(`${stage}: ${errorMessage(error)}`);
++      await delay((attempt === 0 ? 1_000 : 4_000) + Math.floor(Math.random() * 250));
++    }
++  }
++  throw lastError;
++}
++
++function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
++
++function isTransientError(error: unknown): boolean {
++  const message = (typeof error === 'string' ? error : errorMessage(error)).toLowerCase();
++  return /\b429\b|\b5\d\d\b|econnreset|etimedout|eai_again|aborted|aborterror|network|fetch failed|timed out|empty completion/.test(message);
++}
++
++function topErrorKinds(entries: LinkEnrichmentEntry[]): Array<{ error: string; count: number }> {
++  const counts = new Map<string, number>();
++  for (const entry of entries) if (entry.status === 'failed' && entry.error) counts.set(entry.error, (counts.get(entry.error) ?? 0) + 1);
++  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([error, count]) => ({ error, count }));
++}
++
++function delay(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
++
+ async function extractPageMaterial(url: string, fetchFn: FetchFn): Promise<string> {
+   const controller = new AbortController();
+   const timer = setTimeout(() => controller.abort(), 8_000);
+   try {
+     let current = assertSafeFetchUrl(url);
+     let response: Response | undefined;
+     // DNS rebinding protection is out of scope: validate hostname/IP literals
+     // before each request, while manual redirects prevent bypassing that check.
+     for (let redirects = 0; redirects <= 5; redirects += 1) {
+       response = await fetchFn(current, { redirect: 'manual', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FieldTheoryDigest/1.0)' } });
+       if (!isRedirect(response.status)) break;
+       const location = response.headers.get('location');
+       await response.body?.cancel().catch(() => undefined);
+       if (!location || redirects === 5) throw new Error('unsafe or excessive redirect');
+       current = assertSafeFetchUrl(new URL(location, current).toString());
+     }
+     if (!response) throw new Error('no response');
+     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+     const html = await readLimitedBody(response, BODY_LIMIT_BYTES);
+     const title = firstMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
+     const description = firstMatch(html, /<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']*)["']/i)
+       ?? firstMatch(html, /<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["'](?:description|og:description)["']/i);
+     const visible = decodeHtml(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 1200);
+     return [`URL: ${url}`, title && `Title: ${decodeHtml(title)}`, description && `Description: ${decodeHtml(description)}`, visible && `Text: ${visible}`].filter(Boolean).join('\n');
+   } finally {
+     clearTimeout(timer);
+   }
+ }
+ 
+ function buildEnrichmentPrompt(material: string): string {
+   return `For a personal knowledge digest, summarize what this page is about in 2-3 plain sentences. No preamble.\n\n${material}`;
+ }
+ 
+ async function readLimitedBody(response: Response, limit: number): Promise<string> {
+   // A no-body response has no bytes to read; never fall back to response.text(),
+   // which may buffer an unbounded body in nonstandard fetch implementations.
+   if (!response.body) return '';
+   const reader = response.body.getReader();
+   const chunks: Uint8Array[] = [];
+   let size = 0;
+   try {
+     while (size < limit) {
+       const { done, value } = await reader.read();
+       if (done) break;
+       const remaining = limit - size;
+       chunks.push(value.byteLength > remaining ? value.slice(0, remaining) : value);
+       size += Math.min(value.byteLength, remaining);
+     }
+   } finally {
+     await reader.cancel().catch(() => undefined);
+   }
+   const all = new Uint8Array(size);
+   let offset = 0;
+   for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.byteLength; }
+   return new TextDecoder().decode(all);
+ }
+ 
+ function assertSafeFetchUrl(value: string): string {
+   const url = new URL(value);
+   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('unsupported URL scheme');
+   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+   if (hostname === 'localhost' || hostname.endsWith('.local') || isPrivateIpLiteral(hostname)) {
+     throw new Error('unsafe fetch host');
+   }
+   return url.toString();
+ }
+ 
+ function isPrivateIpLiteral(hostname: string): boolean {
+   const octets = hostname.split('.');
+   if (octets.length === 4 && octets.every((part) => /^\d+$/.test(part) && Number(part) <= 255)) {
+     const [a, b] = octets.map(Number);
+     return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+   }
+   return hostname === '::' || hostname === '::1' || /^[fcfd][0-9a-f]{1,3}:/i.test(hostname);
+ }
+ 
+ function isRedirect(status: number): boolean {
+   return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+ }
+ 
+diff --git a/tests/cli.test.ts b/tests/cli.test.ts
+index c5d411c..fa37416 100644
+--- a/tests/cli.test.ts
++++ b/tests/cli.test.ts
+@@ -9,165 +9,165 @@ import { skillWithFrontmatter } from '../src/skill.js';
+ import { rebuildCanonicalIndex } from '../src/canonical-bookmarks-db.js';
+ 
+ async function captureStdout(fn: () => Promise<void>): Promise<string> {
+   const chunks: string[] = [];
+   const origWrite = process.stdout.write;
+   process.stdout.write = ((chunk: any, encodingOrCb?: any, cb?: any) => {
+     chunks.push(Buffer.isBuffer(chunk) ? chunk.toString('utf-8') : String(chunk));
+     if (typeof encodingOrCb === 'function') encodingOrCb();
+     if (typeof cb === 'function') cb();
+     return true;
+   }) as typeof process.stdout.write;
+ 
+   try {
+     await fn();
+   } finally {
+     process.stdout.write = origWrite;
+   }
+ 
+   return chunks.join('');
+ }
+ 
+ async function captureConsoleErrors(fn: () => Promise<void>): Promise<string> {
+   const chunks: string[] = [];
+   const origError = console.error;
+   console.error = (...args: any[]) => { chunks.push(args.map(String).join(' ')); };
+   try {
+     await fn();
+   } finally {
+     console.error = origError;
+   }
+   return chunks.join('\n');
+ }
+ 
+ test('showDashboard: prints update notice when cache is newer than local', async () => {
+   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-dashboard-'));
+   const origEnv = process.env.FT_DATA_DIR;
+   process.env.FT_DATA_DIR = tmpDir;
+ 
+   // Fresh cache file with an absurdly high version — exercises the cache-hit
+   // path (no network), and guarantees the notice regardless of local version.
+   fs.writeFileSync(path.join(tmpDir, '.update-check'), '99.99.99');
+ 
+   const logs: string[] = [];
+   const origLog = console.log;
+   console.log = (...args: any[]) => { logs.push(args.map(String).join(' ')); };
+ 
+   try {
+     const { showDashboard } = await import('../src/cli.js');
+     await showDashboard();
+   } finally {
+     console.log = origLog;
+     process.env.FT_DATA_DIR = origEnv;
+     fs.rmSync(tmpDir, { recursive: true, force: true });
+   }
+ 
+   const joined = logs.join('\n');
+   assert.ok(
+     joined.includes('Update available') && joined.includes('99.99.99'),
+     `expected update notice mentioning the cached 99.99.99 version; got:\n${joined}`,
+   );
+ });
+ 
+ test('ft wiki: --engine option is registered', () => {
+   const program = buildCli();
+   const wikiCmd = program.commands.find((c: any) => c.name() === 'wiki');
+   assert.ok(wikiCmd, 'wiki command should be registered');
+   const opts = wikiCmd.options.map((o: any) => o.long);
+   assert.ok(opts.includes('--engine'), `expected --engine among ${opts.join(', ')}`);
+ });
+ 
+ test('ft search, stats, and status expose --json', () => {
+   const program = buildCli();
+   for (const name of ['search', 'stats', 'status']) {
+     const cmd = program.commands.find((c: any) => c.name() === name);
+     assert.ok(cmd, `${name} command should be registered`);
+     const opts = cmd.options.map((o: any) => o.long);
+     assert.ok(opts.includes('--json'), `expected --json on ft ${name}`);
+   }
+ });
+ 
+-test('ft enrich-backfill exposes limit, dry-run, and all options', () => {
++test('ft enrich-backfill exposes limit, retry, concurrency, dry-run, and all options', () => {
+   const command = buildCli().commands.find((c: any) => c.name() === 'enrich-backfill');
+   assert.ok(command, 'enrich-backfill command should be registered');
+   const opts = command.options.map((option: any) => option.long);
+-  assert.deepEqual(opts, ['--limit', '--dry-run', '--all']);
++  assert.deepEqual(opts, ['--limit', '--dry-run', '--all', '--concurrency', '--retry-failed']);
+ });
+ 
+ test('ft paths, library, commands, app, and install command groups are registered', () => {
+   const program = buildCli();
+   for (const name of ['paths', 'library', 'commands', 'app', 'install']) {
+     assert.ok(program.commands.find((c: any) => c.name() === name), `${name} command should be registered`);
+   }
+ });
+ 
+ test('ft install app command is registered', () => {
+   const program = buildCli();
+   const installCmd = program.commands.find((c: any) => c.name() === 'install');
+   assert.ok(installCmd, 'install command should be registered');
+   const appCmd = installCmd.commands.find((c: any) => c.name() === 'app');
+   assert.ok(appCmd, 'install app command should be registered');
+   const opts = appCmd.options.map((o: any) => o.long);
+   assert.ok(opts.includes('--install-dir'));
+   assert.ok(opts.includes('--open'));
+   assert.ok(opts.includes('--json'));
+ });
+ 
+ test('ft sync: media is off by default and exposes --media opt-in', () => {
+   const program = buildCli();
+   const syncCmd = program.commands.find((c: any) => c.name() === 'sync');
+   assert.ok(syncCmd, 'sync command should be registered');
+ 
+   assert.equal(syncCmd.opts().media, false, 'sync should default to skipping media');
+ 
+   const mediaOption = syncCmd.options.find((o: any) => o.attributeName() === 'media');
+   assert.ok(mediaOption, 'a media option must be registered');
+   assert.equal(mediaOption.negate, false, 'the media option must be --media (non-negated)');
+   assert.equal(mediaOption.long, '--media');
+ });
+ 
+ test('ft sync-browser: is deprecated and prints a notice', async () => {
+   const program = buildCli();
+   const syncBrowserCmd = program.commands.find((c: any) => c.name() === 'sync-browser');
+   assert.ok(syncBrowserCmd, 'sync-browser command should be registered');
+   const opts = syncBrowserCmd.options.map((o: any) => o.long);
+   assert.ok(!opts.includes('--browser'), '--browser should not be advertised');
+   assert.ok(!opts.includes('--profile'), '--profile should not be advertised');
+   assert.ok(!opts.includes('--bookmarks-file'), '--bookmarks-file should not be advertised');
+ 
+   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-sync-browser-deprecation-'));
+   const origEnv = process.env.FT_DATA_DIR;
+   const origExitCode = process.exitCode;
+   process.env.FT_DATA_DIR = tmpDir;
+   process.exitCode = undefined;
+   fs.writeFileSync(path.join(tmpDir, '.update-check'), '0.0.0');
+ 
+   try {
+     const errors = await captureConsoleErrors(async () => {
+       await buildCli().parseAsync(['node', 'ft', 'sync-browser']);
+     });
+     assert.ok(
+       errors.includes('deprecated') || errors.includes('sync-raindrop'),
+       `expected deprecation notice, got:\n${errors}`,
+     );
+     assert.equal(process.exitCode, 1);
+   } finally {
+     if (origEnv === undefined) delete process.env.FT_DATA_DIR;
+     else process.env.FT_DATA_DIR = origEnv;
+     process.exitCode = origExitCode;
+     fs.rmSync(tmpDir, { recursive: true, force: true });
+   }
+ });
+ 
+ test('ft sync-raindrop: exposes expected options', () => {
+   const program = buildCli();
+   const syncRaindropCmd = program.commands.find((c: any) => c.name() === 'sync-raindrop');
+   assert.ok(syncRaindropCmd, 'sync-raindrop command should be registered');
+   const opts = syncRaindropCmd.options.map((o: any) => o.long);
+   assert.ok(opts.includes('--rebuild'));
+   assert.ok(opts.includes('--dry-run'));
+   assert.ok(opts.includes('--classify'));
+   assert.ok(opts.includes('--collections'));
+ });
+ 
+ test('ft sync-github-stars: exposes expected options', () => {
+   const program = buildCli();
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index cef84ca..e196cbb 100644
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -1,92 +1,92 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+ import os from 'node:os';
+ import path from 'node:path';
+ import { writeJson, writeJsonLines } from '../src/fs.js';
+ import { rebuildCanonicalIndex, relatedSeedTerms, type CanonicalRecentItem } from '../src/canonical-bookmarks-db.js';
+ import { readFile } from 'node:fs/promises';
+ import { collectDaily } from '../src/daily/collect.js';
+ import { connectDailyItems } from '../src/daily/connect.js';
+ import { collectDailyCoverage } from '../src/daily/coverage.js';
+-import { enrichBackfill, enrichThinItems, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
++import { enrichBackfill, enrichThinItems, isEnrichmentEligible, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
+ import { openDb, saveDb } from '../src/db.js';
+ import { twitterBookmarksIndexPath } from '../src/paths.js';
+ import { contentLength, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+ import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+ 
+ async function readFileText(filePath: string): Promise<string> {
+   return readFile(filePath, 'utf8');
+ }
+ import type { GitHubStarRecord } from '../src/github-stars/types.js';
+ import type { ProjectRecord } from '../src/projects/types.js';
+ 
+ async function withIsolatedDataDir(fn: (dir: string) => Promise<void>): Promise<void> {
+   const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-daily-'));
+   const previous = process.env.FT_DATA_DIR;
+   process.env.FT_DATA_DIR = dir;
+   try {
+     await fn(dir);
+   } finally {
+     if (previous === undefined) delete process.env.FT_DATA_DIR;
+     else process.env.FT_DATA_DIR = previous;
+     await rm(dir, { recursive: true, force: true });
+   }
+ }
+ 
+ function starRecord(overrides: Partial<GitHubStarRecord> & { id: number; fullName: string; starredAt: string }): GitHubStarRecord {
+   const [owner, name] = overrides.fullName.split('/');
+   return {
+     owner,
+     name,
+     htmlUrl: `https://github.com/${overrides.fullName}`,
+     // Most synthesis fixtures represent substantive saves; thin-link behavior
+     // is covered explicitly below with searchText overrides.
+     description: 'Detailed saved commentary about implementation tradeoffs, architecture, practical examples, and the reasons this resource is worth revisiting. '.repeat(2),
+     homepageUrl: null,
+     language: null,
+     topics: [],
+     stargazersCount: 0,
+     forksCount: 0,
+     openIssuesCount: 0,
+     archived: false,
+     fork: false,
+     defaultBranch: 'main',
+     pushedAt: null,
+     updatedAt: null,
+     createdAt: null,
+     syncedAt: overrides.starredAt,
+     ...overrides,
+   } as GitHubStarRecord;
+ }
+ 
+ async function writeStars(dir: string, records: GitHubStarRecord[]): Promise<void> {
+   const githubDir = path.join(dir, 'github-stars');
+   await mkdir(githubDir, { recursive: true });
+   await writeJsonLines(path.join(githubDir, 'stars.jsonl'), records);
+ }
+ 
+ function projectRecord(overrides: Partial<ProjectRecord> & { repo: string }): ProjectRecord {
+   return {
+     path: `/tmp/${overrides.repo}`,
+     pendingFiles: 0,
+     unpushedCommits: 0,
+     recentCommits: [],
+     scannedAt: '2026-07-07T00:00:00.000Z',
+     ...overrides,
+   } as ProjectRecord;
+ }
+ 
+ test('daily: collect windows on first_saved_at and gathers project deltas', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
+       starRecord({ id: 1, fullName: 'a/fresh-agent-memory', starredAt: '2026-07-06T12:00:00.000Z', description: 'agent memory toolkit' }),
+       starRecord({ id: 2, fullName: 'b/old-agent-memory', starredAt: '2026-06-01T00:00:00.000Z', description: 'older agent memory library' }),
+     ]);
+     const projectsDir = path.join(dir, 'projects');
+     await mkdir(projectsDir, { recursive: true });
+     await writeJsonLines(path.join(projectsDir, 'projects.jsonl'), [
+       projectRecord({
+         repo: 'active-repo',
+         recentCommits: [
+           { hash: 'aaa', date: '2026-07-06T10:00:00.000Z', subject: 'inside window' },
+@@ -522,197 +522,241 @@ test('daily: URL plus substantial commentary remains eligible for synthesis', as
+ 
+     assert.equal(result.thinSkipped, 0);
+     assert.ok(prompt.includes('i1'));
+   });
+ });
+ 
+ test('daily: skips the LLM when every item is thin', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
+       starRecord({ id: 1, fullName: 'thin/one', starredAt: '2026-07-06T12:00:00.000Z' }),
+       starRecord({ id: 2, fullName: 'thin/two', starredAt: '2026-07-06T13:00:00.000Z' }),
+     ]);
+     await rebuildCanonicalIndex();
+ 
+     const collection = await collectDaily({ date: '2026-07-06' });
+     for (const item of collection.items) item.searchText = `${item.canonicalUrl} brief share`;
+     let invoked = false;
+     const result = await synthesizeDaily(collection, [], { invoke: async () => { invoked = true; return '[]'; } });
+ 
+     assert.equal(invoked, false);
+     assert.equal(result.usedLlm, false);
+     assert.equal(result.themes.length, 0);
+     assert.equal(result.thinSkipped, 2);
+     assert.equal(result.alsoSavedCount, 2);
+   });
+ });
+ 
+ test('daily: enriches a thin link into the prompt and reuses its durable cache', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [starRecord({ id: 75, fullName: 'a/enriched-link', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
+     await rebuildCanonicalIndex();
+     const collection = await collectDaily({ date: '2026-07-06' });
+     const item = collection.items[0];
+     item.searchText = `${item.canonicalUrl} brief`;
+     let fetchCalls = 0;
+     const enrichment = await enrichThinItems(collection.items, {
+       fetch: async () => {
+         fetchCalls += 1;
+         return new Response('<html><title>Enriched page</title><meta name="description" content="A useful page."><body>Detailed article material for the digest.</body></html>');
+       },
+       llm: async () => 'This page explains a useful implementation technique with practical context.',
+     });
+     mergeEnrichmentSummaries(collection.items, enrichment.summaries);
+     assert.equal(enrichment.enrichedCount, 1);
+     assert.match(item.searchText, /summary: This page explains/);
+     let prompt = '';
+     const result = await synthesizeDaily(collection, await connectDailyItems(collection), {
+       enrichedCount: enrichment.enrichedCount,
+       enrichedItemIds: [item.id],
+       invoke: async (value) => {
+         prompt = value;
+         return '[{"title":"Useful technique","summary":"A connected implementation idea.","itemIds":["i1"],"relatedIds":[],"projects":[]}]';
+       },
+     });
+     assert.equal(result.usedLlm, true);
+     assert.match(prompt, /enriched-link/);
+     assert.equal(fetchCalls, 1);
+ 
+     await rebuildCanonicalIndex();
+     const cached = await enrichThinItems(collection.items, {
+       fetch: async () => { throw new Error('cache miss'); },
+       llm: async () => { throw new Error('cache miss'); },
+     });
+     assert.equal(cached.enrichedCount, 1);
+   });
+ });
+ 
+ test('daily: enrichment backfill reports pending rows, enriches through seams, and skips cached rows on rerun', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [starRecord({ id: 77, fullName: 'a/backfill-link', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
+     await rebuildCanonicalIndex();
+     const db = await openDb(twitterBookmarksIndexPath());
+     try {
+       db.run('UPDATE canonical_bookmarks SET search_text = canonical_url || \' brief\'');
+       saveDb(db, twitterBookmarksIndexPath());
+     } finally {
+       db.close();
+     }
+ 
+     const dryRun = await enrichBackfill({ dryRun: true });
+-    assert.deepEqual(dryRun, { eligible: 1, pending: 1, attempted: 0, ok: 0, failed: 0, skippedCached: 0 });
++    assert.deepEqual(dryRun, { eligible: 1, pending: 1, attempted: 0, ok: 0, failed: 0, skippedCached: 0, errorKinds: [] });
+     let fetchCalls = 0;
+     const first = await enrichBackfill({
+       fetch: async () => { fetchCalls += 1; return new Response('<title>Backfill</title><body>Useful source material</body>'); },
+       llm: async () => 'A durable summary-only search term.',
+     });
+     assert.equal(first.attempted, 1);
+     assert.equal(first.ok, 1);
+     assert.equal(fetchCalls, 1);
+ 
+     const rerun = await enrichBackfill({
+       fetch: async () => { throw new Error('cached row must not fetch'); },
+       llm: async () => { throw new Error('cached row must not summarize'); },
+     });
+-    assert.deepEqual(rerun, { eligible: 1, pending: 0, attempted: 0, ok: 0, failed: 0, skippedCached: 1 });
++    assert.deepEqual(rerun, { eligible: 1, pending: 0, attempted: 0, ok: 0, failed: 0, skippedCached: 1, errorKinds: [] });
+   });
+ });
+ 
+ test('daily: empty enrichment completion is cached as failed and leaves the item thin', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [starRecord({ id: 76, fullName: 'a/empty-enrichment', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
+     await rebuildCanonicalIndex();
+     const collection = await collectDaily({ date: '2026-07-06' });
+     collection.items[0].searchText = `${collection.items[0].canonicalUrl} brief`;
+     const enrichment = await enrichThinItems(collection.items, {
+       fetch: async () => new Response('<title>Page</title><body>body</body>'),
+       llm: async () => '',
+     });
+     mergeEnrichmentSummaries(collection.items, enrichment.summaries);
+     assert.equal(enrichment.enrichedCount, 0);
+     assert.ok(contentLength(collection.items[0].searchText) < 120);
+     const result = await synthesizeDaily(collection, [], { invoke: async () => { throw new Error('should not invoke'); } });
+     assert.equal(result.thinSkipped, 1);
+     assert.match(await readFileText(result.digestPath), /Also saved/);
+   });
+ });
+ 
++test('daily: enrichment excludes X articles, YouTube, and PDFs', () => {
++  const item = (url: string): CanonicalRecentItem => ({ id: url, canonicalUrl: url, displayTitle: url, searchText: url, sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null });
++  assert.equal(isEnrichmentEligible(item('https://x.com/i/article/123')), false);
++  assert.equal(isEnrichmentEligible(item('https://www.youtube.com/watch?v=abc')), false);
++  assert.equal(isEnrichmentEligible(item('https://example.com/report.pdf')), false);
++});
++
++test('daily: retries a transient 429 fetch and records failure errors without retrying 404s', async () => {
++  await withIsolatedDataDir(async () => {
++    const item: CanonicalRecentItem = { id: 'retry', canonicalUrl: 'https://example.com/retry', displayTitle: 'retry', searchText: 'https://example.com/retry', sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null };
++    let calls = 0;
++    const recovered = await enrichThinItems([item], {
++      fetch: async () => ++calls === 1 ? new Response('', { status: 429 }) : new Response('<title>Recovered</title><body>source</body>'),
++      llm: async () => 'Recovered after a transient failure.',
++    });
++    assert.equal(recovered.enrichedCount, 1);
++    assert.equal(calls, 2);
++
++    const failed: CanonicalRecentItem = { ...item, id: 'no-retry', canonicalUrl: 'https://example.com/no-retry', searchText: 'https://example.com/no-retry' };
++    calls = 0;
++    await enrichThinItems([failed], { fetch: async () => { calls += 1; return new Response('', { status: 404 }); }, llm: async () => 'unused' });
++    assert.equal(calls, 1);
++    const db = await openDb(twitterBookmarksIndexPath());
++    try {
++      const row = db.exec(`SELECT error FROM link_enrichment WHERE url = ?`, [failed.canonicalUrl])[0]?.values[0]?.[0];
++      assert.match(String(row), /^fetch: HTTP 404/);
++    } finally { db.close(); }
++  });
++});
++
++test('daily: retry-failed immediately re-attempts transient cached failures', async () => {
++  await withIsolatedDataDir(async (dir) => {
++    await writeStars(dir, [starRecord({ id: 78, fullName: 'a/retry-failed', starredAt: '2026-07-06T12:00:00.000Z', description: 'brief' })]);
++    await rebuildCanonicalIndex();
++    const db = await openDb(twitterBookmarksIndexPath());
++    try { db.run(`UPDATE canonical_bookmarks SET search_text = canonical_url || ' brief'`); saveDb(db, twitterBookmarksIndexPath()); } finally { db.close(); }
++    await enrichBackfill({ fetch: async () => new Response('', { status: 429 }), llm: async () => 'unused' });
++    let calls = 0;
++    const result = await enrichBackfill({ retryFailed: true, fetch: async () => { calls += 1; return new Response('<title>OK</title><body>source</body>'); }, llm: async () => 'Recovered.' });
++    assert.equal(result.ok, 1);
++    assert.equal(calls, 1);
++  });
++});
++
+ test('daily: enrichment silently no-ops without an OpenCode key', async () => {
+   const previousGo = process.env.OPENCODE_GO_API_KEY;
+   const previousApi = process.env.OPENCODE_API_KEY;
+   delete process.env.OPENCODE_GO_API_KEY;
+   delete process.env.OPENCODE_API_KEY;
+   try {
+     const result = await enrichThinItems([{ id: 'thin', canonicalUrl: 'https://example.com/thin', displayTitle: 'thin', searchText: 'https://example.com/thin', sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null }]);
+     assert.equal(result.enrichedCount, 0);
+   } finally {
+     if (previousGo === undefined) delete process.env.OPENCODE_GO_API_KEY;
+     else process.env.OPENCODE_GO_API_KEY = previousGo;
+     if (previousApi === undefined) delete process.env.OPENCODE_API_KEY;
+     else process.env.OPENCODE_API_KEY = previousApi;
+   }
+ });
+ 
+ test('daily: enrichment never fetches private IPs or redirects to them', async () => {
+   await withIsolatedDataDir(async () => {
+     const thin = (url: string): CanonicalRecentItem => ({ id: url, canonicalUrl: url, displayTitle: url, searchText: url, sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null });
+     let fetchCalls = 0;
+     const privateResult = await enrichThinItems([thin('http://192.168.1.1/x')], {
+       fetch: async () => { fetchCalls += 1; throw new Error('must not fetch'); },
+       llm: async () => 'unused',
+     });
+     assert.equal(privateResult.enrichedCount, 0);
+     assert.equal(fetchCalls, 0);
+ 
+     const redirectResult = await enrichThinItems([thin('https://example.com/redirect')], {
+       fetch: async () => {
+         fetchCalls += 1;
+         return new Response('', { status: 302, headers: { location: 'http://127.0.0.1/internal' } });
+       },
+       llm: async () => 'unused',
+     });
+     assert.equal(redirectResult.enrichedCount, 0);
+     assert.equal(fetchCalls, 1);
+   });
+ });
+ 
+ test('daily: an OpenCode timeout records a failed enrichment without hanging', async () => {
+   await withIsolatedDataDir(async () => {
+     const item: CanonicalRecentItem = { id: 'timeout', canonicalUrl: 'https://example.com/timeout', displayTitle: 'timeout', searchText: 'https://example.com/timeout', sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null };
+     const { createOpenCodeClient } = await import('../src/llm/opencode-client.js');
+     const client = createOpenCodeClient({ apiKey: 'test-key', timeoutMs: 5, fetch: async () => new Promise<Response>(() => {}) });
+     const result = await enrichThinItems([item], {
+       fetch: async () => new Response('<title>Page</title><body>body</body>'),
+       llm: async (prompt) => (await client.chat({ prompt })).text,
+     });
+     assert.equal(result.enrichedCount, 0);
+ 
+     let retried = false;
+     const cachedFailure = await enrichThinItems([item], {
+       fetch: async () => { retried = true; throw new Error('should remain cached failed'); },
+       llm: async () => { retried = true; return 'should not run'; },
+     });
+     assert.equal(cachedFailure.enrichedCount, 0);
+     assert.equal(retried, false);
+   });
+ });
+ 
+ test('daily: interests classifies rising/steady/fading topics and finds active threads', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     const now = new Date('2026-07-07T00:00:00.000Z');
+     const recent = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
+     // Rising: 3 "agents"-category saves this week, none in baseline.
+     // Fading: 5 "css" saves in baseline, none this week.
+     await writeStars(dir, [
+       starRecord({ id: 1, fullName: 'a/agent-one', starredAt: recent(1), description: 'llm agents orchestration framework' }),
+       starRecord({ id: 2, fullName: 'b/agent-two', starredAt: recent(2), description: 'llm agents memory framework' }),
+       starRecord({ id: 3, fullName: 'c/agent-three', starredAt: recent(3), description: 'llm agents evaluation framework' }),
+       ...Array.from({ length: 5 }, (_, i) => starRecord({
+         id: 10 + i,
+         fullName: `css/lib-${i}`,
+         starredAt: recent(10 + i),
+         description: 'css styling toolkit',
+       })),
+     ]);
+     const projectsDir = path.join(dir, 'projects');
+     await mkdir(projectsDir, { recursive: true });
+     await writeJsonLines(path.join(projectsDir, 'projects.jsonl'), [
+
+exec
+/bin/zsh -lc 'git show 02d5ef8''^:src/daily/enrich.ts > /tmp/enrich-parent.ts
+git show 02d5ef8:src/daily/enrich.ts > /tmp/enrich-current.ts
+nl -ba src/daily/enrich.ts | sed -n '"'1,420p'
+nl -ba src/cli.ts | sed -n '1000,1150p'
+rg -n \"acquire|advisory|with.*lock|twitterBookmarksIndexPath|saveDb\" src/db.ts src src/cli.ts | head -180" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+     1	import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+     2	import type { Database } from 'sql.js';
+     3	import { acquireDbLock, openDb, releaseDbLock, saveDb } from '../db.js';
+     4	import { twitterBookmarksIndexPath } from '../paths.js';
+     5	import { createOpenCodeClient, openCodeApiKey } from '../llm/opencode-client.js';
+     6	import { THIN_CONTENT_CHARS, contentLength } from './synthesize.js';
+     7	
+     8	const FAILED_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+     9	const BODY_LIMIT_BYTES = 200_000;
+    10	const DEFAULT_LIMIT = 25;
+    11	const BACKFILL_DEFAULT_CONCURRENCY = 2;
+    12	const DAILY_DEFAULT_CONCURRENCY = 4;
+    13	
+    14	type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+    15	
+    16	export interface LinkEnrichmentEntry {
+    17	  url: string;
+    18	  summary: string | null;
+    19	  status: 'ok' | 'failed';
+    20	  enrichedAt: string;
+    21	  error: string | null;
+    22	}
+    23	
+    24	export interface EnrichThinItemsOptions {
+    25	  fetch?: FetchFn;
+    26	  llm?: (prompt: string) => Promise<string>;
+    27	  limit?: number;
+    28	  now?: Date;
+    29	  onMissingKey?: () => void;
+    30	}
+    31	
+    32	export interface EnrichThinItemsResult {
+    33	  /** Items with a usable cached or newly generated summary in this digest. */
+    34	  enrichedCount: number;
+    35	  summaries: Map<string, string>;
+    36	}
+    37	
+    38	export interface EnrichmentBackfillResult {
+    39	  eligible: number;
+    40	  pending: number;
+    41	  attempted: number;
+    42	  ok: number;
+    43	  failed: number;
+    44	  skippedCached: number;
+    45	  errorKinds: Array<{ error: string; count: number }>;
+    46	}
+    47	
+    48	export interface EnrichBackfillOptions extends EnrichThinItemsOptions {
+    49	  all?: boolean;
+    50	  dryRun?: boolean;
+    51	  retryFailed?: boolean;
+    52	  concurrency?: number;
+    53	  onProgress?: (result: Pick<EnrichmentBackfillResult, 'attempted' | 'ok' | 'failed'>) => void;
+    54	}
+    55	
+    56	/** Fetch/cache summaries for otherwise-thin daily items. This function never throws. */
+    57	export async function enrichThinItems(items: CanonicalRecentItem[], options: EnrichThinItemsOptions = {}): Promise<EnrichThinItemsResult> {
+    58	  const eligible = items.filter((item) => isEligible(item));
+    59	  if (eligible.length === 0) return { enrichedCount: 0, summaries: new Map() };
+    60	  if (!options.llm && !openCodeApiKey()) {
+    61	    options.onMissingKey?.();
+    62	    return { enrichedCount: 0, summaries: new Map() };
+    63	  }
+    64	
+    65	  try {
+    66	    const now = options.now ?? new Date();
+    67	    await ensureEnrichmentSchema();
+    68	    const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
+    69	    await enrichEligibleItems(eligible, cached, options, now, parseLimit(options.limit), undefined, DAILY_DEFAULT_CONCURRENCY);
+    70	    const finalSummaries = usableSummaries(eligible, cached);
+    71	    return { enrichedCount: finalSummaries.size, summaries: finalSummaries };
+    72	  } catch {
+    73	    return { enrichedCount: 0, summaries: new Map() };
+    74	  }
+    75	}
+    76	
+    77	/** Enrich every eligible canonical row, while retaining the daily flow's fetch/cache core. */
+    78	export async function enrichBackfill(options: EnrichBackfillOptions = {}): Promise<EnrichmentBackfillResult> {
+    79	  const items = await readCanonicalItems();
+    80	  const eligible = items.filter(isEligible);
+    81	  await ensureEnrichmentSchema();
+    82	  await removeNowIneligibleFailures(items);
+    83	  const now = options.now ?? new Date();
+    84	  const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
+    85	  const pending = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, options.retryFailed));
+    86	  const skippedCached = eligible.filter((item) => {
+    87	    const entry = cached.get(item.canonicalUrl!);
+    88	    return entry?.status === 'ok' && Boolean(entry.summary?.trim());
+    89	  }).length;
+    90	  const base = { eligible: eligible.length, pending: pending.length, attempted: 0, ok: 0, failed: 0, skippedCached, errorKinds: [] };
+    91	  if (options.dryRun || pending.length === 0) return base;
+    92	  if (!options.llm && !openCodeApiKey()) {
+    93	    options.onMissingKey?.();
+    94	    return base;
+    95	  }
+    96	  const limit = options.all ? Number.POSITIVE_INFINITY : parseLimit(options.limit ?? 100);
+    97	  const updates = await enrichEligibleItems(eligible, cached, options, now, limit, options.onProgress, options.concurrency ?? BACKFILL_DEFAULT_CONCURRENCY, options.retryFailed);
+    98	  return {
+    99	    ...base,
+   100	    attempted: updates.length,
+   101	    ok: updates.filter((entry) => entry.status === 'ok').length,
+   102	    failed: updates.filter((entry) => entry.status === 'failed').length,
+   103	    errorKinds: topErrorKinds(updates),
+   104	  };
+   105	}
+   106	
+   107	/** Append summaries to only the current collection's in-memory search text. */
+   108	export function mergeEnrichmentSummaries(items: CanonicalRecentItem[], summaries: Map<string, string>): void {
+   109	  for (const item of items) {
+   110	    const summary = item.canonicalUrl ? summaries.get(item.canonicalUrl) : undefined;
+   111	    if (summary && !item.searchText.includes(` summary: ${summary}`)) item.searchText = `${item.searchText} summary: ${summary}`.trim();
+   112	  }
+   113	}
+   114	
+   115	export function isEnrichmentEligible(item: CanonicalRecentItem): boolean {
+   116	  if (contentLength(item.searchText) >= THIN_CONTENT_CHARS || !item.canonicalUrl) return false;
+   117	  try {
+   118	    const url = new URL(item.canonicalUrl);
+   119	    // Exclude auth-walled X/Twitter, video-only YouTube, PDFs, and existing non-web/long-content cases.
+   120	    return (url.protocol === 'http:' || url.protocol === 'https:') && !isExcludedEnrichmentUrl(url);
+   121	  } catch {
+   122	    return false;
+   123	  }
+   124	}
+   125	
+   126	const isEligible = isEnrichmentEligible;
+   127	
+   128	function isExcludedEnrichmentUrl(url: URL): boolean {
+   129	  const host = url.hostname.toLowerCase();
+   130	  return /(^|\.)(x|twitter)\.com$/.test(host) || /(^|\.)(youtube\.com|youtu\.be)$/.test(host) || /\.pdf$/i.test(url.pathname);
+   131	}
+   132	
+   133	function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date, retryFailed = false): boolean {
+   134	  if (!cached) return true;
+   135	  if (cached.status === 'ok' && cached.summary?.trim()) return false;
+   136	  return (retryFailed && isTransientError(cached.error)) || !Number.isFinite(Date.parse(cached.enrichedAt)) || Date.parse(cached.enrichedAt) <= now.getTime() - FAILED_RETRY_MS;
+   137	}
+   138	
+   139	function parseLimit(value: number | undefined): number {
+   140	  const raw = value ?? Number(process.env.FT_ENRICH_LIMIT ?? DEFAULT_LIMIT);
+   141	  return Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : DEFAULT_LIMIT;
+   142	}
+   143	
+   144	function usableSummaries(items: CanonicalRecentItem[], cache: Map<string, LinkEnrichmentEntry>, into = new Map<string, string>()): Map<string, string> {
+   145	  for (const item of items) {
+   146	    const entry = item.canonicalUrl ? cache.get(item.canonicalUrl) : undefined;
+   147	    if (item.canonicalUrl && entry?.status === 'ok' && entry.summary?.trim()) into.set(item.canonicalUrl, entry.summary.trim());
+   148	  }
+   149	  return into;
+   150	}
+   151	
+   152	async function readCache(urls: string[]): Promise<Map<string, LinkEnrichmentEntry>> {
+   153	  if (urls.length === 0) return new Map();
+   154	  const dbPath = twitterBookmarksIndexPath();
+   155	  const db = await openDb(dbPath);
+   156	  try {
+   157	    let rows: unknown[][];
+   158	    try {
+   159	      rows = db.exec(`SELECT url, summary, status, enriched_at, error FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
+   160	    } catch (error) {
+   161	      if (!isMissingTableError(error)) throw error;
+   162	      rows = [];
+   163	    }
+   164	    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? ''), error: row[4] == null ? null : String(row[4]) }]));
+   165	  } finally {
+   166	    db.close();
+   167	  }
+   168	}
+   169	
+   170	function isMissingTableError(error: unknown): boolean {
+   171	  return (error instanceof Error ? error.message : String(error)).toLowerCase().includes('no such table');
+   172	}
+   173	
+   174	async function readCanonicalItems(): Promise<CanonicalRecentItem[]> {
+   175	  const db = await openDb(twitterBookmarksIndexPath());
+   176	  try {
+   177	    const rows = db.exec(`SELECT id, canonical_url, display_title, search_text, sources_json,
+   178	      first_saved_at, last_saved_at, primary_category, primary_domain FROM canonical_bookmarks`)[0]?.values ?? [];
+   179	    return rows.map((row) => ({
+   180	      id: String(row[0]), canonicalUrl: row[1] == null ? null : String(row[1]), displayTitle: row[2] == null ? null : String(row[2]),
+   181	      searchText: String(row[3] ?? ''), sources: parseSources(row[4]), firstSavedAt: row[5] == null ? null : String(row[5]),
+   182	      lastSavedAt: row[6] == null ? null : String(row[6]), primaryCategory: row[7] == null ? null : String(row[7]), primaryDomain: row[8] == null ? null : String(row[8]),
+   183	    }));
+   184	  } finally {
+   185	    db.close();
+   186	  }
+   187	}
+   188	
+   189	async function enrichEligibleItems(
+   190	  eligible: CanonicalRecentItem[],
+   191	  cached: Map<string, LinkEnrichmentEntry>,
+   192	  options: EnrichThinItemsOptions,
+   193	  now: Date,
+   194	  limit: number,
+   195	  onProgress?: (result: { attempted: number; ok: number; failed: number }) => void,
+   196	  concurrency = DAILY_DEFAULT_CONCURRENCY,
+   197	  retryFailed = false,
+   198	): Promise<LinkEnrichmentEntry[]> {
+   199	  const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, retryFailed)).slice(0, limit);
+   200	  const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+   201	  const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+   202	  let attempted = 0;
+   203	  let ok = 0;
+   204	  let failed = 0;
+   205	  const enrichOne = async (item: CanonicalRecentItem): Promise<LinkEnrichmentEntry> => {
+   206	    const url = item.canonicalUrl!;
+   207	    let update: LinkEnrichmentEntry;
+   208	    try {
+   209	      const material = await retryTransient('fetch', () => extractPageMaterial(url, fetchFn));
+   210	      await delay(250);
+   211	      const summary = await retryTransient('llm', async () => {
+   212	        const value = (await llm(buildEnrichmentPrompt(material))).trim();
+   213	        if (!value) throw new Error('empty completion');
+   214	        return value;
+   215	      });
+   216	      update = { url, summary, status: 'ok', enrichedAt: now.toISOString(), error: null };
+   217	    } catch (error) {
+   218	      update = { url, summary: null, status: 'failed', enrichedAt: now.toISOString(), error: formatFailure(error) };
+   219	    }
+   220	    attempted += 1;
+   221	    if (update.status === 'ok') ok += 1;
+   222	    else failed += 1;
+   223	    if (onProgress && attempted % 25 === 0) onProgress({ attempted, ok, failed });
+   224	    return update;
+   225	  };
+   226	  const updates: LinkEnrichmentEntry[] = [];
+   227	  for (let start = 0; start < misses.length; start += 50) {
+   228	    const batch = await mapConcurrent(misses.slice(start, start + 50), concurrency, enrichOne);
+   229	    await writeCache(batch);
+   230	    updates.push(...batch);
+   231	  }
+   232	  for (const update of updates) if (update.status === 'ok' && update.summary) cached.set(update.url, update);
+   233	  return updates;
+   234	}
+   235	
+   236	function parseSources(value: unknown): string[] {
+   237	  if (typeof value !== 'string') return [];
+   238	  try {
+   239	    const parsed = JSON.parse(value);
+   240	    return Array.isArray(parsed) ? parsed.filter((source): source is string => typeof source === 'string') : [];
+   241	  } catch {
+   242	    return [];
+   243	  }
+   244	}
+   245	
+   246	async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
+   247	  if (entries.length === 0) return;
+   248	  const dbPath = twitterBookmarksIndexPath();
+   249	  const lock = await acquireDbLock(dbPath);
+   250	  const db = await openDb(dbPath);
+   251	  try {
+   252	    initEnrichmentSchema(db);
+   253	    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at, error) VALUES (?, ?, ?, ?, ?)
+   254	      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at, error = excluded.error`);
+   255	    try {
+   256	      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt, entry.error]);
+   257	    } finally {
+   258	      statement.free();
+   259	    }
+   260	    saveDb(db, dbPath);
+   261	  } finally {
+   262	    db.close();
+   263	    releaseDbLock(lock);
+   264	  }
+   265	}
+   266	
+   267	function initEnrichmentSchema(db: Database): void {
+   268	  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL, error TEXT)');
+   269	  try { db.run('ALTER TABLE link_enrichment ADD COLUMN error TEXT'); } catch (error) { if (!String(error).toLowerCase().includes('duplicate column')) throw error; }
+   270	}
+   271	
+   272	async function ensureEnrichmentSchema(): Promise<void> {
+   273	  const dbPath = twitterBookmarksIndexPath();
+   274	  const lock = await acquireDbLock(dbPath);
+   275	  const db = await openDb(dbPath);
+   276	  try {
+   277	    initEnrichmentSchema(db);
+   278	    saveDb(db, dbPath);
+   279	  } finally {
+   280	    db.close();
+   281	    releaseDbLock(lock);
+   282	  }
+   283	}
+   284	
+   285	async function removeNowIneligibleFailures(items: CanonicalRecentItem[]): Promise<void> {
+   286	  const urls = items.filter((item) => item.canonicalUrl && !isEligible(item)).map((item) => item.canonicalUrl!);
+   287	  if (!urls.length) return;
+   288	  const dbPath = twitterBookmarksIndexPath();
+   289	  const lock = await acquireDbLock(dbPath);
+   290	  const db = await openDb(dbPath);
+   291	  try {
+   292	    initEnrichmentSchema(db);
+   293	    for (let start = 0; start < urls.length; start += 500) {
+   294	      const batch = urls.slice(start, start + 500);
+   295	      db.run(`DELETE FROM link_enrichment WHERE status = 'failed' AND url IN (${batch.map(() => '?').join(',')})`, batch);
+   296	    }
+   297	    saveDb(db, dbPath);
+   298	  } finally {
+   299	    db.close();
+   300	    releaseDbLock(lock);
+   301	  }
+   302	}
+   303	
+   304	function formatFailure(error: unknown): string {
+   305	  const message = error instanceof Error ? error.message : String(error);
+   306	  if (message === 'empty completion' || message.endsWith(': empty completion')) return 'empty completion';
+   307	  const stage = message.startsWith('fetch:') || message.startsWith('llm:') ? '' : 'fetch: ';
+   308	  return `${stage}${message}`.slice(0, 500);
+   309	}
+   310	
+   311	async function retryTransient<T>(stage: 'fetch' | 'llm', operation: () => Promise<T>): Promise<T> {
+   312	  let lastError: unknown;
+   313	  for (let attempt = 0; attempt < 3; attempt += 1) {
+   314	    try { return await operation(); } catch (error) {
+   315	      lastError = error;
+   316	      if (attempt === 2 || !isTransientError(error)) throw new Error(`${stage}: ${errorMessage(error)}`);
+   317	      await delay((attempt === 0 ? 1_000 : 4_000) + Math.floor(Math.random() * 250));
+   318	    }
+   319	  }
+   320	  throw lastError;
+   321	}
+   322	
+   323	function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+   324	
+   325	function isTransientError(error: unknown): boolean {
+   326	  const message = (typeof error === 'string' ? error : errorMessage(error)).toLowerCase();
+   327	  return /\b429\b|\b5\d\d\b|econnreset|etimedout|eai_again|aborted|aborterror|network|fetch failed|timed out|empty completion/.test(message);
+   328	}
+   329	
+   330	function topErrorKinds(entries: LinkEnrichmentEntry[]): Array<{ error: string; count: number }> {
+   331	  const counts = new Map<string, number>();
+   332	  for (const entry of entries) if (entry.status === 'failed' && entry.error) counts.set(entry.error, (counts.get(entry.error) ?? 0) + 1);
+   333	  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([error, count]) => ({ error, count }));
+   334	}
+   335	
+   336	function delay(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
+   337	
+   338	async function extractPageMaterial(url: string, fetchFn: FetchFn): Promise<string> {
+   339	  const controller = new AbortController();
+   340	  const timer = setTimeout(() => controller.abort(), 8_000);
+   341	  try {
+   342	    let current = assertSafeFetchUrl(url);
+   343	    let response: Response | undefined;
+   344	    // DNS rebinding protection is out of scope: validate hostname/IP literals
+   345	    // before each request, while manual redirects prevent bypassing that check.
+   346	    for (let redirects = 0; redirects <= 5; redirects += 1) {
+   347	      response = await fetchFn(current, { redirect: 'manual', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FieldTheoryDigest/1.0)' } });
+   348	      if (!isRedirect(response.status)) break;
+   349	      const location = response.headers.get('location');
+   350	      await response.body?.cancel().catch(() => undefined);
+   351	      if (!location || redirects === 5) throw new Error('unsafe or excessive redirect');
+   352	      current = assertSafeFetchUrl(new URL(location, current).toString());
+   353	    }
+   354	    if (!response) throw new Error('no response');
+   355	    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+   356	    const html = await readLimitedBody(response, BODY_LIMIT_BYTES);
+   357	    const title = firstMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
+   358	    const description = firstMatch(html, /<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']*)["']/i)
+   359	      ?? firstMatch(html, /<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["'](?:description|og:description)["']/i);
+   360	    const visible = decodeHtml(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 1200);
+   361	    return [`URL: ${url}`, title && `Title: ${decodeHtml(title)}`, description && `Description: ${decodeHtml(description)}`, visible && `Text: ${visible}`].filter(Boolean).join('\n');
+   362	  } finally {
+   363	    clearTimeout(timer);
+   364	  }
+   365	}
+   366	
+   367	function buildEnrichmentPrompt(material: string): string {
+   368	  return `For a personal knowledge digest, summarize what this page is about in 2-3 plain sentences. No preamble.\n\n${material}`;
+   369	}
+   370	
+   371	async function readLimitedBody(response: Response, limit: number): Promise<string> {
+   372	  // A no-body response has no bytes to read; never fall back to response.text(),
+   373	  // which may buffer an unbounded body in nonstandard fetch implementations.
+   374	  if (!response.body) return '';
+   375	  const reader = response.body.getReader();
+   376	  const chunks: Uint8Array[] = [];
+   377	  let size = 0;
+   378	  try {
+   379	    while (size < limit) {
+   380	      const { done, value } = await reader.read();
+   381	      if (done) break;
+   382	      const remaining = limit - size;
+   383	      chunks.push(value.byteLength > remaining ? value.slice(0, remaining) : value);
+   384	      size += Math.min(value.byteLength, remaining);
+   385	    }
+   386	  } finally {
+   387	    await reader.cancel().catch(() => undefined);
+   388	  }
+   389	  const all = new Uint8Array(size);
+   390	  let offset = 0;
+   391	  for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.byteLength; }
+   392	  return new TextDecoder().decode(all);
+   393	}
+   394	
+   395	function assertSafeFetchUrl(value: string): string {
+   396	  const url = new URL(value);
+   397	  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('unsupported URL scheme');
+   398	  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+   399	  if (hostname === 'localhost' || hostname.endsWith('.local') || isPrivateIpLiteral(hostname)) {
+   400	    throw new Error('unsafe fetch host');
+   401	  }
+   402	  return url.toString();
+   403	}
+   404	
+   405	function isPrivateIpLiteral(hostname: string): boolean {
+   406	  const octets = hostname.split('.');
+   407	  if (octets.length === 4 && octets.every((part) => /^\d+$/.test(part) && Number(part) <= 255)) {
+   408	    const [a, b] = octets.map(Number);
+   409	    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+   410	  }
+   411	  return hostname === '::' || hostname === '::1' || /^[fcfd][0-9a-f]{1,3}:/i.test(hostname);
+   412	}
+   413	
+   414	function isRedirect(status: number): boolean {
+   415	  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+   416	}
+   417	
+   418	function firstMatch(text: string, pattern: RegExp): string | null {
+   419	  return pattern.exec(text)?.[1]?.trim() || null;
+   420	}
+  1000	          }
+  1001	        }
+  1002	
+  1003	        const useApi = Boolean(options.api);
+  1004	        const mode = Boolean(options.rebuild) ? 'full' : 'incremental';
+  1005	
+  1006	        if (useApi) {
+  1007	          const result = await syncTwitterBookmarks(mode, {
+  1008	            targetAdds: typeof options.targetAdds === 'number' && !Number.isNaN(options.targetAdds) ? options.targetAdds : undefined,
+  1009	          });
+  1010	          console.log(`\n  \u2713 ${result.added} new bookmarks synced (${result.totalBookmarks} total)`);
+  1011	          console.log(`  \u2713 Data: ${dataDir()}\n`);
+  1012	          warnIfEmpty(result.totalBookmarks);
+  1013	          await postSyncMediaFetch();
+  1014	          const newCount = await rebuildIndex();
+  1015	          if (options.classify && newCount > 0) {
+  1016	            await classifyNew(engineOverride);
+  1017	          }
+  1018	        } else {
+  1019	          const startTime = Date.now();
+  1020	          let lastSync: SyncProgress = { page: 0, totalFetched: 0, newAdded: 0, running: true, done: false };
+  1021	          const spinner = createSpinner(() => {
+  1022	            const elapsed = Math.round((Date.now() - startTime) / 1000);
+  1023	            if (lastSync.stopReason && lastSync.running) {
+  1024	              return `${lastSync.stopReason}  \u2502  ${lastSync.newAdded} new  \u2502  ${elapsed}s`;
+  1025	            }
+  1026	            return `Syncing bookmarks...  ${lastSync.newAdded} new  \u2502  page ${lastSync.page}  \u2502  ${elapsed}s`;
+  1027	          });
+  1028	          const { csrfToken, cookieHeader } = parseCookieOption(options.cookies);
+  1029	
+  1030	          // Load saved cursor for --continue mode
+  1031	          let resumeCursor: string | undefined;
+  1032	          if (options.continue) {
+  1033	            try {
+  1034	              const statePath = twitterBackfillStatePath();
+  1035	              const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+  1036	              resumeCursor = state?.lastCursor;
+  1037	            } catch { /* no state file yet */ }
+  1038	            if (resumeCursor) {
+  1039	              console.log('  Resuming from saved position...\n');
+  1040	            } else {
+  1041	              console.log('  No saved cursor — scanning past existing bookmarks to find new ones...\n');
+  1042	            }
+  1043	          }
+  1044	
+  1045	          // When continuing without a cursor, give the scan enough runway to
+  1046	          // pass small local gaps, but still stop if every fetched page is old.
+  1047	          const continueWithoutCursor = Boolean(options.continue) && !resumeCursor;
+  1048	
+  1049	          const result = await runWithSpinner(spinner, () => syncBookmarksGraphQL({
+  1050	            incremental: !Boolean(options.rebuild) && !Boolean(options.continue),
+  1051	            resumeCursor,
+  1052	            stalePageLimit: continueWithoutCursor ? 20 : undefined,
+  1053	            staleWhenNoNewRecords: continueWithoutCursor,
+  1054	            maxPages: options.maxPages != null ? Number(options.maxPages) : undefined,
+  1055	            targetAdds: typeof options.targetAdds === 'number' && !Number.isNaN(options.targetAdds) ? options.targetAdds : undefined,
+  1056	            delayMs: Number(options.delayMs) || 600,
+  1057	            maxMinutes: Number(options.maxMinutes) || 30,
+  1058	            browser: options.browser ? String(options.browser) : undefined,
+  1059	            csrfToken,
+  1060	            cookieHeader,
+  1061	            chromeUserDataDir: options.chromeUserDataDir ? String(options.chromeUserDataDir) : undefined,
+  1062	            chromeProfileDirectory: options.chromeProfileDirectory ? String(options.chromeProfileDirectory) : undefined,
+  1063	            firefoxProfileDir: options.firefoxProfileDir ? String(options.firefoxProfileDir) : undefined,
+  1064	            onProgress: (status: SyncProgress) => {
+  1065	              lastSync = status;
+  1066	              spinner.update();
+  1067	            },
+  1068	          }));
+  1069	
+  1070	          console.log(`\n  \u2713 ${result.added} new bookmarks synced (${result.totalBookmarks} total)`);
+  1071	          console.log(`  ${friendlyStopReason(result.stopReason)}`);
+  1072	          if (result.stopReason === 'rate limited') {
+  1073	            const retryAfter = formatRetryAfter(result.retryAfterSec);
+  1074	            if (retryAfter) {
+  1075	              console.log(`  Retry after about ${retryAfter}, then resume with: ft sync --continue`);
+  1076	            } else {
+  1077	              console.log('  Resume with: ft sync --continue');
+  1078	            }
+  1079	          }
+  1080	          if (result.bookmarkedAtRepaired > 0) {
+  1081	            console.log(`  \u2713 ${result.bookmarkedAtRepaired} invalid bookmark dates cleared`);
+  1082	          }
+  1083	          if (result.bookmarkedAtMissing > 0) {
+  1084	            console.log(`  ${result.bookmarkedAtMissing} bookmarks missing a reliable bookmark date`);
+  1085	          }
+  1086	          console.log(`  \u2713 Data: ${dataDir()}\n`);
+  1087	
+  1088	          warnIfEmpty(result.totalBookmarks);
+  1089	
+  1090	          // ── Folder sync (runs after main timeline when --folders is passed) ──
+  1091	          if (folderMode !== 'off') {
+  1092	            try {
+  1093	              process.stderr.write(`\n  Syncing bookmark folders...\n`);
+  1094	              const folderResult = await syncBookmarkFolders({
+  1095	                csrfToken,
+  1096	                cookieHeader,
+  1097	                browser: options.browser ? String(options.browser) : undefined,
+  1098	                chromeUserDataDir: options.chromeUserDataDir ? String(options.chromeUserDataDir) : undefined,
+  1099	                chromeProfileDirectory: options.chromeProfileDirectory ? String(options.chromeProfileDirectory) : undefined,
+  1100	                firefoxProfileDir: options.firefoxProfileDir ? String(options.firefoxProfileDir) : undefined,
+  1101	                delayMs: Number(options.delayMs) || 600,
+  1102	                onlyFolderName: folderMode === 'one' ? folderName : undefined,
+  1103	                onProgress: (status: FolderSyncProgress) => {
+  1104	                  if (status.phase === 'walking' && status.folder) {
+  1105	                    process.stderr.write(`  \u2192 ${sanitizeForDisplay(status.folder.name)}...\n`);
+  1106	                  }
+  1107	                },
+  1108	              });
+  1109	
+  1110	              // Summary output — one line per folder that we actually walked
+  1111	              const synced = folderResult.perFolder.filter((f) => f.stats);
+  1112	              if (synced.length > 0) {
+  1113	                console.log('');
+  1114	                for (const { folder, stats } of synced) {
+  1115	                  if (!stats) continue;
+  1116	                  const safeName = sanitizeForDisplay(folder.name);
+  1117	                  console.log(`  \u2713 ${safeName.padEnd(24)}  ${formatFolderMirrorStats(stats)}`);
+  1118	                }
+  1119	              }
+  1120	
+  1121	              if (folderResult.skippedFolders.length > 0) {
+  1122	                console.log('');
+  1123	                for (const { folder, reason } of folderResult.skippedFolders) {
+  1124	                  console.log(`  \u26a0 Skipped ${sanitizeForDisplay(folder.name)}: ${reason}`);
+  1125	                }
+  1126	                const retryCmd = folderMode === 'one' ? `ft sync --folder "${folderName}"` : `ft sync --folders`;
+  1127	                console.log(`  Re-run \`${retryCmd}\` to retry.`);
+  1128	              }
+  1129	
+  1130	              if (folderResult.orphanFoldersCleared.length > 0) {
+  1131	                const total = folderResult.orphanFoldersCleared.reduce((a, b) => a + b.recordsAffected, 0);
+  1132	                console.log(`\n  \u2713 Cleaned up ${total} tags from ${folderResult.orphanFoldersCleared.length} deleted folder(s).`);
+  1133	              }
+  1134	
+  1135	              console.log('');
+  1136	            } catch (err) {
+  1137	              console.error(`\n  Folder sync error: ${(err as Error).message}\n`);
+  1138	              // Continue — main sync already succeeded, folders are bonus
+  1139	            }
+  1140	          }
+  1141	
+  1142	          await postSyncMediaFetch();
+  1143	
+  1144	          const newCount = await rebuildIndex();
+  1145	          if (options.classify && newCount > 0) {
+  1146	            await classifyNew(engineOverride);
+  1147	          }
+  1148	        }
+  1149	
+  1150	        // Opportunistic wiki hygiene: if previous `ft wiki` runs left fenced
+src/db.ts:47:export function saveDb(db: Database, filePath: string): void {
+src/db.ts:77:export async function acquireDbLock(filePath: string, options: DbLockOptions = {}): Promise<DbLock> {
+src/cli.ts:75:import { dataDir, ensureDataDir, ensureXListsDir, isFirstRun, migrateLegacyIdeasData, twitterBookmarksIndexPath, twitterBackfillStatePath, mdDir, bookmarkMediaDir, bookmarkMediaManifestPath } from './paths.js';
+src/cli.ts:546:    if (fs.existsSync(twitterBookmarksIndexPath())) {
+src/cli.ts:604:  if (isFirstRun() && !fs.existsSync(twitterBookmarksIndexPath())) {
+src/cli.ts:622:  if (!fs.existsSync(twitterBookmarksIndexPath())) {
+src/cli.ts:636:  if (!fs.existsSync(twitterBookmarksIndexPath())) {
+src/cli.ts:2186:      if (!fs.existsSync(twitterBookmarksIndexPath())) {
+src/canonical-bookmarks-db.ts:4:import { acquireDbLock, openDb, releaseDbLock, saveDb } from './db.js';
+src/canonical-bookmarks-db.ts:6:import { dataDir, twitterBookmarksCachePath, twitterBookmarksIndexPath } from './paths.js';
+src/canonical-bookmarks-db.ts:663:  const dbPath = twitterBookmarksIndexPath();
+src/canonical-bookmarks-db.ts:664:  const lock = await acquireDbLock(dbPath);
+src/canonical-bookmarks-db.ts:740:    saveDb(db, dbPath);
+src/canonical-bookmarks-db.ts:762:  const dbPath = twitterBookmarksIndexPath();
+src/canonical-bookmarks-db.ts:785:    saveDb(db, dbPath);
+src/canonical-bookmarks-db.ts:794:  const db = await openDb(twitterBookmarksIndexPath());
+src/canonical-bookmarks-db.ts:857:  const db = await openDb(twitterBookmarksIndexPath());
+src/canonical-bookmarks-db.ts:901:  const db = await openDb(twitterBookmarksIndexPath());
+src/canonical-bookmarks-db.ts:942:  const db = await openDb(twitterBookmarksIndexPath());
+src/canonical-bookmarks-db.ts:978:  const db = await openDb(twitterBookmarksIndexPath());
+src/canonical-bookmarks-db.ts:1027:  const db = await openDb(twitterBookmarksIndexPath());
+src/canonical-bookmarks-db.ts:1088:  const db = await openDb(twitterBookmarksIndexPath());
+src/canonical-bookmarks-db.ts:1123:  const db = await openDb(twitterBookmarksIndexPath());
+src/canonical-bookmarks-db.ts:1168:  const dbPath = twitterBookmarksIndexPath();
+src/canonical-bookmarks-db.ts:1239:    saveDb(db, dbPath);
+src/db.ts:47:export function saveDb(db: Database, filePath: string): void {
+src/db.ts:77:export async function acquireDbLock(filePath: string, options: DbLockOptions = {}): Promise<DbLock> {
+src/graphql-bookmarks.ts:1802:    const { twitterBookmarksIndexPath } = await import('./paths.js');
+src/graphql-bookmarks.ts:1803:    const db = await openDb(twitterBookmarksIndexPath());
+src/bookmarks-viz.ts:3:import { twitterBookmarksIndexPath } from './paths.js';
+src/bookmarks-viz.ts:274:  const db = await openDb(twitterBookmarksIndexPath());
+src/paths.ts:146:export function twitterBookmarksIndexPath(): string {
+src/following/db.ts:11:import { openDb, saveDb } from '../db.js';
+src/following/db.ts:14:import { twitterBookmarksIndexPath } from '../paths.js';
+src/following/db.ts:303:    saveDb(db, dbPath);
+src/following/db.ts:539:    saveDb(db, followingIndexPath());
+src/bookmarks-db.ts:2:import { openDb, saveDb } from './db.js';
+src/bookmarks-db.ts:5:import { twitterBookmarksCachePath, twitterBookmarksIndexPath } from './paths.js';
+src/bookmarks-db.ts:438:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:501:    saveDb(db, dbPath);
+src/bookmarks-db.ts:540:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:626:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:687:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:706:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:777:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:835:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:886:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:902:    saveDb(db, dbPath);
+src/bookmarks-db.ts:924:  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+src/bookmarks-db.ts:951:  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+src/bookmarks-db.ts:980:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:1011:  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+src/bookmarks-db.ts:1030:  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+src/bookmarks-db.ts:1060:  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+src/bookmarks-db.ts:1091:  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+src/bookmarks-db.ts:1121:  const db = existingDb ?? await openDb(twitterBookmarksIndexPath());
+src/bookmarks-db.ts:1146:  const db = await openDb(twitterBookmarksIndexPath());
+src/bookmarks-db.ts:1158:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:1168:    saveDb(db, dbPath);
+src/bookmarks-db.ts:1177:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:1189:    saveDb(db, dbPath);
+src/bookmarks-db.ts:1206:  const dbPath = twitterBookmarksIndexPath();
+src/bookmarks-db.ts:1220:    saveDb(db, dbPath);
+src/bookmark-classify.ts:66:  /\bsecurity\s+(flaw|bug|issue|patch|advisory|update|breach)/i,
+src/field-status.ts:15:  twitterBookmarksIndexPath,
+src/field-status.ts:59:      bookmarksIndexPath: twitterBookmarksIndexPath(),
+src/daily/enrich.ts:3:import { acquireDbLock, openDb, releaseDbLock, saveDb } from '../db.js';
+src/daily/enrich.ts:4:import { twitterBookmarksIndexPath } from '../paths.js';
+src/daily/enrich.ts:154:  const dbPath = twitterBookmarksIndexPath();
+src/daily/enrich.ts:175:  const db = await openDb(twitterBookmarksIndexPath());
+src/daily/enrich.ts:248:  const dbPath = twitterBookmarksIndexPath();
+src/daily/enrich.ts:249:  const lock = await acquireDbLock(dbPath);
+src/daily/enrich.ts:260:    saveDb(db, dbPath);
+src/daily/enrich.ts:273:  const dbPath = twitterBookmarksIndexPath();
+src/daily/enrich.ts:274:  const lock = await acquireDbLock(dbPath);
+src/daily/enrich.ts:278:    saveDb(db, dbPath);
+src/daily/enrich.ts:288:  const dbPath = twitterBookmarksIndexPath();
+src/daily/enrich.ts:289:  const lock = await acquireDbLock(dbPath);
+src/daily/enrich.ts:297:    saveDb(db, dbPath);
+src/cli.ts:75:import { dataDir, ensureDataDir, ensureXListsDir, isFirstRun, migrateLegacyIdeasData, twitterBookmarksIndexPath, twitterBackfillStatePath, mdDir, bookmarkMediaDir, bookmarkMediaManifestPath } from './paths.js';
+src/cli.ts:546:    if (fs.existsSync(twitterBookmarksIndexPath())) {
+src/cli.ts:604:  if (isFirstRun() && !fs.existsSync(twitterBookmarksIndexPath())) {
+src/cli.ts:622:  if (!fs.existsSync(twitterBookmarksIndexPath())) {
+src/cli.ts:636:  if (!fs.existsSync(twitterBookmarksIndexPath())) {
+src/cli.ts:2186:      if (!fs.existsSync(twitterBookmarksIndexPath())) {
+src/bookmark-classify-llm.ts:9:import { openDb, saveDb } from './db.js';
+src/bookmark-classify-llm.ts:10:import { twitterBookmarksIndexPath } from './paths.js';
+src/bookmark-classify-llm.ts:181:  const dbPath = twitterBookmarksIndexPath();
+src/bookmark-classify-llm.ts:234:        saveDb(db, dbPath);
+src/bookmark-classify-llm.ts:298:  const dbPath = twitterBookmarksIndexPath();
+src/bookmark-classify-llm.ts:353:        saveDb(db, dbPath);
+src/daily/interests.ts:10:import { libraryDir, twitterBookmarksIndexPath } from '../paths.js';
+src/daily/interests.ts:52:  const db = await openDb(twitterBookmarksIndexPath());
+src/daily/interests.ts:82:  const db = await openDb(twitterBookmarksIndexPath());
+src/youtube/state.ts:83:  const release = await acquireYoutubeStateLock();
+src/youtube/state.ts:271:async function acquireYoutubeStateLock(): Promise<() => Promise<void>> {
+
+exec
+/bin/zsh -lc "nl -ba src/daily/enrich.ts | sed -n '420,620p'
+nl -ba src/cli.ts | sed -n '2140,2255p'
+nl -ba src/db.ts | sed -n '1,155p'
+git diff 02d5ef8"'^ 02d5ef8 -- src/daily/enrich.ts src/cli.ts | sed -n '"'1,700p'" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+   420	}
+   421	
+   422	function decodeHtml(text: string): string {
+   423	  return text.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>');
+   424	}
+   425	
+   426	async function mapConcurrent<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+   427	  const results: R[] = [];
+   428	  let cursor = 0;
+   429	  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+   430	    while (cursor < items.length) {
+   431	      const item = items[cursor++];
+   432	      results.push(await fn(item));
+   433	    }
+   434	  }));
+   435	  return results;
+   436	}
+  2140	    .action(safe(async (options) => {
+  2141	      if (!requireIndex()) return;
+  2142	      const stats = await getStats();
+  2143	      if (options.json) {
+  2144	        printJson(stats);
+  2145	        return;
+  2146	      }
+  2147	      console.log(`Bookmarks: ${stats.totalBookmarks}`);
+  2148	      console.log(`Unique authors: ${stats.uniqueAuthors}`);
+  2149	      console.log(`Date range: ${stats.dateRange.earliest?.slice(0, 10) ?? '?'} to ${stats.dateRange.latest?.slice(0, 10) ?? '?'}`);
+  2150	      console.log(`\nTop authors:`);
+  2151	      for (const a of stats.topAuthors) console.log(`  @${a.handle}: ${a.count}`);
+  2152	      console.log(`\nLanguages:`);
+  2153	      for (const l of stats.languageBreakdown) console.log(`  ${l.language}: ${l.count}`);
+  2154	    }));
+  2155	
+  2156	  // ── viz ─────────────────────────────────────────────────────────────────
+  2157	
+  2158	  program
+  2159	    .command('viz')
+  2160	    .description('Visual dashboard of your bookmarking patterns')
+  2161	    .action(safe(async () => {
+  2162	      if (!requireIndex()) return;
+  2163	      console.log(await renderViz());
+  2164	    }));
+  2165	
+  2166	  // ── serve ───────────────────────────────────────────────────────────────
+  2167	
+  2168	  program
+  2169	    .command('serve')
+  2170	    .description('Serve a local web interface for the unified Field Theory library')
+  2171	    .option('--host <host>', 'Host interface to bind', process.env.FT_SERVE_HOST ?? '127.0.0.1')
+  2172	    .option('--port <port>', 'TCP port (0 selects an available port)', process.env.FT_SERVE_PORT ?? '3000')
+  2173	    .action(safe(async (options: { host: string; port: string }) => {
+  2174	      const host = String(options.host).trim();
+  2175	      const port = Number(options.port);
+  2176	      if (!host) {
+  2177	        console.error('  --host must not be empty');
+  2178	        process.exitCode = 1;
+  2179	        return;
+  2180	      }
+  2181	      if (!Number.isInteger(port) || port < 0 || port > 65535) {
+  2182	        console.error('  --port must be an integer from 0 to 65535');
+  2183	        process.exitCode = 1;
+  2184	        return;
+  2185	      }
+  2186	      if (!fs.existsSync(twitterBookmarksIndexPath())) {
+  2187	        console.error('  No bookmark index found. Run `ft sync` or `ft index` first.');
+  2188	        process.exitCode = 1;
+  2189	        return;
+  2190	      }
+  2191	      await runBookmarkWebServer({ host, port });
+  2192	    }));
+  2193	
+  2194	  // ── classify ────────────────────────────────────────────────────────────
+  2195	
+  2196	  program
+  2197	    .command('classify')
+  2198	    .description('Classify bookmarks by category and domain using LLM (requires claude or codex CLI)')
+  2199	    .option('--regex', 'Use simple regex classification instead of LLM')
+  2200	    .option('--unified', 'Classify unified canonical bookmarks (currently supports --regex only)')
+  2201	    .addOption(engineOption())
+  2202	    .action(safe(async (options) => {
+  2203	      if (options.unified) {
+  2204	        if (!options.regex) {
+  2205	          console.error('  Error: --unified currently supports only --regex.');
+  2206	          process.exitCode = 1;
+  2207	          return;
+  2208	        }
+  2209	        if (!requireUnifiedIndex()) return;
+  2210	        process.stderr.write('Classifying unified bookmarks (regex)...\n');
+  2211	        const result = await classifyCanonicalBookmarks();
+  2212	        console.log(`Unified bookmarks: ${result.classified}/${result.total} classified`);
+  2213	        return;
+  2214	      }
+  2215	      if (!requireData()) return;
+  2216	      if (options.regex) {
+  2217	        process.stderr.write('Classifying bookmarks (regex)...\n');
+  2218	        const result = await classifyAndRebuild();
+  2219	        console.log(`Indexed ${result.recordCount} bookmarks \u2192 ${result.dbPath}`);
+  2220	        console.log(formatClassificationSummary(result.summary));
+  2221	      } else {
+  2222	        const engine = await resolveEngine({ override: options.engine ? String(options.engine) : undefined });
+  2223	
+  2224	        let catStart = Date.now();
+  2225	        process.stderr.write('Classifying categories with LLM (batches of 50, ~2 min per batch)...\n');
+  2226	        const catResult = await classifyWithLlm({
+  2227	          engine,
+  2228	          onBatch: (done: number, total: number) => {
+  2229	            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  2230	            const elapsed = Math.round((Date.now() - catStart) / 1000);
+  2231	            process.stderr.write(`  Categories: ${done}/${total} (${pct}%) \u2502 ${elapsed}s elapsed\n`);
+  2232	          },
+  2233	        });
+  2234	        console.log(`\nEngine: ${catResult.engine}`);
+  2235	        console.log(`Categories: ${catResult.classified}/${catResult.totalUnclassified} classified`);
+  2236	
+  2237	        let domStart = Date.now();
+  2238	        process.stderr.write('\nClassifying domains with LLM (batches of 50, ~2 min per batch)...\n');
+  2239	        const domResult = await classifyDomainsWithLlm({
+  2240	          engine,
+  2241	          all: false,
+  2242	          onBatch: (done: number, total: number) => {
+  2243	            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  2244	            const elapsed = Math.round((Date.now() - domStart) / 1000);
+  2245	            process.stderr.write(`  Domains: ${done}/${total} (${pct}%) \u2502 ${elapsed}s elapsed\n`);
+  2246	          },
+  2247	        });
+  2248	        console.log(`\nDomains: ${domResult.classified}/${domResult.totalUnclassified} classified`);
+  2249	      }
+  2250	    }));
+  2251	
+  2252	  // ── classify-domains ────────────────────────────────────────────────────
+  2253	
+  2254	  program
+  2255	    .command('classify-domains')
+     1	import type { Database, SqlJsStatic } from 'sql.js';
+     2	import { createRequire } from 'node:module';
+     3	import fs from 'node:fs';
+     4	import path from 'node:path';
+     5	
+     6	const require = createRequire(import.meta.url);
+     7	
+     8	let sqlPromise: Promise<SqlJsStatic> | undefined;
+     9	const LOCK_STALE_MS = 10 * 60 * 1000;
+    10	const LOCK_TIMEOUT_MS = 2 * 60 * 1000;
+    11	const LOCK_POLL_MS = 250;
+    12	
+    13	export interface DbLockOptions {
+    14	  staleAfterMs?: number;
+    15	  timeoutMs?: number;
+    16	  pollIntervalMs?: number;
+    17	}
+    18	
+    19	export interface DbLock {
+    20	  path: string;
+    21	}
+    22	
+    23	function getSql(): Promise<SqlJsStatic> {
+    24	  if (!sqlPromise) {
+    25	    const initSqlJs = require('sql.js-fts5') as (opts: any) => Promise<SqlJsStatic>;
+    26	    const wasmPath = require.resolve('sql.js-fts5/dist/sql-wasm.wasm');
+    27	    const wasmBinary = fs.readFileSync(wasmPath);
+    28	    sqlPromise = initSqlJs({ wasmBinary });
+    29	  }
+    30	  return sqlPromise!;
+    31	}
+    32	
+    33	export async function openDb(filePath: string): Promise<Database> {
+    34	  const SQL = await getSql();
+    35	  if (fs.existsSync(filePath)) {
+    36	    const buf = fs.readFileSync(filePath);
+    37	    return new SQL.Database(buf);
+    38	  }
+    39	  return new SQL.Database();
+    40	}
+    41	
+    42	export async function createDb(): Promise<Database> {
+    43	  const SQL = await getSql();
+    44	  return new SQL.Database();
+    45	}
+    46	
+    47	export function saveDb(db: Database, filePath: string): void {
+    48	  const dir = path.dirname(filePath);
+    49	  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    50	  const data = db.export();
+    51	  const tmp = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+    52	
+    53	  // Crash-durable write: openSync → writeSync → fsyncSync → close → rename → fsync parent dir.
+    54	  // On power loss, the target file either has the old content or the full new content —
+    55	  // never a zero-byte or partially-written bookmarks.db.
+    56	  const fd = fs.openSync(tmp, 'w', 0o600);
+    57	  try {
+    58	    fs.writeSync(fd, Buffer.from(data));
+    59	    fs.fsyncSync(fd);
+    60	  } finally {
+    61	    fs.closeSync(fd);
+    62	  }
+    63	  fs.renameSync(tmp, filePath);
+    64	
+    65	  try {
+    66	    const dirFd = fs.openSync(dir, 'r');
+    67	    try {
+    68	      fs.fsyncSync(dirFd);
+    69	    } finally {
+    70	      fs.closeSync(dirFd);
+    71	    }
+    72	  } catch {
+    73	    // Windows can't open a dir for fsync — the file fsync above is the critical guarantee.
+    74	  }
+    75	}
+    76	
+    77	export async function acquireDbLock(filePath: string, options: DbLockOptions = {}): Promise<DbLock> {
+    78	  const lockPath = `${filePath}.lock`;
+    79	  const staleAfterMs = options.staleAfterMs ?? LOCK_STALE_MS;
+    80	  const timeoutMs = options.timeoutMs ?? LOCK_TIMEOUT_MS;
+    81	  const pollIntervalMs = options.pollIntervalMs ?? LOCK_POLL_MS;
+    82	  const deadline = Date.now() + timeoutMs;
+    83	  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    84	
+    85	  while (true) {
+    86	    try {
+    87	      const fd = fs.openSync(lockPath, 'wx', 0o600);
+    88	      try {
+    89	        fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
+    90	        fs.fsyncSync(fd);
+    91	      } finally {
+    92	        fs.closeSync(fd);
+    93	      }
+    94	      return { path: lockPath };
+    95	    } catch (error) {
+    96	      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    97	      if (isStaleLock(lockPath, staleAfterMs)) {
+    98	        console.warn(`Stealing stale database lock: ${lockPath}`);
+    99	        try { fs.unlinkSync(lockPath); } catch (unlinkError) {
+   100	          if ((unlinkError as NodeJS.ErrnoException).code !== 'ENOENT') throw unlinkError;
+   101	        }
+   102	        continue;
+   103	      }
+   104	      if (Date.now() >= deadline) throw new Error(`Timed out waiting for database lock: ${lockPath}`);
+   105	      await new Promise<void>((resolve) => setTimeout(resolve, pollIntervalMs));
+   106	    }
+   107	  }
+   108	}
+   109	
+   110	export function releaseDbLock(lock: DbLock): void {
+   111	  try {
+   112	    fs.unlinkSync(lock.path);
+   113	  } catch (error) {
+   114	    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+   115	  }
+   116	}
+   117	
+   118	function isStaleLock(lockPath: string, staleAfterMs: number): boolean {
+   119	  try {
+   120	    return Date.now() - fs.statSync(lockPath).mtimeMs > staleAfterMs;
+   121	  } catch (error) {
+   122	    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+   123	    throw error;
+   124	  }
+   125	}
+diff --git a/src/cli.ts b/src/cli.ts
+index 06624fa..379a094 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -1334,20 +1334,34 @@ export function buildCli() {
+     .option('--limit <n>', 'Maximum links to attempt', (v: string) => Number(v), 100)
+     .option('--dry-run', 'Print eligible and pending counts without enriching', false)
+     .option('--all', 'Attempt every pending eligible link', false)
++    .option('--concurrency <n>', 'Concurrent backfill workers (default: 2)', (v: string) => Number(v), 2)
++    .option('--retry-failed', 'Immediately retry cached transient failures', false)
+     .action(safe(async (options) => {
+       ensureDataDir();
+-      const result = await enrichBackfill({
+-        limit: typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : 100,
+-        all: Boolean(options.all),
+-        dryRun: Boolean(options.dryRun),
+-        onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
+-        onProgress: ({ attempted, ok, failed }) => console.log(`  progress: processed ${attempted} / ok ${ok} / failed ${failed}`),
+-      });
++      const crashGuard = (kind: string) => (error: unknown) => console.error(`  enrich-backfill ${kind}: ${error instanceof Error ? error.message : String(error)}`);
++      const onUncaughtException = crashGuard('uncaught exception');
++      const onUnhandledRejection = crashGuard('unhandled rejection');
++      process.on('uncaughtException', onUncaughtException);
++      process.on('unhandledRejection', onUnhandledRejection);
++      let result;
++      try {
++        result = await enrichBackfill({
++          limit: typeof options.limit === 'number' && Number.isFinite(options.limit) ? options.limit : 100,
++          all: Boolean(options.all), dryRun: Boolean(options.dryRun), retryFailed: Boolean(options.retryFailed),
++          concurrency: typeof options.concurrency === 'number' && Number.isFinite(options.concurrency) ? Math.max(1, Math.floor(options.concurrency)) : 2,
++          onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
++          onProgress: ({ attempted, ok, failed }) => console.log(`  progress: processed ${attempted} / ok ${ok} / failed ${failed}`),
++        });
++      } finally {
++        process.removeListener('uncaughtException', onUncaughtException);
++        process.removeListener('unhandledRejection', onUnhandledRejection);
++      }
+       if (options.dryRun) {
+         console.log(`eligible: ${result.eligible}; pending: ${result.pending}`);
+         return;
+       }
+       console.log(`eligible: ${result.eligible}; attempted: ${result.attempted}; ok: ${result.ok}; failed: ${result.failed}; skipped-cached: ${result.skippedCached}`);
++      if (result.errorKinds.length) console.log(`top errors: ${result.errorKinds.map(({ error, count }) => `${count}× ${error}`).join('; ')}`);
+     }));
+ 
+   program
+diff --git a/src/daily/enrich.ts b/src/daily/enrich.ts
+index fb17a71..7539c84 100644
+--- a/src/daily/enrich.ts
++++ b/src/daily/enrich.ts
+@@ -8,6 +8,8 @@ import { THIN_CONTENT_CHARS, contentLength } from './synthesize.js';
+ const FAILED_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+ const BODY_LIMIT_BYTES = 200_000;
+ const DEFAULT_LIMIT = 25;
++const BACKFILL_DEFAULT_CONCURRENCY = 2;
++const DAILY_DEFAULT_CONCURRENCY = 4;
+ 
+ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+ 
+@@ -16,6 +18,7 @@ export interface LinkEnrichmentEntry {
+   summary: string | null;
+   status: 'ok' | 'failed';
+   enrichedAt: string;
++  error: string | null;
+ }
+ 
+ export interface EnrichThinItemsOptions {
+@@ -39,11 +42,14 @@ export interface EnrichmentBackfillResult {
+   ok: number;
+   failed: number;
+   skippedCached: number;
++  errorKinds: Array<{ error: string; count: number }>;
+ }
+ 
+ export interface EnrichBackfillOptions extends EnrichThinItemsOptions {
+   all?: boolean;
+   dryRun?: boolean;
++  retryFailed?: boolean;
++  concurrency?: number;
+   onProgress?: (result: Pick<EnrichmentBackfillResult, 'attempted' | 'ok' | 'failed'>) => void;
+ }
+ 
+@@ -58,8 +64,9 @@ export async function enrichThinItems(items: CanonicalRecentItem[], options: Enr
+ 
+   try {
+     const now = options.now ?? new Date();
++    await ensureEnrichmentSchema();
+     const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
+-    await enrichEligibleItems(eligible, cached, options, now, parseLimit(options.limit));
++    await enrichEligibleItems(eligible, cached, options, now, parseLimit(options.limit), undefined, DAILY_DEFAULT_CONCURRENCY);
+     const finalSummaries = usableSummaries(eligible, cached);
+     return { enrichedCount: finalSummaries.size, summaries: finalSummaries };
+   } catch {
+@@ -71,26 +78,29 @@ export async function enrichThinItems(items: CanonicalRecentItem[], options: Enr
+ export async function enrichBackfill(options: EnrichBackfillOptions = {}): Promise<EnrichmentBackfillResult> {
+   const items = await readCanonicalItems();
+   const eligible = items.filter(isEligible);
++  await ensureEnrichmentSchema();
++  await removeNowIneligibleFailures(items);
+   const now = options.now ?? new Date();
+   const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
+-  const pending = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now));
++  const pending = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, options.retryFailed));
+   const skippedCached = eligible.filter((item) => {
+     const entry = cached.get(item.canonicalUrl!);
+     return entry?.status === 'ok' && Boolean(entry.summary?.trim());
+   }).length;
+-  const base = { eligible: eligible.length, pending: pending.length, attempted: 0, ok: 0, failed: 0, skippedCached };
++  const base = { eligible: eligible.length, pending: pending.length, attempted: 0, ok: 0, failed: 0, skippedCached, errorKinds: [] };
+   if (options.dryRun || pending.length === 0) return base;
+   if (!options.llm && !openCodeApiKey()) {
+     options.onMissingKey?.();
+     return base;
+   }
+   const limit = options.all ? Number.POSITIVE_INFINITY : parseLimit(options.limit ?? 100);
+-  const updates = await enrichEligibleItems(eligible, cached, options, now, limit, options.onProgress);
++  const updates = await enrichEligibleItems(eligible, cached, options, now, limit, options.onProgress, options.concurrency ?? BACKFILL_DEFAULT_CONCURRENCY, options.retryFailed);
+   return {
+     ...base,
+     attempted: updates.length,
+     ok: updates.filter((entry) => entry.status === 'ok').length,
+     failed: updates.filter((entry) => entry.status === 'failed').length,
++    errorKinds: topErrorKinds(updates),
+   };
+ }
+ 
+@@ -106,7 +116,8 @@ export function isEnrichmentEligible(item: CanonicalRecentItem): boolean {
+   if (contentLength(item.searchText) >= THIN_CONTENT_CHARS || !item.canonicalUrl) return false;
+   try {
+     const url = new URL(item.canonicalUrl);
+-    return (url.protocol === 'http:' || url.protocol === 'https:') && !isTweetStatusUrl(url);
++    // Exclude auth-walled X/Twitter, video-only YouTube, PDFs, and existing non-web/long-content cases.
++    return (url.protocol === 'http:' || url.protocol === 'https:') && !isExcludedEnrichmentUrl(url);
+   } catch {
+     return false;
+   }
+@@ -114,14 +125,15 @@ export function isEnrichmentEligible(item: CanonicalRecentItem): boolean {
+ 
+ const isEligible = isEnrichmentEligible;
+ 
+-function isTweetStatusUrl(url: URL): boolean {
+-  return /(^|\.)((x|twitter)\.com)$/i.test(url.hostname) && /\/status\/\d+/i.test(url.pathname);
++function isExcludedEnrichmentUrl(url: URL): boolean {
++  const host = url.hostname.toLowerCase();
++  return /(^|\.)(x|twitter)\.com$/.test(host) || /(^|\.)(youtube\.com|youtu\.be)$/.test(host) || /\.pdf$/i.test(url.pathname);
+ }
+ 
+-function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date): boolean {
++function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date, retryFailed = false): boolean {
+   if (!cached) return true;
+   if (cached.status === 'ok' && cached.summary?.trim()) return false;
+-  return !Number.isFinite(Date.parse(cached.enrichedAt)) || Date.parse(cached.enrichedAt) <= now.getTime() - FAILED_RETRY_MS;
++  return (retryFailed && isTransientError(cached.error)) || !Number.isFinite(Date.parse(cached.enrichedAt)) || Date.parse(cached.enrichedAt) <= now.getTime() - FAILED_RETRY_MS;
+ }
+ 
+ function parseLimit(value: number | undefined): number {
+@@ -144,12 +156,12 @@ async function readCache(urls: string[]): Promise<Map<string, LinkEnrichmentEntr
+   try {
+     let rows: unknown[][];
+     try {
+-      rows = db.exec(`SELECT url, summary, status, enriched_at FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
++      rows = db.exec(`SELECT url, summary, status, enriched_at, error FROM link_enrichment WHERE url IN (${urls.map(() => '?').join(',')})`, urls)[0]?.values ?? [];
+     } catch (error) {
+       if (!isMissingTableError(error)) throw error;
+       rows = [];
+     }
+-    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? '') }]));
++    return new Map(rows.map((row) => [String(row[0]), { url: String(row[0]), summary: row[1] == null ? null : String(row[1]), status: row[2] === 'ok' ? 'ok' : 'failed', enrichedAt: String(row[3] ?? ''), error: row[4] == null ? null : String(row[4]) }]));
+   } finally {
+     db.close();
+   }
+@@ -181,8 +193,10 @@ async function enrichEligibleItems(
+   now: Date,
+   limit: number,
+   onProgress?: (result: { attempted: number; ok: number; failed: number }) => void,
++  concurrency = DAILY_DEFAULT_CONCURRENCY,
++  retryFailed = false,
+ ): Promise<LinkEnrichmentEntry[]> {
+-  const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now)).slice(0, limit);
++  const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, retryFailed)).slice(0, limit);
+   const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+   const llm = options.llm ?? (async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text);
+   let attempted = 0;
+@@ -192,12 +206,16 @@ async function enrichEligibleItems(
+     const url = item.canonicalUrl!;
+     let update: LinkEnrichmentEntry;
+     try {
+-      const material = await extractPageMaterial(url, fetchFn);
+-      const summary = (await llm(buildEnrichmentPrompt(material))).trim();
+-      if (!summary) throw new Error('empty enrichment completion');
+-      update = { url, summary, status: 'ok', enrichedAt: now.toISOString() };
+-    } catch {
+-      update = { url, summary: null, status: 'failed', enrichedAt: now.toISOString() };
++      const material = await retryTransient('fetch', () => extractPageMaterial(url, fetchFn));
++      await delay(250);
++      const summary = await retryTransient('llm', async () => {
++        const value = (await llm(buildEnrichmentPrompt(material))).trim();
++        if (!value) throw new Error('empty completion');
++        return value;
++      });
++      update = { url, summary, status: 'ok', enrichedAt: now.toISOString(), error: null };
++    } catch (error) {
++      update = { url, summary: null, status: 'failed', enrichedAt: now.toISOString(), error: formatFailure(error) };
+     }
+     attempted += 1;
+     if (update.status === 'ok') ok += 1;
+@@ -207,7 +225,7 @@ async function enrichEligibleItems(
+   };
+   const updates: LinkEnrichmentEntry[] = [];
+   for (let start = 0; start < misses.length; start += 50) {
+-    const batch = await mapConcurrent(misses.slice(start, start + 50), 4, enrichOne);
++    const batch = await mapConcurrent(misses.slice(start, start + 50), concurrency, enrichOne);
+     await writeCache(batch);
+     updates.push(...batch);
+   }
+@@ -232,10 +250,10 @@ async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
+   const db = await openDb(dbPath);
+   try {
+     initEnrichmentSchema(db);
+-    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at) VALUES (?, ?, ?, ?)
+-      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at`);
++    const statement = db.prepare(`INSERT INTO link_enrichment (url, summary, status, enriched_at, error) VALUES (?, ?, ?, ?, ?)
++      ON CONFLICT(url) DO UPDATE SET summary = excluded.summary, status = excluded.status, enriched_at = excluded.enriched_at, error = excluded.error`);
+     try {
+-      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt]);
++      for (const entry of entries) statement.run([entry.url, entry.summary, entry.status, entry.enrichedAt, entry.error]);
+     } finally {
+       statement.free();
+     }
+@@ -247,9 +265,76 @@ async function writeCache(entries: LinkEnrichmentEntry[]): Promise<void> {
+ }
+ 
+ function initEnrichmentSchema(db: Database): void {
+-  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL)');
++  db.run('CREATE TABLE IF NOT EXISTS link_enrichment (url TEXT PRIMARY KEY, summary TEXT, status TEXT NOT NULL, enriched_at TEXT NOT NULL, error TEXT)');
++  try { db.run('ALTER TABLE link_enrichment ADD COLUMN error TEXT'); } catch (error) { if (!String(error).toLowerCase().includes('duplicate column')) throw error; }
++}
++
++async function ensureEnrichmentSchema(): Promise<void> {
++  const dbPath = twitterBookmarksIndexPath();
++  const lock = await acquireDbLock(dbPath);
++  const db = await openDb(dbPath);
++  try {
++    initEnrichmentSchema(db);
++    saveDb(db, dbPath);
++  } finally {
++    db.close();
++    releaseDbLock(lock);
++  }
++}
++
++async function removeNowIneligibleFailures(items: CanonicalRecentItem[]): Promise<void> {
++  const urls = items.filter((item) => item.canonicalUrl && !isEligible(item)).map((item) => item.canonicalUrl!);
++  if (!urls.length) return;
++  const dbPath = twitterBookmarksIndexPath();
++  const lock = await acquireDbLock(dbPath);
++  const db = await openDb(dbPath);
++  try {
++    initEnrichmentSchema(db);
++    for (let start = 0; start < urls.length; start += 500) {
++      const batch = urls.slice(start, start + 500);
++      db.run(`DELETE FROM link_enrichment WHERE status = 'failed' AND url IN (${batch.map(() => '?').join(',')})`, batch);
++    }
++    saveDb(db, dbPath);
++  } finally {
++    db.close();
++    releaseDbLock(lock);
++  }
+ }
+ 
++function formatFailure(error: unknown): string {
++  const message = error instanceof Error ? error.message : String(error);
++  if (message === 'empty completion' || message.endsWith(': empty completion')) return 'empty completion';
++  const stage = message.startsWith('fetch:') || message.startsWith('llm:') ? '' : 'fetch: ';
++  return `${stage}${message}`.slice(0, 500);
++}
++
++async function retryTransient<T>(stage: 'fetch' | 'llm', operation: () => Promise<T>): Promise<T> {
++  let lastError: unknown;
++  for (let attempt = 0; attempt < 3; attempt += 1) {
++    try { return await operation(); } catch (error) {
++      lastError = error;
++      if (attempt === 2 || !isTransientError(error)) throw new Error(`${stage}: ${errorMessage(error)}`);
++      await delay((attempt === 0 ? 1_000 : 4_000) + Math.floor(Math.random() * 250));
++    }
++  }
++  throw lastError;
++}
++
++function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
++
++function isTransientError(error: unknown): boolean {
++  const message = (typeof error === 'string' ? error : errorMessage(error)).toLowerCase();
++  return /\b429\b|\b5\d\d\b|econnreset|etimedout|eai_again|aborted|aborterror|network|fetch failed|timed out|empty completion/.test(message);
++}
++
++function topErrorKinds(entries: LinkEnrichmentEntry[]): Array<{ error: string; count: number }> {
++  const counts = new Map<string, number>();
++  for (const entry of entries) if (entry.status === 'failed' && entry.error) counts.set(entry.error, (counts.get(entry.error) ?? 0) + 1);
++  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([error, count]) => ({ error, count }));
++}
++
++function delay(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
++
+ async function extractPageMaterial(url: string, fetchFn: FetchFn): Promise<string> {
+   const controller = new AbortController();
+   const timer = setTimeout(() => controller.abort(), 8_000);
+
+exec
+/bin/zsh -lc "find .agents -path '*autoreview*/scripts/autoreview' -type f -maxdepth 8 -print
+node --import tsx --test tests/daily.test.ts tests/cli.test.ts" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 19625ms:
+(node:97413) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+     [2m┌─────────────────────────────────┐[0m
+     [2m│[0m  [1mF i e l d   T h e o r y[0m        [2m│[0m
+     [2m│[0m  [2mfieldtheory.dev/cli[0m   [2mv1.3.20[0m  [2m│[0m
+     [2m└─────────────────────────────────┘[0m
+
+     [2m┌─────────────────────────────────┐[0m
+     [2m│[0m  [1mF i e l d   T h e o r y[0m        [2m│[0m
+     [2m│[0m  [2mfieldtheory.dev/cli[0m   [2mv1.3.20[0m  [2m│[0m
+     [2m└─────────────────────────────────┘[0m
+✔ showDashboard: prints update notice when cache is newer than local (40.5325ms)
+✔ ft wiki: --engine option is registered (3.603416ms)
+✔ ft search, stats, and status expose --json (0.71075ms)
+✔ ft enrich-backfill exposes limit, retry, concurrency, dry-run, and all options (0.825666ms)
+✔ ft paths, library, commands, app, and install command groups are registered (0.516167ms)
+✔ ft install app command is registered (0.5235ms)
+✔ ft sync: media is off by default and exposes --media opt-in (0.527708ms)
+✔ ft sync-browser: is deprecated and prints a notice (6.411041ms)
+✔ ft sync-raindrop: exposes expected options (0.582708ms)
+✔ ft sync-github-stars: exposes expected options (0.518583ms)
+✔ ft sync-projects: exposes expected options (0.407ms)
+✔ ft sync-all: exposes unified refresh options (0.427417ms)
+✔ ft list --unified exposes --source filter (0.366459ms)
+✔ shouldDownloadSyncMedia enables media only when --media is truthy (0.040583ms)
+✔ ft wiki: description mentions engine prerequisite (0.719292ms)
+✔ ft classify: exposes --unified with --regex (0.302375ms)
+✔ ft classify --unified requires --regex (1.5615ms)
+Classifying unified bookmarks (regex)...
+✔ ft classify --unified --regex runs canonical classification (44.81225ms)
+✔ ft path: prints only the data directory (4.013958ms)
+✔ ft paths --json prints canonical roots (1.055458ms)
+✔ ft skill show: prints only skill content (0.457541ms)
+✔ compareVersions: equal versions return 0 (0.030084ms)
+✔ compareVersions: newer patch returns positive (0.023ms)
+✔ compareVersions: older patch returns negative (0.018583ms)
+✔ compareVersions: minor beats patch (0.020833ms)
+✔ compareVersions: major beats minor (0.02775ms)
+✔ compareVersions: handles double-digit segments (0.029125ms)
+✔ parseCookieOption: returns empty when no --cookies passed (0.066667ms)
+✔ parseCookieOption: falls back to FT_X_CT0/FT_X_AUTH_TOKEN env (0.031458ms)
+✔ parseCookieOption: --cookies flag overrides env fallback (0.024041ms)
+✔ parseCookieOption: with only ct0, builds ct0-only header (0.02025ms)
+✔ parseCookieOption: with ct0 and auth_token, joins both (0.024292ms)
+✔ parseCookieOption: coerces non-string array elements to strings (0.021708ms)
+✔ runWithSpinner: stops spinner after success (0.049ms)
+✔ runWithSpinner: stops spinner after error (0.220375ms)
+(node:97414) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ daily: collect windows on first_saved_at and gathers project deltas (75.120333ms)
+✔ daily: collect uses watermark when no date given and caps at 7 days (31.957916ms)
+✔ daily: overflow advances only through the oldest collected items and drains on the next run (46.362792ms)
+✔ daily: explicit date synthesis does not move the rolling watermark (55.755ms)
+✔ daily: connect links new items to older related items only (26.777125ms)
+✔ daily: collect handles Twitter-format and offset-ISO timestamps in first_saved_at (39.284916ms)
+✔ daily: relatedSeedTerms drops stopwords, short words, and numbers (0.143125ms)
+✔ daily: digest path validates date shape (0.174667ms)
+✔ daily: synthesize validates citations, writes digest, and advances the rolling watermark (42.117959ms)
+✔ daily: synthesize falls back to mechanical themes when the LLM fails (34.635541ms)
+✔ daily: X coverage freshness uses the newest full or incremental sync timestamp (8.573667ms)
+✔ daily: coverage counts canonical rows excluded for undateable first_saved_at (42.300167ms)
+✔ daily: synthesize suppresses duplicate valid citations without counting them as dropped (30.3835ms)
+✔ daily: synthesize renders uncited items under Also saved (39.666583ms)
+✔ daily: synthesize renders items from themes dropped by the cap under Also saved (34.999459ms)
+✔ daily: thin bare links are excluded from synthesis and reconciled into Also saved (29.880917ms)
+✔ daily: URL plus substantial commentary remains eligible for synthesis (29.827084ms)
+✔ daily: skips the LLM when every item is thin (29.899667ms)
+✔ daily: enriches a thin link into the prompt and reuses its durable cache (352.68925ms)
+✔ daily: enrichment backfill reports pending rows, enriches through seams, and skips cached rows on rerun (349.000791ms)
+✔ daily: empty enrichment completion is cached as failed and leaves the item thin (5710.529791ms)
+✔ daily: enrichment excludes X articles, YouTube, and PDFs (0.468167ms)
+✔ daily: retries a transient 429 fetch and records failure errors without retrying 404s (1327.525458ms)
+✔ daily: retry-failed immediately re-attempts transient cached failures (5539.142ms)
+✔ daily: enrichment silently no-ops without an OpenCode key (0.523375ms)
+✔ daily: enrichment never fetches private IPs or redirects to them (59.690292ms)
+✔ daily: an OpenCode timeout records a failed enrichment without hanging (5444.358708ms)
+✔ daily: interests classifies rising/steady/fading topics and finds active threads (54.754875ms)
+✔ daily: synthesize skips when the window is empty (16.960167ms)
+✔ daily: extractYoutubeVideoId handles watch, short, shorts, and embed URLs (0.137709ms)
+✔ daily: digest links youtube items to their library notes when notes exist (27.892875ms)
+ℹ tests 66
+ℹ suites 0
+ℹ pass 66
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 19605.88475
+
+codex
+summary: "Finding: scoped crash guards in the backfill command suppress unrelated process-wide failures while the command runs. No issues found in retry counting, schema migration, pruning under normal serialized execution, or lock-held backoff."
+evidence:
+  - "P1 — src/cli.ts:1345-1359: `process.on('uncaughtException')` and `process.on('unhandledRejection')` install handlers on the global process. While enrichment is active, an exception/rejection from any other concurrent CLI work is merely logged and prevented from following its normal fatal/error path. The handlers are removed in `finally`, so cleanup is correct; the issue is their overly broad ownership."
+  - "Retry path: src/daily/enrich.ts:311-328 retries at most three total attempts and only when the captured error matches transient status/network/empty-completion patterns; `attempted` increments once per link at lines 220-224, not per retry."
+  - "`--retry-failed` is constrained by `isTransientError(cached.error)` at src/daily/enrich.ts:133-137, so cached 404/non-transient failures do not bypass the seven-day wait."
+  - "Schema creation/migration is lock-protected at src/daily/enrich.ts:267-282. Fresh tables include `error`; legacy tables accept duplicate-column errors from the follow-up ALTER."
+  - "Pruning at src/daily/enrich.ts:285-301 deletes only `status = 'failed'` entries whose current canonical item is ineligible; cached successful rows are retained."
+  - "Network retry waits and per-item pacing occur before `writeCache`; DB locks are acquired only in write/schema/prune functions (src/daily/enrich.ts:209-215, 246-301)."
+files_changed: []
+commands_run:
+  - command: "git show --stat --oneline --decorate --no-renames 02d5ef8; git show --format=fuller --no-ext-diff --unified=80 02d5ef8"
+    exit_code: 0
+    summary: "Inspected target commit and patch."
+  - command: "nl -ba src/daily/enrich.ts; nl -ba src/cli.ts; nl -ba src/db.ts; git diff 02d5ef8^ 02d5ef8 -- src/daily/enrich.ts src/cli.ts"
+    exit_code: 0
+    summary: "Traced retry, guard, migration, pruning, and lock paths."
+  - command: "node --import tsx --test tests/daily.test.ts tests/cli.test.ts"
+    exit_code: 0
+    summary: "66 passed, 0 failed."
+verification:
+  status: "passed"
+  details: "Focused daily and CLI tests passed; static review identified one actionable global crash-guard issue."
+blockers: []
+hook: Stop
+hook: Stop Completed
+tokens used
+93,873

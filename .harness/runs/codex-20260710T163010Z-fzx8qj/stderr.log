@@ -1,0 +1,845 @@
+2026-07-10T16:30:12.607658Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T16:30:12.607680Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/alex-skills/publish-oss/SKILL.md: missing YAML frontmatter delimited by ---
+2026-07-10T16:30:12.607682Z ERROR codex_core::session::session: failed to load skill /Users/manik/.agents/skills/cli-printing-press/testdata/golden/fixtures/dogfood-novel-doc-sync/cli/SKILL.md: missing YAML frontmatter delimited by ---
+OpenAI Codex v0.144.1
+--------
+workdir: /Users/manik/Github/fieldtheory-cli
+model: gpt-5.6-terra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f4cd3-b8a5-7ab0-90e5-ef20f9e4533e
+--------
+user
+# Harness Worker Packet
+
+## Contract
+
+You are an internal worker for the use-harness router.
+Return a concise report to the router; do not address the end user directly.
+Do not claim success unless validation evidence is included.
+
+## Assignment
+
+- Run ID: codex-20260710T163010Z-fzx8qj
+- Backend: codex
+- Task type: implement
+- Workspace: /Users/manik/Github/fieldtheory-cli
+- Permission mode: write-enabled
+- Model: gpt-5.6-terra
+
+## Objective
+
+Review finding (P2) on your change: stale cursor leakage after window clamping. In src/daily/collect.ts you pass meta.lastRunItemId whenever the run is rolling, but windowFor may substitute sinceIso away from meta.lastRunAt (7-day clamp at oldestAllowed, or the future-watermark fallback). The cursor id then gets applied at an unrelated boundary timestamp inside getCanonicalBookmarksSince, potentially skipping items at that boundary. Fix: pass lastRunItemId only when the effective sinceIso still equals the persisted meta.lastRunAt instant (compare parsed epochs, not strings — meta value round-trips through Date). Otherwise pass undefined. Add a test: meta with lastRunAt older than 7 days + a lastRunItemId; collectDaily clamps to the 7-day window; items at the clamped boundary are NOT skipped. Run node --import tsx --test tests/daily.test.ts && npm run build. Concise summary.
+
+## Scope
+
+Use the objective and named files as scope. Do not broaden unless required.
+
+## Constraints
+
+- Match existing repo patterns.
+- Do not commit changes.
+- If changing files, report exact files changed.
+- If validation cannot run, say why.
+
+## Expected deliverable
+
+1. Summary
+2. Evidence
+3. Files changed
+4. Commands run
+5. Verification status
+6. Blockers
+
+## Result shape
+
+summary: string
+evidence: string[]
+files_changed: string[]
+commands_run: { command: string, exit_code: number | null, summary: string }[]
+verification: { status: "passed" | "failed" | "not_run", details: string }
+blockers: string[]
+
+codex
+I’ll patch the cursor handoff so it is used only when the rolling window starts at the persisted watermark instant, then add the requested clamp-boundary regression test and run the focused validation.
+exec
+/bin/zsh -lc "sed -n '1,190p' src/daily/collect.ts && sed -n '90,190p' tests/daily.test.ts && sed -n '1,42p' CONTINUITY.md" in /Users/manik/Github/fieldtheory-cli
+ succeeded in 0ms:
+/**
+ * Daily synthesis collection: gather everything new since the last digest —
+ * canonical bookmark rows across all sources plus project activity deltas.
+ */
+
+import { pathExists, readJson, readJsonLines } from '../fs.js';
+import { getCanonicalBookmarksSince, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
+import { projectsCachePath } from '../projects/paths.js';
+import type { ProjectRecord } from '../projects/types.js';
+import { dailyMetaPath } from './paths.js';
+
+const DEFAULT_WINDOW_HOURS = 24;
+const MAX_WINDOW_HOURS = 24 * 7;
+const MAX_ITEMS = 200;
+
+export interface DailyMeta {
+  lastRunAt?: string;
+  /** Canonical-id tie-breaker for an overflow watermark timestamp. */
+  lastRunItemId?: string;
+  lastDigestDate?: string;
+}
+
+export interface DailyProjectDelta {
+  repo: string;
+  commits: { date: string; subject: string }[];
+  prompts: { timestamp: string; text: string }[];
+}
+
+export interface DailyCollection {
+  date: string;
+  sinceIso: string;
+  untilIso: string;
+  /** True when this is a historical `--date` digest rather than a rolling run. */
+  isExplicitDate: boolean;
+  items: CanonicalRecentItem[];
+  /** Items left in this window after the capped oldest-first batch. */
+  carriedOver: number;
+  /** Watermark to persist after this batch; never moves past carried-over rows. */
+  nextWatermark: string;
+  /** Tie-breaker paired with nextWatermark when overflow occurs. */
+  nextWatermarkItemId?: string;
+  projectDeltas: DailyProjectDelta[];
+}
+
+export interface CollectDailyOptions {
+  /** Explicit digest date (YYYY-MM-DD); window becomes that UTC day. */
+  date?: string;
+  /** Window size when no date and no watermark is available. Default: 24. */
+  windowHours?: number;
+  /** Stable clock injection for tests. */
+  now?: Date;
+  /** Test seam for the production collection cap. */
+  maxItems?: number;
+}
+
+export async function readDailyMeta(): Promise<DailyMeta> {
+  const metaPath = dailyMetaPath();
+  if (!(await pathExists(metaPath))) return {};
+  try {
+    return await readJson<DailyMeta>(metaPath);
+  } catch {
+    return {};
+  }
+}
+
+function windowFor(options: CollectDailyOptions, meta: DailyMeta): { date: string; sinceIso: string; untilIso: string } {
+  const now = options.now ?? new Date();
+
+  if (options.date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(options.date)) {
+      throw new Error(`Invalid --date (expected YYYY-MM-DD): ${options.date}`);
+    }
+    const start = new Date(`${options.date}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime())) throw new Error(`Invalid --date: ${options.date}`);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    return { date: options.date, sinceIso: start.toISOString(), untilIso: end.toISOString() };
+  }
+
+  const windowHours = Math.min(options.windowHours ?? DEFAULT_WINDOW_HOURS, MAX_WINDOW_HOURS);
+  const fallbackSince = new Date(now.getTime() - windowHours * 60 * 60 * 1000);
+  const watermark = meta.lastRunAt ? new Date(meta.lastRunAt) : null;
+  const oldestAllowed = new Date(now.getTime() - MAX_WINDOW_HOURS * 60 * 60 * 1000);
+
+  let since = watermark && !Number.isNaN(watermark.getTime()) ? watermark : fallbackSince;
+  if (since.getTime() < oldestAllowed.getTime()) since = oldestAllowed;
+  if (since.getTime() > now.getTime()) since = fallbackSince;
+
+  return { date: now.toISOString().slice(0, 10), sinceIso: since.toISOString(), untilIso: now.toISOString() };
+}
+
+function withinWindow(iso: string | undefined, sinceIso: string, untilIso: string): boolean {
+  if (!iso) return false;
+  // Timestamps come in mixed formats (ISO with offsets, Twitter-style) —
+  // compare parsed epochs, never raw strings.
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return false;
+  return ms >= Date.parse(sinceIso) && ms < Date.parse(untilIso);
+}
+
+async function collectProjectDeltas(sinceIso: string, untilIso: string): Promise<DailyProjectDelta[]> {
+  const cachePath = projectsCachePath();
+  if (!(await pathExists(cachePath))) return [];
+
+  const records = await readJsonLines<ProjectRecord>(cachePath);
+  const deltas: DailyProjectDelta[] = [];
+
+  for (const record of records) {
+    const commits = record.recentCommits
+      .filter((commit) => withinWindow(commit.date, sinceIso, untilIso))
+      .map((commit) => ({ date: commit.date, subject: commit.subject }));
+    const prompts = (record.recentPrompts ?? [])
+      .filter((prompt) => withinWindow(prompt.timestamp, sinceIso, untilIso))
+      .map((prompt) => ({ timestamp: prompt.timestamp, text: prompt.text }));
+    if (commits.length > 0 || prompts.length > 0) {
+      deltas.push({ repo: record.repo, commits, prompts });
+    }
+  }
+
+  return deltas.sort((a, b) => (b.commits.length + b.prompts.length) - (a.commits.length + a.prompts.length));
+}
+
+export async function collectDaily(options: CollectDailyOptions = {}): Promise<DailyCollection> {
+  const meta = await readDailyMeta();
+  const { date, sinceIso, untilIso } = windowFor(options, meta);
+  const maxItems = options.maxItems ?? MAX_ITEMS;
+  // Oldest-first means each capped rolling batch drains the backlog before
+  // newer arrivals; the timestamp+id cursor below prevents equal timestamps
+  // from causing a permanent tie at the watermark.
+  const windowItems = await getCanonicalBookmarksSince(
+    sinceIso,
+    undefined,
+    untilIso,
+    options.date ? undefined : meta.lastRunItemId,
+  );
+  const items = windowItems.slice(0, maxItems);
+  const carriedOver = windowItems.length - items.length;
+  const lastCollected = items.at(-1);
+  const nextWatermark = carriedOver > 0 && lastCollected?.firstSavedAt
+    ? lastCollected.firstSavedAt
+    : untilIso;
+  const nextWatermarkItemId = carriedOver > 0 ? lastCollected?.id : undefined;
+  const projectDeltas = await collectProjectDeltas(sinceIso, untilIso);
+
+  return {
+    date,
+    sinceIso,
+    untilIso,
+    isExplicitDate: Boolean(options.date),
+    items,
+    carriedOver,
+    nextWatermark,
+    nextWatermarkItemId,
+    projectDeltas,
+  };
+}
+          { timestamp: '2026-07-06T11:00:00.000Z', text: 'how do I wire the daily digest?' },
+        ],
+      }),
+      projectRecord({ repo: 'idle-repo' }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    const collection = await collectDaily({ date: '2026-07-06' });
+
+    assert.equal(collection.items.length, 1);
+    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/fresh-agent-memory');
+    assert.equal(collection.projectDeltas.length, 1);
+    assert.equal(collection.projectDeltas[0].repo, 'active-repo');
+    assert.equal(collection.projectDeltas[0].commits.length, 1);
+    assert.equal(collection.projectDeltas[0].prompts.length, 1);
+  });
+});
+
+test('daily: collect uses watermark when no date given and caps at 7 days', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
+      starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
+    ]);
+    await rebuildCanonicalIndex();
+
+    ensureDailyDir();
+    await writeJson(dailyMetaPath(), { lastRunAt: '2026-05-01T00:00:00.000Z' });
+
+    const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+
+    // Watermark is older than the 7-day cap, so the window is clamped.
+    assert.equal(collection.sinceIso, '2026-06-30T00:00:00.000Z');
+    assert.equal(collection.items.length, 1);
+    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/new-tool');
+  });
+});
+
+test('daily: overflow advances only through the oldest collected items and drains on the next run', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, Array.from({ length: 5 }, (_, index) => starRecord({
+      id: index + 1,
+      fullName: `overflow/item-${index + 1}`,
+      starredAt: `2026-07-06T0${index}:00:00.000Z`,
+    })));
+    await rebuildCanonicalIndex();
+
+    const first = await collectDaily({
+      now: new Date('2026-07-07T00:00:00.000Z'),
+      windowHours: 24,
+      maxItems: 3,
+    });
+    assert.equal(first.items.length, 3);
+    assert.equal(first.carriedOver, 2);
+    assert.equal(first.nextWatermark, '2026-07-06T02:00:00.000Z');
+
+    await synthesizeDaily(first, [], { invoke: async () => { throw new Error('offline'); } });
+    const meta = JSON.parse(await readFileText(dailyMetaPath()));
+    assert.equal(meta.lastRunAt, '2026-07-06T02:00:00.000Z');
+    assert.ok(meta.lastRunItemId);
+
+    const second = await collectDaily({
+      now: new Date('2026-07-07T00:00:00.000Z'),
+      maxItems: 3,
+    });
+    assert.equal(second.items.length, 2);
+    assert.equal(second.carriedOver, 0);
+    assert.deepEqual(second.items.map((item) => item.canonicalUrl), [
+      'https://github.com/overflow/item-4',
+      'https://github.com/overflow/item-5',
+    ]);
+  });
+});
+
+test('daily: explicit date synthesis does not move the rolling watermark', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'history/item', starredAt: '2026-07-01T12:00:00.000Z' }),
+    ]);
+    await rebuildCanonicalIndex();
+    ensureDailyDir();
+    await writeJson(dailyMetaPath(), {
+      lastRunAt: '2026-07-10T00:00:00.000Z',
+      lastDigestDate: '2026-07-10',
+    });
+
+    const historical = await collectDaily({ date: '2026-07-01' });
+    await synthesizeDaily(historical, [], { invoke: async () => { throw new Error('offline'); }, force: true });
+
+    const meta = JSON.parse(await readFileText(dailyMetaPath()));
+    assert.deepEqual(meta, {
+      lastRunAt: '2026-07-10T00:00:00.000Z',
+      lastDigestDate: '2026-07-10',
+    });
+  });
+});
+
+test('daily: connect links new items to older related items only', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/vector-search-engine', starredAt: '2026-07-06T12:00:00.000Z', description: 'blazing vector search embeddings engine' }),
+Goal (incl. success criteria): Implement the R5–R7 daily watermark/overflow slice: capped rolling collections drain oldest-first without losing equal-timestamp rows; historical --date writes never change rolling metadata.
+Constraints/Assumptions:
+- Preserve existing uncommitted rendering/"Also saved" work and do not implement the coverage footer.
+Key decisions:
+- Overflow uses an oldest-first `(first_saved_at, canonical id)` cursor. `lastRunAt` is the timestamp and `lastRunItemId` breaks timestamp ties.
+State:
+- Implementation and focused AE3/AE5 tests complete and validated.
+Done:
+- Read the requested plan and current pipeline.
+Now:
+- Ready to hand off the validated implementation.
+Next:
+- None.
+Open questions (UNCONFIRMED if needed):
+- None.
+Working set (files/ids/commands):
+- src/daily/collect.ts; src/daily/synthesize.ts; src/canonical-bookmarks-db.ts; tests/daily.test.ts
+
+VISION SESSION (2026-07-07) — daily-synthesis companion agent:
+- Goal: agent that synthesizes all consumed data (X bm, YT playlists, Raindrop, GitHub stars, following, x-lists) daily, learns interests, proactively recalls during any project/research ("we studied that last week", "gotcha in blog X", "hot on X right now").
+- Existing substrate: sync-all orchestrator, canonical FTS db (10k+ bookmarks), ft research/ask --json, library md wiki, following/experts index, x-list daily digests, daily-sync plan doc (docs/plans/2026-06-21-daily-sync-second-brain.md).
+- Grounding decision: NO project dumps — ingest from ground truth directly: ~/Github repos (248, 51 with CONTINUITY.md Goal/Now/Next), Claude JSONL (~/.claude/projects/*, 73 dirs, type:"user" lines), Codex ~/.codex/sessions, OpenCode opencode.db. github-sessions/agent-sessions apps = viewers only.
+- PLAN WRITTEN: docs/plans/2026-07-07-companion-agent-daily-synthesis.md — Phase A `ft sync-projects` (7th source, src/projects/, Claude sessions v1), Phase B `ft daily` (digest + interests.md, SQL connect + LLM synthesize w/ citation validation), Phase C global second-brain skill. 9-step build order.
+- APPROVED (2026-07-07): implement via codex (gpt-5.5, codex:codex-rescue subagent), fable reviews each step until OK, then next. Defaults locked: scan root ~/Github, 14d prompt retention, droid+deepseek-v4-flash digest model. Commit per step (no attribution trailer), no push until asked.
+- DONE Step 1 (COMMITTED c346a67): src/projects/ scanner. Codex implemented; fable review found+fixed 3 issues: (1) bare-label ledger headings "Goal (incl. success criteria):" no-dash format (dominant real format — regex made dash optional + sibling-label terminators), (2) bold "- **Goal:**" format, (3) README HTML lines leaking into description. Live verify: 152 repos/7s/0 errors, 26/26 ledgers extracted, active md clean, tests 10/10, full suite 778/778.
+- DONE Step 2 (COMMITTED 464c95c): src/projects/sessions.ts — Claude JSONL prompt extraction (encoded-dir decode strips scan-root prefix first, hyphen candidates; type:user filter; 14d retention; incremental mtime+size skip with prompt merge from previous records) + "Recent agent queries" md section + "Recent focus" active-list line + 0.5x prompt-recency ranking weight. Fable review fix: filter ALL '<'-leading content (task-[REDACTED] harness noise polluted prompts). Live: 10 repos w/ prompts, 104 prompts, ft-cli 26 real questions, incremental rerun faster. Tests 15/15, full 783/783.
+- DONE Step 3 (COMMITTED 9afe2a2): canonical integration (source='project', GitHub-remote dedupe merges w/ stars else project:<repo>, prompt text 4K cap) + `ft sync-projects` CLI (--root/--max-age-days/--no-sessions/--dry-run, canonical rebuild after) + sync-all 'projects' step + getProjectsStatus + remoteUrl normalization (git@→https). Codex hit SESSION LIMIT (resets 10am IST) mid-run but implementation was complete — fable verified: build clean, focused 71/71, live `ft sync-projects` 152 repos indexed, `ft list --unified --source project` + unified search return goals+prompts. Fable fix: filter "This session is being continued..." compaction-summary prompts. Full suite 790/790.
+- CODEX LIMIT: gpt-5.5 session limit until 10am IST. Steps 4+ = fable implements directly (user standing permission to override model choice) unless user prefers waiting.
+- Learnings: git add <dir> fails via git wrapper — add files individually. tsx -e no top-level await — use .mts script. dcg hook blocks rm -rf — use fresh scratch dir names. Live-verify scratch: scratchpad/step{1,2,3}-live via FT_DATA_DIR sandbox.
+- DONE Step 4 (COMMITTED 5708634, implemented by FABLE directly — codex limit): src/daily/{paths,collect,connect}.ts + canonical helpers getCanonicalBookmarksSince/findRelatedCanonicalBookmarks/relatedSeedTerms + `ft daily` CLI (--date/--window-hours/--json; watermark from daily/meta.json, 7d cap, digest write deferred to step 5). FIX during review: projectSourceFromRecord savedAt no longer falls back to scannedAt (commit-less repos flooded daily window as "new" every rescan — 138→6 items after fix). Tests tests/daily.test.ts 5/5, full 795/795. Live verified: related links sane (agent-sessions-active→agent-sessions).
+- DONE Step 5 (COMMITTED 5f2384f, fable): src/daily/synthesize.ts — buildDailyPrompt (withSystemOverride hardened), validateThemes (every cited id must exist in collected set; hallucinated ids dropped + counted; theme w/ zero valid items dropped), mechanical fallback on LLM failure, digest md w/ frontmatter (synthesis: llm|mechanical) + [[project:*]] wikilinks, watermark advance on write only. CLI: ft daily --write/--force/--engine/--model/--effort; existing digest guarded unless --force. LIVE VERIFIED droid/deepseek-v4-flash: 3 coherent themes from 6 items, valid citations, older-save connections. Tests 8/8, full 798/798.
+- DONE Step 6 (COMMITTED 0be6d70, fable): src/daily/interests.ts — topic velocity (7d vs 30d baseline, rising/steady/fading), active threads (terms in BOTH recent saves AND agent prompts), experts matched to rising topics from following.jsonl, ≤80-line hard cap, written to library/interests.md on every ft daily --write. Review fixes from real-data preview: exclude website hostnames (primary_domain holds "youtube.com") + "unclassified" from topics. Real preview sane: rising=technique/research/launch/security, steady=tool, fading=(github.com now filtered). Tests 9/9, full 799/799.
+- DONE Step 7 (COMMITTED 6aca30c, fable): sync-all tail step 'daily' (ft daily --write, after canonical-md, disabled by --no-synthesis). CRITICAL FIXES found via production run: (1) first_saved_at mixes ISO+offset and Twitter-format "Wed Sep 30..." strings — ALL windowing/beforeIso comparisons switched from string to Date.parse epochs (collect, getCanonicalBookmarksSince, findRelated beforeIso, interests) — before fix real digest had 0 items; (2) small models mangle long canonical hash ids — prompt now uses short aliases (i1/r1) mapped back locally (was 30 dropped citations→mechanical; after: 6 llm themes, 0 dropped); (3) multiline X titles broke md links — linkLabel one-lines. PRODUCTION LIVE: ~/.fieldtheory/library/daily/2026-07-06.md = 14 items, 6 themes (dream-mode stars ↔ X memory posts ↔ YT talk ↔ skills project — vision working), interests.md live. sync-all dry-run shows full 8-step plan. Tests 10/10 daily, full 801/801.
+- DONE Step 8 (COMMITTED 9471406, fable): global skill ~/.claude/skills/second-brain/SKILL.md (recall ladder: interests.md+projects-active.md always → daily digests for temporal → ft research/sqlite3 for topics → library md deep-read → conversational surfacing w/ dates; sqlite3 fallback for old ft binaries) + docs/AGENTS-recall.md (cross-agent contract: artifact table, ladder, rules incl. mixed-timestamp warning + prompt-privacy note) + CLAUDE.md pointer. Skill registered live this session. Verified artifacts: interests.md 25 lines, projects-active.md 57, 2 daily digests, repo ft research returns ranked hits.
+- ALL 8 STEPS COMPLETE. Commits: c346a67, 464c95c, 9afe2a2, 5708634, 5f2384f, 0be6d70, 6aca30c, 9471406 (8 commits on main, not pushed).
+- NOTE: global ft binary (1.3.22 npm) predates sync-projects/daily/research — user should npm update or run from repo until published.
+- DONE Step 9 (COMMITTED be3964e, fable): multi-agent session ingestion — codex (~/.codex/sessions/yyyy/mm/dd/rollout-*.jsonl, cwd in session_meta), amp (~/.local/share/amp/threads/T-*.json, repo from env.initial.trees uri, thread created ts), pi (~/.pi/agent/sessions/<enc>/, cwd in type:"session" header), droid (~/.factory/sessions — TWO layouts: current <encoded-cwd>/<id>.jsonl w/ cwd in session_start header + legacy flat via sessions-index.json). Per-BLOCK noise filtering (droid packs env-dump + real prompt in one message), '# Task Tool Invocation' subagent noise filtered. User decision: pi+droid in, opencode skipped (rarely used). Tests hermeticSessionRoots guard real stores; 25/25 projects, full 810/810. Live: claude 113 + codex 109 + pi 5 + droid 1 prompts (amp 0 = no threads in 14d window, verified legit). Production resync: 17 repos w/ prompts (was 10).
+- DONE Step 10 (COMMITTED 2e5094a): nightly sync-all launchd job LIVE.
+  - Wrapper ~/.fieldtheory/sync-all.sh: runs repo dist (node ~/Github/fieldtheory-cli/dist/cli.js — NOT stale global ft), --x-list 1979812953135497678 --playlist PLVmtzF5bqCTLutxk2SQvcH2SgCjwNWobk --youtube-limit 8 --classify, extra args pass-through for smoke tests, log ~/.fieldtheory/sync-all.log.
+  - Plist ~/Library/LaunchAgents/dev.fieldtheory.sync-all-daily.plist @ 09:00 daily, loaded (launchctl bootstrap, state=waiting).
+  - Secrets: ~/.fieldtheory/.env (0600) w/ OPENCODE_GO_API_KEY + OPENROUTER_API_KEY (CLI auto-loads via config.ts). RAINDROP_TOKEN absent → raindrop step skips gracefully.
+  - Digest engine pinned via new FT_DAILY_ENGINE/FT_DAILY_MODEL/FT_DAILY_EFFORT env fallbacks (wrapper sets droid + deepseek-v4-flash) — unattended runs never fall back to claude CLI.
+
+apply patch
+patch: completed
+/Users/manik/Github/fieldtheory-cli/src/daily/collect.ts
+/Users/manik/Github/fieldtheory-cli/tests/daily.test.ts
+diff --git a/src/daily/collect.ts b/src/daily/collect.ts
+index 0ada3160d4f744b64df5665aa4da0de0cbcd2f3d..d48cd277161b2767902fc97101b313f3fa70ad3e
+--- a/src/daily/collect.ts
++++ b/src/daily/collect.ts
+@@ -123,6 +123,12 @@
+   const meta = await readDailyMeta();
+   const { date, sinceIso, untilIso } = windowFor(options, meta);
+   const maxItems = options.maxItems ?? MAX_ITEMS;
++  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
++  const useOverflowCursor = !options.date
++    && Boolean(meta.lastRunItemId)
++    // windowFor normalizes dates, so compare instants rather than ISO strings.
++    && Number.isFinite(persistedWatermarkMs)
++    && Date.parse(sinceIso) === persistedWatermarkMs;
+   // Oldest-first means each capped rolling batch drains the backlog before
+   // newer arrivals; the timestamp+id cursor below prevents equal timestamps
+   // from causing a permanent tie at the watermark.
+@@ -130,7 +136,7 @@
+     sinceIso,
+     undefined,
+     untilIso,
+-    options.date ? undefined : meta.lastRunItemId,
++    useOverflowCursor ? meta.lastRunItemId : undefined,
+   );
+   const items = windowItems.slice(0, maxItems);
+   const carriedOver = windowItems.length - items.length;
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 2be5a4f31e44bf74659c9da558e36eb4a545c3b9..02a67a7efd5ee26e2237dbf330be39a0dc750a7d
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -108,20 +108,26 @@
+ test('daily: collect uses watermark when no date given and caps at 7 days', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
++      starRecord({ id: 0, fullName: 'a/clamped-boundary', starredAt: '2026-06-30T00:00:00.000Z' }),
+       starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
+       starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
+     ]);
+     await rebuildCanonicalIndex();
+ 
+     ensureDailyDir();
+-    await writeJson(dailyMetaPath(), { lastRunAt: '2026-05-01T00:00:00.000Z' });
++    await writeJson(dailyMetaPath(), {
++      lastRunAt: '2026-05-01T00:00:00.000Z',
++      // This stale cursor must not be applied to the clamped 2026-06-30 boundary.
++      lastRunItemId: 'zzzzzzzz',
++    });
+ 
+     const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+ 
+     // Watermark is older than the 7-day cap, so the window is clamped.
+     assert.equal(collection.sinceIso, '2026-06-30T00:00:00.000Z');
+-    assert.equal(collection.items.length, 1);
+-    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/new-tool');
++    assert.equal(collection.items.length, 2);
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/clamped-boundary'));
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/new-tool'));
+   });
+ });
+ 
+
+diff --git a/src/daily/collect.ts b/src/daily/collect.ts
+index 0ada3160d4f744b64df5665aa4da0de0cbcd2f3d..d48cd277161b2767902fc97101b313f3fa70ad3e
+--- a/src/daily/collect.ts
++++ b/src/daily/collect.ts
+@@ -123,6 +123,12 @@
+   const meta = await readDailyMeta();
+   const { date, sinceIso, untilIso } = windowFor(options, meta);
+   const maxItems = options.maxItems ?? MAX_ITEMS;
++  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
++  const useOverflowCursor = !options.date
++    && Boolean(meta.lastRunItemId)
++    // windowFor normalizes dates, so compare instants rather than ISO strings.
++    && Number.isFinite(persistedWatermarkMs)
++    && Date.parse(sinceIso) === persistedWatermarkMs;
+   // Oldest-first means each capped rolling batch drains the backlog before
+   // newer arrivals; the timestamp+id cursor below prevents equal timestamps
+   // from causing a permanent tie at the watermark.
+@@ -130,7 +136,7 @@
+     sinceIso,
+     undefined,
+     untilIso,
+-    options.date ? undefined : meta.lastRunItemId,
++    useOverflowCursor ? meta.lastRunItemId : undefined,
+   );
+   const items = windowItems.slice(0, maxItems);
+   const carriedOver = windowItems.length - items.length;
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 2be5a4f31e44bf74659c9da558e36eb4a545c3b9..02a67a7efd5ee26e2237dbf330be39a0dc750a7d
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -108,20 +108,26 @@
+ test('daily: collect uses watermark when no date given and caps at 7 days', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
++      starRecord({ id: 0, fullName: 'a/clamped-boundary', starredAt: '2026-06-30T00:00:00.000Z' }),
+       starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
+       starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
+     ]);
+     await rebuildCanonicalIndex();
+ 
+     ensureDailyDir();
+-    await writeJson(dailyMetaPath(), { lastRunAt: '2026-05-01T00:00:00.000Z' });
++    await writeJson(dailyMetaPath(), {
++      lastRunAt: '2026-05-01T00:00:00.000Z',
++      // This stale cursor must not be applied to the clamped 2026-06-30 boundary.
++      lastRunItemId: 'zzzzzzzz',
++    });
+ 
+     const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+ 
+     // Watermark is older than the 7-day cap, so the window is clamped.
+     assert.equal(collection.sinceIso, '2026-06-30T00:00:00.000Z');
+-    assert.equal(collection.items.length, 1);
+-    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/new-tool');
++    assert.equal(collection.items.length, 2);
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/clamped-boundary'));
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/new-tool'));
+   });
+ });
+ 
+
+exec
+/bin/zsh -lc 'node --import tsx --test tests/daily.test.ts && npm run build' in /Users/manik/Github/fieldtheory-cli
+diff --git a/src/daily/collect.ts b/src/daily/collect.ts
+index 0ada3160d4f744b64df5665aa4da0de0cbcd2f3d..d48cd277161b2767902fc97101b313f3fa70ad3e
+--- a/src/daily/collect.ts
++++ b/src/daily/collect.ts
+@@ -123,6 +123,12 @@
+   const meta = await readDailyMeta();
+   const { date, sinceIso, untilIso } = windowFor(options, meta);
+   const maxItems = options.maxItems ?? MAX_ITEMS;
++  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
++  const useOverflowCursor = !options.date
++    && Boolean(meta.lastRunItemId)
++    // windowFor normalizes dates, so compare instants rather than ISO strings.
++    && Number.isFinite(persistedWatermarkMs)
++    && Date.parse(sinceIso) === persistedWatermarkMs;
+   // Oldest-first means each capped rolling batch drains the backlog before
+   // newer arrivals; the timestamp+id cursor below prevents equal timestamps
+   // from causing a permanent tie at the watermark.
+@@ -130,7 +136,7 @@
+     sinceIso,
+     undefined,
+     untilIso,
+-    options.date ? undefined : meta.lastRunItemId,
++    useOverflowCursor ? meta.lastRunItemId : undefined,
+   );
+   const items = windowItems.slice(0, maxItems);
+   const carriedOver = windowItems.length - items.length;
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 2be5a4f31e44bf74659c9da558e36eb4a545c3b9..02a67a7efd5ee26e2237dbf330be39a0dc750a7d
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -108,20 +108,26 @@
+ test('daily: collect uses watermark when no date given and caps at 7 days', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
++      starRecord({ id: 0, fullName: 'a/clamped-boundary', starredAt: '2026-06-30T00:00:00.000Z' }),
+       starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
+       starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
+     ]);
+     await rebuildCanonicalIndex();
+ 
+     ensureDailyDir();
+-    await writeJson(dailyMetaPath(), { lastRunAt: '2026-05-01T00:00:00.000Z' });
++    await writeJson(dailyMetaPath(), {
++      lastRunAt: '2026-05-01T00:00:00.000Z',
++      // This stale cursor must not be applied to the clamped 2026-06-30 boundary.
++      lastRunItemId: 'zzzzzzzz',
++    });
+ 
+     const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+ 
+     // Watermark is older than the 7-day cap, so the window is clamped.
+     assert.equal(collection.sinceIso, '2026-06-30T00:00:00.000Z');
+-    assert.equal(collection.items.length, 1);
+-    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/new-tool');
++    assert.equal(collection.items.length, 2);
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/clamped-boundary'));
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/new-tool'));
+   });
+ });
+ 
+
+ succeeded in 1632ms:
+(node:85963) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ daily: collect windows on first_saved_at and gathers project deltas (72.355125ms)
+✔ daily: collect uses watermark when no date given and caps at 7 days (31.384625ms)
+✔ daily: overflow advances only through the oldest collected items and drains on the next run (35.210667ms)
+✔ daily: explicit date synthesis does not move the rolling watermark (36.944833ms)
+✔ daily: connect links new items to older related items only (24.064417ms)
+✔ daily: collect handles Twitter-format and offset-ISO timestamps in first_saved_at (34.363208ms)
+✔ daily: relatedSeedTerms drops stopwords, short words, and numbers (0.133208ms)
+✔ daily: digest path validates date shape (0.211834ms)
+✔ daily: synthesize validates citations, writes digest, and advances the rolling watermark (38.02875ms)
+✔ daily: synthesize falls back to mechanical themes when the LLM fails (28.832917ms)
+✔ daily: synthesize suppresses duplicate valid citations without counting them as dropped (27.930167ms)
+✔ daily: synthesize renders uncited items under Also saved (39.06425ms)
+✔ daily: synthesize renders items from themes dropped by the cap under Also saved (31.883375ms)
+✔ daily: interests classifies rising/steady/fading topics and finds active threads (49.8245ms)
+✔ daily: synthesize skips when the window is empty (11.712583ms)
+✔ daily: extractYoutubeVideoId handles watch, short, shorts, and embed URLs (0.084333ms)
+✔ daily: digest links youtube items to their library notes when notes exist (28.4995ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 599.732209
+npm notice run fieldtheory@1.3.20 build
+npm notice run tsc -p tsconfig.json
+
+apply patch
+patch: completed
+/Users/manik/Github/fieldtheory-cli/CONTINUITY.md
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 3a82356de06f3ea9a0bffa4ad0203ecee083583e..499e60ddd8125237efccaef9bcf0f0fec2d6a9b8
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -4,9 +4,10 @@
+ Key decisions:
+ - Overflow uses an oldest-first `(first_saved_at, canonical id)` cursor. `lastRunAt` is the timestamp and `lastRunItemId` breaks timestamp ties.
+ State:
+-- Implementation and focused AE3/AE5 tests complete and validated.
++- R5–R7 implementation validated; stale overflow cursor is now used only when the effective rolling start equals the persisted watermark instant. Clamp-boundary regression test passes.
+ Done:
+ - Read the requested plan and current pipeline.
++- Guarded cursor use after rolling-window clamping/fallback and added regression coverage.
+ Now:
+ - Ready to hand off the validated implementation.
+ Next:
+diff --git a/src/daily/collect.ts b/src/daily/collect.ts
+index 0ada3160d4f744b64df5665aa4da0de0cbcd2f3d..d48cd277161b2767902fc97101b313f3fa70ad3e
+--- a/src/daily/collect.ts
++++ b/src/daily/collect.ts
+@@ -123,6 +123,12 @@
+   const meta = await readDailyMeta();
+   const { date, sinceIso, untilIso } = windowFor(options, meta);
+   const maxItems = options.maxItems ?? MAX_ITEMS;
++  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
++  const useOverflowCursor = !options.date
++    && Boolean(meta.lastRunItemId)
++    // windowFor normalizes dates, so compare instants rather than ISO strings.
++    && Number.isFinite(persistedWatermarkMs)
++    && Date.parse(sinceIso) === persistedWatermarkMs;
+   // Oldest-first means each capped rolling batch drains the backlog before
+   // newer arrivals; the timestamp+id cursor below prevents equal timestamps
+   // from causing a permanent tie at the watermark.
+@@ -130,7 +136,7 @@
+     sinceIso,
+     undefined,
+     untilIso,
+-    options.date ? undefined : meta.lastRunItemId,
++    useOverflowCursor ? meta.lastRunItemId : undefined,
+   );
+   const items = windowItems.slice(0, maxItems);
+   const carriedOver = windowItems.length - items.length;
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 2be5a4f31e44bf74659c9da558e36eb4a545c3b9..02a67a7efd5ee26e2237dbf330be39a0dc750a7d
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -108,20 +108,26 @@
+ test('daily: collect uses watermark when no date given and caps at 7 days', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
++      starRecord({ id: 0, fullName: 'a/clamped-boundary', starredAt: '2026-06-30T00:00:00.000Z' }),
+       starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
+       starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
+     ]);
+     await rebuildCanonicalIndex();
+ 
+     ensureDailyDir();
+-    await writeJson(dailyMetaPath(), { lastRunAt: '2026-05-01T00:00:00.000Z' });
++    await writeJson(dailyMetaPath(), {
++      lastRunAt: '2026-05-01T00:00:00.000Z',
++      // This stale cursor must not be applied to the clamped 2026-06-30 boundary.
++      lastRunItemId: 'zzzzzzzz',
++    });
+ 
+     const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+ 
+     // Watermark is older than the 7-day cap, so the window is clamped.
+     assert.equal(collection.sinceIso, '2026-06-30T00:00:00.000Z');
+-    assert.equal(collection.items.length, 1);
+-    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/new-tool');
++    assert.equal(collection.items.length, 2);
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/clamped-boundary'));
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/new-tool'));
+   });
+ });
+ 
+
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 3a82356de06f3ea9a0bffa4ad0203ecee083583e..499e60ddd8125237efccaef9bcf0f0fec2d6a9b8
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -4,9 +4,10 @@
+ Key decisions:
+ - Overflow uses an oldest-first `(first_saved_at, canonical id)` cursor. `lastRunAt` is the timestamp and `lastRunItemId` breaks timestamp ties.
+ State:
+-- Implementation and focused AE3/AE5 tests complete and validated.
++- R5–R7 implementation validated; stale overflow cursor is now used only when the effective rolling start equals the persisted watermark instant. Clamp-boundary regression test passes.
+ Done:
+ - Read the requested plan and current pipeline.
++- Guarded cursor use after rolling-window clamping/fallback and added regression coverage.
+ Now:
+ - Ready to hand off the validated implementation.
+ Next:
+diff --git a/src/daily/collect.ts b/src/daily/collect.ts
+index 0ada3160d4f744b64df5665aa4da0de0cbcd2f3d..d48cd277161b2767902fc97101b313f3fa70ad3e
+--- a/src/daily/collect.ts
++++ b/src/daily/collect.ts
+@@ -123,6 +123,12 @@
+   const meta = await readDailyMeta();
+   const { date, sinceIso, untilIso } = windowFor(options, meta);
+   const maxItems = options.maxItems ?? MAX_ITEMS;
++  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
++  const useOverflowCursor = !options.date
++    && Boolean(meta.lastRunItemId)
++    // windowFor normalizes dates, so compare instants rather than ISO strings.
++    && Number.isFinite(persistedWatermarkMs)
++    && Date.parse(sinceIso) === persistedWatermarkMs;
+   // Oldest-first means each capped rolling batch drains the backlog before
+   // newer arrivals; the timestamp+id cursor below prevents equal timestamps
+   // from causing a permanent tie at the watermark.
+@@ -130,7 +136,7 @@
+     sinceIso,
+     undefined,
+     untilIso,
+-    options.date ? undefined : meta.lastRunItemId,
++    useOverflowCursor ? meta.lastRunItemId : undefined,
+   );
+   const items = windowItems.slice(0, maxItems);
+   const carriedOver = windowItems.length - items.length;
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 2be5a4f31e44bf74659c9da558e36eb4a545c3b9..02a67a7efd5ee26e2237dbf330be39a0dc750a7d
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -108,20 +108,26 @@
+ test('daily: collect uses watermark when no date given and caps at 7 days', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
++      starRecord({ id: 0, fullName: 'a/clamped-boundary', starredAt: '2026-06-30T00:00:00.000Z' }),
+       starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
+       starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
+     ]);
+     await rebuildCanonicalIndex();
+ 
+     ensureDailyDir();
+-    await writeJson(dailyMetaPath(), { lastRunAt: '2026-05-01T00:00:00.000Z' });
++    await writeJson(dailyMetaPath(), {
++      lastRunAt: '2026-05-01T00:00:00.000Z',
++      // This stale cursor must not be applied to the clamped 2026-06-30 boundary.
++      lastRunItemId: 'zzzzzzzz',
++    });
+ 
+     const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+ 
+     // Watermark is older than the 7-day cap, so the window is clamped.
+     assert.equal(collection.sinceIso, '2026-06-30T00:00:00.000Z');
+-    assert.equal(collection.items.length, 1);
+-    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/new-tool');
++    assert.equal(collection.items.length, 2);
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/clamped-boundary'));
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/new-tool'));
+   });
+ });
+ 
+
+codex
+summary: "Fixed stale overflow-cursor leakage after rolling-window clamping or fallback. The cursor is now applied only when effective sinceIso equals the persisted watermark instant."
+evidence:
+  - "Added regression coverage with a >7-day-old watermark and stale cursor; an item exactly at the clamped boundary is collected."
+  - "Daily tests: 17/17 passed."
+  - "TypeScript build passed."
+files_changed:
+  - "CONTINUITY.md"
+  - "src/daily/collect.ts"
+  - "tests/daily.test.ts"
+commands_run:
+  - command: "node --import tsx --test tests/daily.test.ts && npm run build"
+    exit_code: 0
+    summary: "17 daily tests passed; TypeScript build passed."
+verification:
+  status: "passed"
+  details: "Validated the requested clamp-boundary cursor regression and build."
+blockers: []
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 3a82356de06f3ea9a0bffa4ad0203ecee083583e..499e60ddd8125237efccaef9bcf0f0fec2d6a9b8
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -4,9 +4,10 @@
+ Key decisions:
+ - Overflow uses an oldest-first `(first_saved_at, canonical id)` cursor. `lastRunAt` is the timestamp and `lastRunItemId` breaks timestamp ties.
+ State:
+-- Implementation and focused AE3/AE5 tests complete and validated.
++- R5–R7 implementation validated; stale overflow cursor is now used only when the effective rolling start equals the persisted watermark instant. Clamp-boundary regression test passes.
+ Done:
+ - Read the requested plan and current pipeline.
++- Guarded cursor use after rolling-window clamping/fallback and added regression coverage.
+ Now:
+ - Ready to hand off the validated implementation.
+ Next:
+diff --git a/src/daily/collect.ts b/src/daily/collect.ts
+index 0ada3160d4f744b64df5665aa4da0de0cbcd2f3d..d48cd277161b2767902fc97101b313f3fa70ad3e
+--- a/src/daily/collect.ts
++++ b/src/daily/collect.ts
+@@ -123,6 +123,12 @@
+   const meta = await readDailyMeta();
+   const { date, sinceIso, untilIso } = windowFor(options, meta);
+   const maxItems = options.maxItems ?? MAX_ITEMS;
++  const persistedWatermarkMs = meta.lastRunAt ? Date.parse(meta.lastRunAt) : NaN;
++  const useOverflowCursor = !options.date
++    && Boolean(meta.lastRunItemId)
++    // windowFor normalizes dates, so compare instants rather than ISO strings.
++    && Number.isFinite(persistedWatermarkMs)
++    && Date.parse(sinceIso) === persistedWatermarkMs;
+   // Oldest-first means each capped rolling batch drains the backlog before
+   // newer arrivals; the timestamp+id cursor below prevents equal timestamps
+   // from causing a permanent tie at the watermark.
+@@ -130,7 +136,7 @@
+     sinceIso,
+     undefined,
+     untilIso,
+-    options.date ? undefined : meta.lastRunItemId,
++    useOverflowCursor ? meta.lastRunItemId : undefined,
+   );
+   const items = windowItems.slice(0, maxItems);
+   const carriedOver = windowItems.length - items.length;
+diff --git a/tests/daily.test.ts b/tests/daily.test.ts
+index 2be5a4f31e44bf74659c9da558e36eb4a545c3b9..02a67a7efd5ee26e2237dbf330be39a0dc750a7d
+--- a/tests/daily.test.ts
++++ b/tests/daily.test.ts
+@@ -108,20 +108,26 @@
+ test('daily: collect uses watermark when no date given and caps at 7 days', async () => {
+   await withIsolatedDataDir(async (dir) => {
+     await writeStars(dir, [
++      starRecord({ id: 0, fullName: 'a/clamped-boundary', starredAt: '2026-06-30T00:00:00.000Z' }),
+       starRecord({ id: 1, fullName: 'a/new-tool', starredAt: '2026-07-06T12:00:00.000Z' }),
+       starRecord({ id: 2, fullName: 'b/ancient-tool', starredAt: '2026-05-01T00:00:00.000Z' }),
+     ]);
+     await rebuildCanonicalIndex();
+ 
+     ensureDailyDir();
+-    await writeJson(dailyMetaPath(), { lastRunAt: '2026-05-01T00:00:00.000Z' });
++    await writeJson(dailyMetaPath(), {
++      lastRunAt: '2026-05-01T00:00:00.000Z',
++      // This stale cursor must not be applied to the clamped 2026-06-30 boundary.
++      lastRunItemId: 'zzzzzzzz',
++    });
+ 
+     const collection = await collectDaily({ now: new Date('2026-07-07T00:00:00.000Z') });
+ 
+     // Watermark is older than the 7-day cap, so the window is clamped.
+     assert.equal(collection.sinceIso, '2026-06-30T00:00:00.000Z');
+-    assert.equal(collection.items.length, 1);
+-    assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/new-tool');
++    assert.equal(collection.items.length, 2);
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/clamped-boundary'));
++    assert.ok(collection.items.some((item) => item.canonicalUrl === 'https://github.com/a/new-tool'));
+   });
+ });
+ 
+
+hook: Stop
+hook: Stop Completed
+tokens used
+1,95,663

@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Harness Engineering: From Chat to the Bitter Lesson</title>
+<style>
+  :root {
+    --paper: #090D10;
+    --paper-raised: #121820;
+    --ink: #F0F6FC;
+    --ink-soft: #8B949E;
+    --ink-faint: #484F58;
+    --rule: #21262D;
+    --accent: #58A6FF;       /* Technical blue */
+    --accent-soft: rgba(56, 139, 253, 0.12);
+    --yellow: #E3B341;       /* Technical amber */
+    --yellow-soft: rgba(227, 179, 65, 0.12);
+    --redpen: #FF7B72;       /* red */
+    --red-soft: rgba(255, 123, 114, 0.12);
+    --green: #7EE787;        /* green */
+    --green-soft: rgba(126, 231, 135, 0.12);
+    --mono-bg: #161B22;
+    --shadow: 0 1px 3px rgba(0,0,0,0.6), 0 8px 24px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  .deck { position: relative; width: 100%; height: 100%; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: none;
+    padding: clamp(1.2rem, 3.5vh, 2.5rem) clamp(2rem, 7vw, 6rem) clamp(4.5rem, 9vh, 5.5rem);
+    flex-direction: column;
+    justify-content: center;
+  }
+  .slide.active { display: flex; }
+
+  /* Left-margin timeline indicator */
+  .slide::before {
+    content: "";
+    position: absolute;
+    left: clamp(1.2rem, 4vw, 3.4rem);
+    top: 0; bottom: 0;
+    width: 2px;
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    pointer-events: none;
+  }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: clamp(0.65rem, 1.1vw, 0.8rem);
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--yellow);
+    margin-bottom: 0.5rem;
+  }
+  h1 {
+    font-size: clamp(2.4rem, 5.4vw, 4.4rem);
+    line-height: 1.06;
+    font-weight: 800;
+    text-wrap: balance;
+    max-width: 20ch;
+    letter-spacing: -0.02em;
+  }
+  h2 {
+    font-size: clamp(1.5rem, 2.8vw, 2.1rem);
+    line-height: 1.12;
+    font-weight: 700;
+    text-wrap: balance;
+    max-width: 24ch;
+    margin-bottom: clamp(0.5rem, 1.5vh, 1rem);
+    letter-spacing: -0.01em;
+  }
+  .lede {
+    font-size: clamp(0.95rem, 1.5vw, 1.25rem);
+    line-height: 1.4;
+    color: var(--ink-soft);
+    max-width: 58ch;
+    margin-bottom: 0.8rem;
+  }
+
+  /* Two-column slide layout for text + image preview */
+  .content-wrap {
+    display: flex;
+    gap: clamp(1.5rem, 4vw, 3rem);
+    align-items: center;
+    flex: 1;
+    min-height: 0;
+  }
+  .content-left {
+    flex: 1.1;
+    min-width: 0;
+  }
+  .content-right {
+    flex: 0.9;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+
+  p.item, li.item { font-size: clamp(0.9rem, 1.5vw, 1.2rem); line-height: 1.45; color: var(--ink-soft); }
+  strong { color: var(--ink); }
+
+  .card {
+    background: var(--paper-raised);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: clamp(0.8rem, 1.8vw, 1.3rem);
+    box-shadow: var(--shadow);
+  }
+  .card.highlight-blue { border-color: var(--accent); border-width: 1.5px; }
+  .card.highlight-yellow { border-color: var(--yellow); border-width: 1.5px; }
+  .card.highlight-red { border-color: var(--redpen); border-width: 1.5px; }
+  .card.highlight-green { border-color: var(--green); border-width: 1.5px; }
+
+  .card h3 {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: clamp(0.68rem, 1vw, 0.78rem);
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.4rem;
+  }
+  .card p, .card li { font-size: clamp(0.8rem, 1.3vw, 1.05rem); line-height: 1.45; color: var(--ink-soft); }
+  .card ul, .slide ul { padding-left: 1.2em; display: grid; gap: 0.35em; }
+
+  blockquote {
+    font-size: clamp(1.1rem, 2.2vw, 1.6rem);
+    line-height: 1.35;
+    font-style: italic;
+    max-width: 30ch;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+  .attrib {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: clamp(0.68rem, 1vw, 0.78rem);
+    color: var(--ink-faint);
+    margin-top: 0.6rem;
+    letter-spacing: 0.02em;
+  }
+
+  .redmark { position: relative; white-space: nowrap; }
+  .redmark svg {
+    position: absolute; left: -3%; bottom: -0.28em;
+    width: 106%; height: 0.5em;
+    overflow: visible; pointer-events: none;
+  }
+  .redmark svg path { stroke: var(--yellow); stroke-width: 3.2; fill: none; stroke-linecap: round; opacity: 0.85; }
+
+  table.map { border-collapse: collapse; width: 100%; }
+  table.map th, table.map td {
+    text-align: left;
+    padding: clamp(0.35rem, 1vh, 0.65rem) 0.6rem;
+    font-size: clamp(0.75rem, 1.3vw, 0.95rem);
+    border-bottom: 1px solid var(--rule);
+    line-height: 1.3;
+  }
+  table.map th {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: clamp(0.65rem, 1vw, 0.75rem);
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--yellow); font-weight: 600;
+    border-bottom: 2px solid var(--yellow);
+  }
+  table.map td:first-child { color: var(--ink); font-family: ui-monospace, monospace; }
+  table.map td:last-child { color: var(--ink-soft); }
+
+  .checklist { list-style: none; display: grid; gap: 0.55em; margin-top: 0.8rem; }
+  .checklist li {
+    font-size: clamp(0.9rem, 1.5vw, 1.25rem);
+    line-height: 1.4;
+    color: var(--ink-soft);
+    padding-left: 1.9em;
+    position: relative;
+  }
+  .checklist li::before {
+    content: "☐";
+    position: absolute; left: 0; top: -0.05em;
+    color: var(--accent);
+    font-size: 1.15em;
+  }
+
+  .foot {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.8rem clamp(2rem, 7vw, 6rem);
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--rule);
+    background: var(--paper);
+    z-index: 5;
+  }
+  .foot .pos { font-variant-numeric: tabular-nums; }
+
+  .progress {
+    position: absolute; left: 0; bottom: 0; height: 3px;
+    background: var(--accent);
+    transition: width 0.25s ease;
+    z-index: 6;
+  }
+  @media (prefers-reduced-motion: reduce) { .progress { transition: none; } }
+
+  .notes {
+    position: absolute; inset: auto 0 0 0;
+    max-height: 46%;
+    overflow-y: auto;
+    background: var(--paper-raised);
+    border-top: 2px solid var(--accent);
+    padding: 1.2rem clamp(2rem, 7vw, 6rem) 3.4rem;
+    display: none;
+    z-index: 4;
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.8);
+  }
+  .notes.open { display: block; }
+  .notes h4 {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--yellow); margin-bottom: 0.6rem;
+  }
+  .notes p { font-size: 0.95rem; line-height: 1.6; color: var(--ink-soft); max-width: 75ch; margin-bottom: 0.6em; }
+
+  .hint {
+    position: absolute; top: 1rem; right: clamp(2rem, 7vw, 6rem);
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 0.7rem; letter-spacing: 0.1em; color: var(--ink-faint);
+    z-index: 5;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .srcline { font-size: clamp(0.7rem, 1vw, 0.8rem); color: var(--ink-faint); line-height: 1.4; }
+  .navzone { position: absolute; top: 0; bottom: 3rem; width: 12%; z-index: 3; cursor: pointer; background: none; border: 0; padding: 0; appearance: none; }
+  .navzone:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+  .navzone.prev { left: 0; } .navzone.next { right: 0; }
+  
+  .inline-preview-box {
+    display: flex;
+    flex-direction: column;
+    background: #0d1117;
+    border: 1px dashed var(--yellow);
+    border-radius: 6px;
+    padding: 0.5rem;
+    width: 100%;
+  }
+  .inline-preview-box img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    filter: brightness(0.85) contrast(1.1);
+  }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+<!-- SLIDE 1 · COVER -->
+<section class="slide" data-act="Cover">
+  <div class="content-wrap">
+    <div class="content-left">
+      <div class="eyebrow">Systems Design &middot; Conference Talk</div>
+      <h1>Harness <span class="redmark">Engineering<svg viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true"><path d="M2,7 Q30,3 55,6 T98,5"/></svg></span></h1>
+      <p class="lede" style="margin-top:1.2rem">From chat loops to "harness is all you need"—and how to build for the model path.</p>
+      <p class="lede" style="margin-top:1rem"><strong>Agent = Model + Harness. Evolve the loop, don't cage the intelligence.</strong></p>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 200" style="width:70%; max-width:240px;">
+        <circle cx="100" cy="100" r="85" fill="none" stroke="#21262D" stroke-width="2" stroke-dasharray="4 4" />
+        <circle cx="100" cy="100" r="60" fill="none" stroke="#58A6FF" stroke-width="2" />
+        <circle cx="100" cy="100" r="35" fill="#161B22" stroke="#E3B341" stroke-width="3" />
+        <text x="100" y="104" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="10" font-weight="bold" text-anchor="middle">MODEL</text>
+        <text x="100" y="180" fill="#8B949E" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">HARNESS WRAPPERS</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Welcome the audience. Introduce the core premise: AI capability is shifting from raw model output to the structured environment we wrap around it. We've migrated interfaces rapidly, but the true engineering moat is the harness. Keep this opening hook punchy and set the systems-engineering tone immediately.</p>
+  </div>
+</section>
+
+<!-- SLIDE 2 · THE QUESTION -->
+<section class="slide" data-act="Act I · Migration">
+  <div class="eyebrow">Act I &middot; Migration of the Interface</div>
+  <h2>The core question of modern agentics</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Why do two teams using the exact same LLM API get entirely different product reliability and outputs?</p>
+      <div class="card" style="margin-bottom:0.6rem">
+        <h3>The Raw Approach</h3>
+        <p>Direct API prompts, implicit trust, vibe-based iterations without validation layers.</p>
+      </div>
+      <div class="card highlight-blue">
+        <h3>The Engineered Approach</h3>
+        <p>Structured tool schemas, sandbox execution, AST policies, and regression evals.</p>
+      </div>
+      <div class="attrib">Citations: Viv Trivedy · D7 · 2026 | Jerry Liu · F1 · 2025</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 200" style="width: 80%;">
+        <!-- Team A -->
+        <rect x="10" y="20" width="80" height="70" rx="4" fill="#121820" stroke="#FF7B72" stroke-width="1.5"/>
+        <text x="50" y="40" fill="#FF7B72" font-family="ui-monospace, monospace" font-size="9" text-anchor="middle">TEAM A (Raw)</text>
+        <text x="50" y="60" fill="#8B949E" font-size="7" text-anchor="middle">Vibe Prompts</text>
+        <circle cx="50" cy="75" r="4" fill="#FF7B72"/>
+        
+        <!-- Team B -->
+        <rect x="110" y="20" width="80" height="70" rx="4" fill="#121820" stroke="#7EE787" stroke-width="1.5"/>
+        <text x="150" y="40" fill="#7EE787" font-family="ui-monospace, monospace" font-size="9" text-anchor="middle">TEAM B (Harness)</text>
+        <text x="150" y="60" fill="#8B949E" font-size="7" text-anchor="middle">Evals &amp; Sandbox</text>
+        <polygon points="150,71 146,78 154,78" fill="#7EE787"/>
+        
+        <path d="M50 110 L150 110" stroke="#21262D" stroke-dasharray="2 2" stroke-width="1.5"/>
+        <text x="100" y="130" fill="#8B949E" font-size="8" text-anchor="middle">Same LLM Weights</text>
+        <rect x="75" y="140" width="50" height="30" rx="4" fill="#161B22" stroke="#E3B341" stroke-width="1.5"/>
+        <text x="100" y="158" fill="#F0F6FC" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">LLM API</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>The difference lies entirely in the engineering of the harness. A raw model behaves probabilistically and breaks under edge cases. An engineered harness wraps the model in structured execution, verification, and recovery loops. Skip details on compiler errors if short on time.</p>
+  </div>
+</section>
+
+<!-- SLIDE 3 · CHAT WAS THE INTERFACE -->
+<section class="slide" data-act="Act I · Migration">
+  <div class="eyebrow">Act I &middot; Migration of the Interface</div>
+  <h2>Chat was the interface</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Early LLM user experience was conversation. We locked capabilities inside a single prompt-and-response text window.</p>
+      <ul>
+        <li>Manual copy-pasting of editor code</li>
+        <li>State was held in user's attention, not the machine</li>
+        <li>No programmatic validations or isolated feedback loops</li>
+      </ul>
+      <div class="attrib">Citations: [speaker claim] | Philipp Schmid · A6 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 240 180" style="width: 90%; height: auto;">
+        <!-- User -->
+        <rect x="10" y="60" width="50" height="40" rx="4" fill="#121820" stroke="#8B949E" stroke-width="1.5"/>
+        <text x="35" y="84" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">USER</text>
+        
+        <!-- Prompt Arrow -->
+        <path d="M65 75 L110 75" stroke="#58A6FF" stroke-width="1.5" fill="none"/>
+        <polygon points="110,75 104,71 104,79" fill="#58A6FF"/>
+        <text x="87" y="68" fill="#8B949E" font-size="6" text-anchor="middle">Prompt</text>
+        
+        <!-- Model -->
+        <rect x="115" y="45" width="55" height="60" rx="4" fill="#161B22" stroke="#E3B341" stroke-width="2"/>
+        <text x="142" y="75" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="10" font-weight="bold" text-anchor="middle">LLM</text>
+        
+        <!-- Reply Arrow -->
+        <path d="M110 95 L65 95" stroke="#E3B341" stroke-width="1.5" fill="none"/>
+        <polygon points="65,95 71,91 71,99" fill="#E3B341"/>
+        <text x="87" y="110" fill="#8B949E" font-size="6" text-anchor="middle">Response</text>
+        
+        <!-- Chat Bubble overlay -->
+        <rect x="180" y="60" width="50" height="40" rx="4" fill="#121820" stroke="#8B949E" stroke-width="1.5"/>
+        <text x="205" y="84" fill="#8B949E" font-size="7" text-anchor="middle">CHAT UI</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>In 2023, LLM interaction meant chatting. The user carried the state in their head and manually copied output to their editor. Schmid points out that chat was an interface bottleneck, masking the actual programmatic potential of models. Move quickly to copilot.</p>
+  </div>
+</section>
+
+<!-- SLIDE 4 · COPILOT WAS THE INTERFACE -->
+<section class="slide" data-act="Act I · Migration">
+  <div class="eyebrow">Act I &middot; Migration of the Interface</div>
+  <h2>Copilot was the interface</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Inline completions brought AI into the developer's cursor. Better flow, but still human-driven and single-turn.</p>
+      <ul>
+        <li>Triggered by cursor position and imports</li>
+        <li>Generated short-horizon autocomplete logic</li>
+        <li>Human remains the compilation and execution sandbox</li>
+      </ul>
+      <div class="attrib">Citations: VS Code Copilot Blog · B6 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Editor Mockup -->
+        <rect x="10" y="20" width="180" height="120" rx="6" fill="#121820" stroke="#21262D" stroke-width="1.5"/>
+        <text x="20" y="40" fill="#8B949E" font-family="ui-monospace, monospace" font-size="8">def calculate_metrics(data):</text>
+        <text x="20" y="55" fill="#8B949E" font-family="ui-monospace, monospace" font-size="8">    # local imports loaded</text>
+        <text x="20" y="70" fill="#58A6FF" font-family="ui-monospace, monospace" font-size="8" font-weight="bold">    total = sum(data)  # autocompleted</text>
+        <!-- Suggestion box -->
+        <rect x="120" y="80" width="60" height="40" rx="4" fill="#161B22" stroke="#E3B341" stroke-width="1"/>
+        <text x="150" y="102" fill="#E3B341" font-size="6" text-anchor="middle">Copilot API</text>
+        <path d="M120 100 L90 100" stroke="#E3B341" stroke-dasharray="2 2" stroke-width="1"/>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Copilots shifted the context loader closer to the code. However, they were still constrained to single-turn autocomplete. The engineer still acted as the compiler and verification harness, manually testing and debugging every generated suggestion.</p>
+  </div>
+</section>
+
+<!-- SLIDE 5 · THESIS: AGENT = MODEL + HARNESS -->
+<section class="slide" data-act="Act I · Migration">
+  <div class="eyebrow">Act I &middot; Migration of the Interface</div>
+  <h2>Thesis: Agent = Model + Harness</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">The intelligence comes from the model. The execution, reliability, and safety come from the harness.</p>
+      <ul>
+        <li><strong>Model:</strong> Core probabilistic weights layer</li>
+        <li><strong>Harness:</strong> Context loaders, sandboxes, policies, test loops</li>
+      </ul>
+      <div class="attrib">Citations: Viv Trivedy · D7 · 2026 | LangChain · A2 · 2025</div>
+    </div>
+    <div class="content-right">
+      <div class="inline-preview-box">
+        <div style="font-family: ui-monospace, monospace; font-size: 0.68rem; color: var(--yellow); margin-bottom: 0.3rem;">[Original Source Diagram]</div>
+        <img src="https://cdn.prod.website-files.com/65c81e88c254bb0f97633a71/69cba9b378fbdcbc9db3067e_image.png" alt="LangChain original harness anatomy diagram">
+      </div>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>This is the core thesis of the talk. We write the model off as "smart" or "dumb," but in production, we interact with the system. The model acts as the reasoning engine; the harness provides the scaffolding. The same model in a better harness performs like a generation ahead.</p>
+  </div>
+</section>
+
+<!-- SLIDE 6 · BASH IS ALL YOU NEED -->
+<section class="slide" data-act="Act I · Migration">
+  <div class="eyebrow">Act I &middot; Migration of the Interface</div>
+  <h2>"Bash is all you need"</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Giving models access to a raw shell and terminal loop felt like the ultimate tool unlock. Minimal constraints, maximum action.</p>
+      <ul>
+        <li>Model outputs command as a string</li>
+        <li>Harness executes command directly in directory</li>
+        <li>Stdout/stderr fed straight back into context</li>
+      </ul>
+      <div class="attrib">Citations: [speaker claim] | HumanLayer Blog · E1 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <rect x="10" y="20" width="180" height="120" rx="6" fill="#090D10" stroke="#FF7B72" stroke-width="1.5"/>
+        <!-- Terminal Header -->
+        <rect x="10" y="20" width="180" height="18" fill="#161B22"/>
+        <circle cx="20" cy="29" r="3" fill="#FF7B72"/>
+        <circle cx="28" cy="29" r="3" fill="#E3B341"/>
+        <circle cx="36" cy="29" r="3" fill="#7EE787"/>
+        <text x="90" y="32" fill="#8B949E" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle">terminal &mdash; raw loop</text>
+        <!-- Commands -->
+        <text x="20" y="55" fill="#7EE787" font-family="ui-monospace, monospace" font-size="7">$ npm run test</text>
+        <text x="20" y="70" fill="#FF7B72" font-family="ui-monospace, monospace" font-size="7">> Error: Cannot find module './db'</text>
+        <text x="20" y="85" fill="#7EE787" font-family="ui-monospace, monospace" font-size="7">$ sudo rm -rf /lib</text>
+        <text x="20" y="100" fill="#FF7B72" font-family="ui-monospace, monospace" font-size="7">Warning: Destructive execution</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>We realized that giving models tool access meant giving them terminal access. The "bash is all you need" phase prioritized raw power. But without structured isolation, a single bad command could delete a database or trigger an infinite loop of pip installs.</p>
+  </div>
+</section>
+
+<!-- SLIDE 7 · THEN AGENTS HIT THE WALL -->
+<section class="slide" data-act="Act I · Migration">
+  <div class="eyebrow">Act I &middot; Migration of the Interface</div>
+  <h2>Then agents hit the wall</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Unconstrained loops run out of gas. Raw tool execution crashes into system complexity and safety limits.</p>
+      <ul>
+        <li><strong>Context Dilution:</strong> Infinite logs forget base goals</li>
+        <li><strong>Tool Thrashing:</strong> Loops repeat failing actions</li>
+        <li><strong>Silent Breakages:</strong> Tests pass but modules break</li>
+      </ul>
+      <div class="attrib">Citations: Anthropic Engineering · B1 | Pamela Fox · F9 | Kenton Varda · F10</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Crash Vector -->
+        <line x1="20" y1="80" x2="140" y2="80" stroke="#FF7B72" stroke-width="2"/>
+        <polygon points="140,80 132,75 132,85" fill="#FF7B72"/>
+        <text x="80" y="70" fill="#FF7B72" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">Agent Loop</text>
+        
+        <!-- The Wall -->
+        <rect x="150" y="20" width="30" height="120" rx="3" fill="#161B22" stroke="#21262D" stroke-width="2"/>
+        <text x="165" y="85" fill="#FF7B72" font-family="ui-monospace, monospace" font-size="12" font-weight="bold" text-anchor="middle" transform="rotate(90, 165, 85)">WALL</text>
+        
+        <!-- Crash Sparkles -->
+        <circle cx="145" cy="80" r="10" fill="none" stroke="#E3B341" stroke-dasharray="2 2" stroke-width="1.5"/>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Autonomy without guardrails degrades quickly. Anthropic found that long-running agents thrash when tool outputs are too verbose. Fox highlighted how specs drift silently, and Varda showed that agents require fine-grained capability-based permissions, not root shell access.</p>
+  </div>
+</section>
+
+<!-- SLIDE 8 · VOCABULARY: FRAMEWORK VS RUNTIME VS HARNESS -->
+<section class="slide" data-act="Act II · What a Harness Is">
+  <div class="eyebrow">Act II &middot; What a Harness Is</div>
+  <h2>Vocabulary: Framework, Runtime, Harness</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">To engineer systems, we must disambiguate the stack. They are not interchangeable terms.</p>
+      <ul>
+        <li><strong>Framework:</strong> Abstract chain elements & prompts</li>
+        <li><strong>Runtime:</strong> Graph executing nodes & persistence</li>
+        <li><strong>Harness:</strong> The opinionated outer loop productized</li>
+      </ul>
+      <div class="attrib">Citations: LangChain Blog · A2 · 2025</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Layered Cake -->
+        <!-- Harness -->
+        <rect x="20" y="30" width="160" height="30" rx="4" fill="rgba(88, 166, 255, 0.15)" stroke="#58A6FF" stroke-width="2"/>
+        <text x="100" y="48" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="10" font-weight="bold" text-anchor="middle">3. HARNESS (System)</text>
+        
+        <!-- Runtime -->
+        <rect x="20" y="70" width="160" height="30" rx="4" fill="#121820" stroke="#21262D" stroke-width="1.5"/>
+        <text x="100" y="88" fill="#8B949E" font-family="ui-monospace, monospace" font-size="9" text-anchor="middle">2. RUNTIME (Graph State)</text>
+        
+        <!-- Framework -->
+        <rect x="20" y="110" width="160" height="30" rx="4" fill="#121820" stroke="#21262D" stroke-width="1.5"/>
+        <text x="100" y="128" fill="#8B949E" font-family="ui-monospace, monospace" font-size="9" text-anchor="middle">1. FRAMEWORK (API Wraps)</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>A framework like LangChain or Pydantic AI is how you assemble nodes. The runtime is the execution engine. But the harness is the product itself—the specific sequence of context loaders, sandbox isolation, lint rules, and test loops that make the agent reliable. Skip definition details if short.</p>
+  </div>
+</section>
+
+<!-- SLIDE 9 · HARNESS ENGINEERING, COINED -->
+<section class="slide" data-act="Act II · What a Harness Is">
+  <div class="eyebrow">Act II &middot; What a Harness Is</div>
+  <h2>Harness engineering, coined</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <blockquote style="margin-bottom:0.8rem">
+        "there's a new concept I'm seeing emerging in AI Agents... harness engineering"
+      </blockquote>
+      <p class="attrib">— @dexhorthy · A1 · 2025</p>
+      <p class="lede" style="margin-top:0.6rem">Focuses on inputs, boundaries, and validation loops around existing models rather than prompt tweaking.</p>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Timeline -->
+        <line x1="20" y1="80" x2="180" y2="80" stroke="#21262D" stroke-width="2"/>
+        <!-- 2023 -->
+        <circle cx="30" cy="80" r="5" fill="#8B949E"/>
+        <text x="30" y="100" fill="#8B949E" font-size="8" text-anchor="middle">2023</text>
+        <text x="30" y="65" fill="#8B949E" font-size="6" text-anchor="middle">Prompts</text>
+        
+        <!-- 2024 -->
+        <circle cx="100" cy="80" r="5" fill="#8B949E"/>
+        <text x="100" y="100" fill="#8B949E" font-size="8" text-anchor="middle">2024</text>
+        <text x="100" y="65" fill="#8B949E" font-size="6" text-anchor="middle">Contexts</text>
+        
+        <!-- 2025/2026 -->
+        <circle cx="170" cy="80" r="6" fill="#58A6FF"/>
+        <text x="170" y="100" fill="#58A6FF" font-size="8" text-anchor="middle">2026</text>
+        <text x="170" y="65" fill="#58A6FF" font-family="ui-monospace, monospace" font-size="7" font-weight="bold" text-anchor="middle">Harnesses</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Dexhorthy noticed this transition late 2025. Instead of fighting prompt sensitivity, engineers succeeded by writing better Python runtimes, cleaner tool parsers, and explicit verification loops. The harness became the primary lever for performance.</p>
+  </div>
+</section>
+
+<!-- SLIDE 10 · ANATOMY OF AN AGENT HARNESS -->
+<section class="slide" data-act="Act II · What a Harness Is">
+  <div class="eyebrow">Act II &middot; What a Harness Is</div>
+  <h2>Anatomy of an agent harness</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">The functional components that wrap a model to form an agent system.</p>
+      <div class="card" style="margin-bottom:0.6rem">
+        <h3>Context & Sandbox</h3>
+        <p>Progressive file loaders, sandboxes, process controllers, directory limitations.</p>
+      </div>
+      <div class="card">
+        <h3>Verification & Loops</h3>
+        <p>Linters, compiler validators, test runners, execution rubrics, trace hooks.</p>
+      </div>
+      <div class="attrib">Citations: LangChain Anatomy · C2 · 2026 | Viv Trivedy · D3 · 2026</div>
+    </div>
+    <div class="content-right">
+      <div class="inline-preview-box">
+        <div style="font-family: ui-monospace, monospace; font-size: 0.68rem; color: var(--yellow); margin-bottom: 0.3rem;">[Original Source Diagram]</div>
+        <img src="https://cdn.prod.website-files.com/65c81e88c254bb0f97633a71/69cba9b378fbdcbc9db3067e_image.png" alt="LangChain original harness anatomy diagram">
+      </div>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>A production harness must coordinate these components. The model has no concept of a sandbox; the harness must isolate it. The model can't run a linter; the harness intercepts its output, runs the linter, and formats the error back to the model.</p>
+  </div>
+</section>
+
+<!-- SLIDE 11 · DIAGRAM: THE AGENT LOOP -->
+<section class="slide" data-act="Act II · What a Harness Is">
+  <div class="eyebrow">Act II &middot; What a Harness Is</div>
+  <h2>Diagram: The agent loop</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Traces and execution states must live on disk, not just inside volatile LLM context.</p>
+      <ul>
+        <li><strong>Observe:</strong> Parse workspace file system changes</li>
+        <li><strong>Act:</strong> Model issues structured tool commands</li>
+        <li><strong>Verify:</strong> Execute inside isolation sandbox</li>
+      </ul>
+      <div class="attrib">Citations: Anthropic Engineering · B1 | Avi Chawla · B2/B3</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 200" style="width: 90%;">
+        <!-- Loop Nodes -->
+        <rect x="10" y="30" width="70" height="35" rx="3" fill="#121820" stroke="#58A6FF" stroke-width="1.5"/>
+        <text x="45" y="52" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">OBSERVE</text>
+        
+        <rect x="120" y="30" width="70" height="35" rx="3" fill="#121820" stroke="#E3B341" stroke-width="1.5"/>
+        <text x="155" y="52" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">MODEL</text>
+        
+        <rect x="120" y="110" width="70" height="35" rx="3" fill="#121820" stroke="#58A6FF" stroke-width="1.5"/>
+        <text x="155" y="132" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">ACT</text>
+        
+        <rect x="10" y="110" width="70" height="35" rx="3" fill="rgba(255,123,114,0.1)" stroke="#FF7B72" stroke-width="1.5"/>
+        <text x="45" y="132" fill="#FF7B72" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">SANDBOX</text>
+        
+        <!-- Arrows -->
+        <path d="M80 47 L120 47" stroke="#58A6FF" stroke-width="1"/>
+        <path d="M155 65 L155 110" stroke="#E3B341" stroke-width="1"/>
+        <path d="M120 127 L80 127" stroke="#58A6FF" stroke-width="1"/>
+        <path d="M45 110 L45 65" stroke="#FF7B72" stroke-dasharray="2 2" stroke-width="1"/>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>This is diagram D1. Notice the loop passes through the sandbox. The model cannot bypass the validation step. If the action produces compile errors, the harness feeds the exact compiler output back into the observe stage, preventing context drift.</p>
+  </div>
+</section>
+
+<!-- SLIDE 12 · LONG-RUNNING AGENTS NEED LOW-TECH MEMORY -->
+<section class="slide" data-act="Act II · What a Harness Is">
+  <div class="eyebrow">Act II &middot; What a Harness Is</div>
+  <h2>Memory: progress logs over vector search</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">For long-horizon tasks, keeping states in structured files beats hoping the context window remembers.</p>
+      <ul>
+        <li>Checkpoint file system states explicitly</li>
+        <li>Commit steps iteratively in git</li>
+        <li>Read checkpoint state logs at start of next turn</li>
+      </ul>
+      <div class="attrib">Citations: Anthropic Engineering · B1 | dabit3 · E4</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Low-Tech Logs -->
+        <rect x="20" y="20" width="160" height="120" rx="4" fill="#121820" stroke="#21262D" stroke-width="1.5"/>
+        <rect x="20" y="20" width="160" height="20" fill="#161B22"/>
+        <text x="30" y="32" fill="#8B949E" font-family="ui-monospace, monospace" font-size="7">progress.md (durable)</text>
+        <text x="30" y="55" fill="#7EE787" font-family="ui-monospace, monospace" font-size="8">[x] Step 1: Read brief</text>
+        <text x="30" y="75" fill="#7EE787" font-family="ui-monospace, monospace" font-size="8">[x] Step 2: Write SVG code</text>
+        <text x="30" y="95" fill="#E3B341" font-family="ui-monospace, monospace" font-size="8">[/] Step 3: Run regression tests</text>
+        <text x="30" y="115" fill="#8B949E" font-family="ui-monospace, monospace" font-size="8">[ ] Step 4: Finalize PR review</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Rather than dumping raw chats or relying on embeddings, high-performing harnesses force agents to write their own checkpoint files on disk. The next turn reads the file first. Low-tech, deterministic memory scales better than high-tech context stuffing.</p>
+  </div>
+</section>
+
+<!-- SLIDE 13 · HARNESS AS A SERVICE (HAAS) -->
+<section class="slide" data-act="Act II · What a Harness Is">
+  <div class="eyebrow">Act II &middot; What a Harness Is</div>
+  <h2>Harness as a Service (HaaS)</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">The proprietary moat is shifting from raw model access to productized harnesses and orchestration environments.</p>
+      <ul>
+        <li>Models trend to commoditization</li>
+        <li>HaaS holds execution state and credentials</li>
+        <li>Moat becomes sandboxes, security, and telemetry</li>
+      </ul>
+      <div class="attrib">Citations: Viv Trivedy · D1 · 2026 | Ryan Carson / Amp · D4 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Gateway / Client diagrams -->
+        <rect x="70" y="20" width="60" height="40" rx="4" fill="#121820" stroke="#58A6FF" stroke-width="1.5"/>
+        <text x="100" y="44" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="9" text-anchor="middle">HaaS</text>
+        
+        <path d="M40 90 L85 55" stroke="#8B949E" stroke-width="1"/>
+        <path d="M160 90 L115 55" stroke="#8B949E" stroke-width="1"/>
+        
+        <rect x="10" y="90" width="50" height="35" rx="3" fill="#161B22" stroke="#21262D" stroke-width="1"/>
+        <text x="35" y="112" fill="#8B949E" font-size="8" text-anchor="middle">Client A</text>
+        
+        <rect x="140" y="90" width="50" height="35" rx="3" fill="#161B22" stroke="#21262D" stroke-width="1"/>
+        <text x="165" y="112" fill="#8B949E" font-size="8" text-anchor="middle">Client B</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Trivedy introduced HaaS. Companies are realizing they don't need custom models; they need custom execution scaffolds. The value is in the telemetry, the pre-built integrations, and the deterministic wrappers. Skip database details if running short.</p>
+  </div>
+</section>
+
+<!-- SLIDE 14 · OPINIONATED AGENTS WIN -->
+<section class="slide" data-act="Act II · What a Harness Is">
+  <div class="eyebrow">Act II &middot; What a Harness Is</div>
+  <h2>Opinionated agents win</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Giving an agent too many choices leads to path paralysis. Encode engineering taste directly into the harness defaults.</p>
+      <ul>
+        <li>Constrain tools to direct interfaces</li>
+        <li>Format styles, checkout configurations and paths are preset</li>
+        <li>Limits backtracking loops</li>
+      </ul>
+      <div class="attrib">Citations: Viv Trivedy · D2 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Split Path -->
+        <path d="M20 140 L100 80" stroke="#FF7B72" stroke-width="1.5" stroke-dasharray="2 2"/>
+        <path d="M100 80 L70 50 M100 80 L130 50" stroke="#FF7B72" stroke-width="1.5" stroke-dasharray="2 2"/>
+        <text x="60" y="90" fill="#FF7B72" font-size="7">Thrashing Choices</text>
+        
+        <path d="M100 140 L100 30" stroke="#7EE787" stroke-width="2.5"/>
+        <polygon points="100,25 96,35 104,35" fill="#7EE787"/>
+        <text x="140" y="80" fill="#7EE787" font-size="7">Opinionated Flow</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Trivedy argues that agents fail when they have too many tools. The best harnesses limit options and enforce a clear protocol. By narrowing the action space, you reduce model error and keep the execution focused and predictable.</p>
+  </div>
+</section>
+
+<!-- SLIDE 15 · CONTEXT IS LOAD-BEARING -->
+<section class="slide" data-act="Act III · Engineering">
+  <div class="eyebrow">Act III &middot; Engineering the Harness</div>
+  <h2>Context is load-bearing</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Tension: When should we load skills into the model's active context versus when should we delegate to subagents?</p>
+      <div class="card" style="margin-bottom:0.6rem">
+        <h3>Skills (In-Context)</h3>
+        <p>Injected prompt sheets. Fast, but risks attention degradation under load.</p>
+      </div>
+      <div class="card">
+        <h3>Subagents (Delegated)</h3>
+        <p>Isolated child loop workspace. Clean, but high communication latency.</p>
+      </div>
+      <div class="attrib">Citations: dexhorthy · E2 · 2026 | LangChain Memory · C4 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Scale Balance -->
+        <line x1="20" y1="120" x2="180" y2="120" stroke="#21262D" stroke-width="3"/>
+        <polygon points="100,80 85,120 115,120" fill="#161B22" stroke="#21262D" stroke-width="1.5"/>
+        
+        <!-- Left Side: Skills -->
+        <rect x="25" y="70" width="45" height="30" rx="3" fill="#121820" stroke="#FF7B72" stroke-width="1.5"/>
+        <text x="47" y="88" fill="#FF7B72" font-size="7" text-anchor="middle">Skills</text>
+        
+        <!-- Right Side: Subagents -->
+        <rect x="130" y="50" width="45" height="30" rx="3" fill="#121820" stroke="#58A6FF" stroke-width="1.5"/>
+        <text x="152" y="68" fill="#58A6FF" font-size="7" text-anchor="middle">Subagents</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>This is tension slide 1 (debate slide). Packing too many instructions degrades attention. A good harness balances this: keep the main agent thin, inject highly specific skills just-in-time, and spawn isolated subagents for heavy sub-tasks. Skip subagent setup details if short on time.</p>
+  </div>
+</section>
+
+<!-- SLIDE 16 · TOOLS ARE CONTRACTS -->
+<section class="slide" data-act="Act III · Engineering">
+  <div class="eyebrow">Act III &middot; Engineering the Harness</div>
+  <h2>Tools are contracts</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Vague tool schemas cause failures that look like "dumb models." Define strict, deterministic boundaries for every tool.</p>
+      <div class="card highlight-red" style="margin-bottom:0.6rem">
+        <h3>Vague edit_file()</h3>
+        <p>Model guesses lines, replaces entire buffer, breaks local indentation structure.</p>
+      </div>
+      <div class="card highlight-green">
+        <h3>Strict replace_block()</h3>
+        <p>Requires unique targets, performs line matching, fails safely without mutating code.</p>
+      </div>
+      <div class="attrib">Citations: Sarah Sachs · E4 | Notion Harness · B7 | AutoBE · E6 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Schemas comparison -->
+        <rect x="10" y="20" width="80" height="120" rx="4" fill="#121820" stroke="#FF7B72" stroke-dasharray="2 2"/>
+        <text x="50" y="38" fill="#FF7B72" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">VAGUE</text>
+        <text x="50" y="60" fill="#8B949E" font-size="7" text-anchor="middle">Regex / guessing</text>
+        <text x="50" y="75" fill="#8B949E" font-size="7" text-anchor="middle">High state drift</text>
+        
+        <rect x="110" y="20" width="80" height="120" rx="4" fill="#121820" stroke="#7EE787" stroke-width="1.5"/>
+        <text x="150" y="38" fill="#7EE787" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">STRICT</text>
+        <text x="150" y="60" fill="#8B949E" font-size="7" text-anchor="middle">AST Checks</text>
+        <text x="150" y="75" fill="#8B949E" font-size="7" text-anchor="middle">Idempotence</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Sachs and the AutoBE team showed that tightening tool schemas dramatically cuts model errors. The model shouldn't be asked to edit files with regex strings; the harness should force strict, structural edits that fail early if the code has drifted. Keep it brief.</p>
+  </div>
+</section>
+
+<!-- SLIDE 17 · TASK ISOLATION -->
+<section class="slide" data-act="Act III · Engineering">
+  <div class="eyebrow">Act III &middot; Engineering the Harness</div>
+  <h2>Task isolation: One sandbox per run</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Never run an agent directly in your workspace. Build a boundary: one task, one agent, one isolated git worktree.</p>
+      <ul>
+        <li>Prevent overlapping branch mutations</li>
+        <li>Isolate processes from the host OS</li>
+        <li>Enforce strict capability-based network access</li>
+      </ul>
+      <div class="attrib">Citations: Geoffrey Huntley · F8 | Kenton Varda · F10 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Sandboxed worktree -->
+        <rect x="10" y="30" width="80" height="100" rx="4" fill="#121820" stroke="#21262D" stroke-width="1.5"/>
+        <text x="50" y="50" fill="#8B949E" font-size="8" text-anchor="middle">Dirty Repo</text>
+        
+        <!-- Isolator Barrier -->
+        <line x1="100" y1="20" x2="100" y2="140" stroke="#FF7B72" stroke-dasharray="3 3" stroke-width="2"/>
+        
+        <rect x="110" y="30" width="80" height="100" rx="4" fill="rgba(88, 166, 255, 0.05)" stroke="#58A6FF" stroke-width="2"/>
+        <text x="150" y="50" fill="#58A6FF" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">SANDBOX</text>
+        <rect x="120" y="70" width="60" height="40" rx="3" fill="#161B22" stroke="#7EE787" stroke-width="1.5"/>
+        <text x="150" y="94" fill="#7EE787" font-family="ui-monospace, monospace" font-size="7" text-anchor="middle">git worktree</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Modularity protects the codebase. Huntley observed that letting agents loose in a dirty workspace leads to overlapping bugs. By spinning up clean, isolated sandboxes with strict capability-based permissions, you prevent agents from accidentally modifying the wrong files.</p>
+  </div>
+</section>
+
+<!-- SLIDE 18 · EXECUTABLE FEEDBACK -->
+<section class="slide" data-act="Act III · Engineering">
+  <div class="eyebrow">Act III &middot; Engineering the Harness</div>
+  <h2>Executable feedback</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Provide the agent with a failing test or a deterministic rubric, never a vague natural-language critique.</p>
+      <ul>
+        <li>Write exact spec expectations in test templates</li>
+        <li>Execute linters and compiler judges on each save</li>
+        <li>Format raw compile errors into trace steps</li>
+      </ul>
+      <div class="attrib">Citations: Matt Pocock · F3 · 2025 | Viv Trivedy · D8 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Loop back feedback -->
+        <rect x="10" y="40" width="55" height="40" rx="3" fill="#121820" stroke="#FF7B72" stroke-width="1.5"/>
+        <text x="37" y="64" fill="#FF7B72" font-size="8" text-anchor="middle">FAIL TEST</text>
+        
+        <path d="M70 60 L120 60" stroke="#58A6FF" stroke-width="1"/>
+        <polygon points="120,60 114,56 114,64" fill="#58A6FF"/>
+        
+        <rect x="125" y="40" width="65" height="40" rx="3" fill="#121820" stroke="#7EE787" stroke-width="1.5"/>
+        <text x="157" y="64" fill="#7EE787" font-size="8" text-anchor="middle">SANDBOX</text>
+        
+        <path d="M157 80 L157 120 L37 120 L37 80" stroke="#FF7B72" stroke-dasharray="2 2" stroke-width="1"/>
+        <text x="97" y="115" fill="#FF7B72" font-size="6" text-anchor="middle">Traces piped back</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Matt Pocock famously tweeted that writing a failing test first is the best way to steer an agent. Instead of saying "fix the layout," write an assertions test. The harness runs it and provides structured errors. Evals become training data for the loop.</p>
+  </div>
+</section>
+
+<!-- SLIDE 19 · ARCHITECTURAL GUARDRAILS -->
+<section class="slide" data-act="Act III · Engineering">
+  <div class="eyebrow">Act III &middot; Engineering the Harness</div>
+  <h2>Architectural guardrails</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Mechanical code constraints are infinitely more effective than nagging prompts telling the model what to avoid.</p>
+      <div class="card" style="margin-bottom:0.6rem">
+        <h3>Prompt Instructions (Vibe)</h3>
+        <p class="mono" style="font-size:0.75rem; color:var(--redpen);">"Do not import legacy utility packages."</p>
+      </div>
+      <div class="card highlight-blue">
+        <h3>AST Policy Engine (Mechanical)</h3>
+        <p class="mono" style="font-size:0.75rem; color:var(--green);">Harness linter pre-hooks reject AST violations.</p>
+      </div>
+      <div class="attrib">Citations: steipete · F5 · 2025</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- AST structure -->
+        <circle cx="100" cy="30" r="8" fill="#58A6FF"/>
+        <line x1="100" y1="38" x2="70" y2="70" stroke="#21262D" stroke-width="1.5"/>
+        <line x1="100" y1="38" x2="130" y2="70" stroke="#21262D" stroke-width="1.5"/>
+        
+        <circle cx="70" cy="70" r="8" fill="#58A6FF"/>
+        <!-- Legacy Node (Blocked) -->
+        <circle cx="130" cy="70" r="8" fill="#FF7B72"/>
+        <text x="130" y="55" fill="#FF7B72" font-size="7" text-anchor="middle">legacy</text>
+        <line x1="120" y1="60" x2="140" y2="80" stroke="#FF7B72" stroke-width="2"/>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Steipete proved that parsing the AST in the harness caught code violations that prompt rules missed entirely. If you want an agent to follow clean architecture, don't write it in the prompt; write a linter rule in the harness. Let the machine enforce structure.</p>
+  </div>
+</section>
+
+<!-- SLIDE 20 · REVIEW IS PART OF THE HARNESS -->
+<section class="slide" data-act="Act III · Engineering">
+  <div class="eyebrow">Act III &middot; Engineering the Harness</div>
+  <h2>Review as a harness stage</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Tension: Should reviews be cooperative (supporting the builder) or adversarial (actively trying to break the changes)?</p>
+      <div class="card" style="margin-bottom:0.6rem">
+        <h3>Cooperative Check</h3>
+        <p>Simple lints, fast merges, high velocity. Risks leaking bugs.</p>
+      </div>
+      <div class="card highlight-yellow">
+        <h3>Adversarial Check</h3>
+        <p>Mock inputs, boundary tests, dual implementer validations.</p>
+      </div>
+      <div class="attrib">Citations: shafty023 · F6 · 2026 | Matt Pocock · F4 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Adversarial match -->
+        <rect x="20" y="30" width="60" height="40" rx="3" fill="#121820" stroke="#58A6FF" stroke-width="1.5"/>
+        <text x="50" y="54" fill="#58A6FF" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">Builder</text>
+        
+        <text x="100" y="55" fill="#FF7B72" font-size="12" font-weight="bold" text-anchor="middle">VS</text>
+        
+        <rect x="120" y="30" width="60" height="40" rx="3" fill="#121820" stroke="#E3B341" stroke-width="1.5"/>
+        <text x="150" y="54" fill="#E3B341" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">Reviewer</text>
+        
+        <!-- Pipeline output -->
+        <rect x="50" y="100" width="100" height="30" rx="3" fill="rgba(126,231,135,0.05)" stroke="#7EE787" stroke-width="1.5"/>
+        <text x="100" y="118" fill="#7EE787" font-size="8" text-anchor="middle">Validated Code</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>This is tension slide 2 (debate slide). A good harness treats code review as a first-class engineering component, not an afterthought. Adversarial second agents or human gates prevent the build agent from validating its own mistakes. Settle on a hybrid model to balance speed.</p>
+  </div>
+</section>
+
+<!-- SLIDE 21 · DURABILITY & RECOVERY -->
+<section class="slide" data-act="Act III · Engineering">
+  <div class="eyebrow">Act III &middot; Engineering the Harness</div>
+  <h2>Durability & recovery</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Long-running agent executions will fail. The harness must support checkpointing and resumption.</p>
+      <ul>
+        <li>SQLite logs save execution nodes and context</li>
+        <li>Recovery hooks resume from the last valid step</li>
+        <li>Prevents expensive token waste from network drops</li>
+      </ul>
+      <div class="attrib">Citations: sydneyrunkle · F7 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Checkpoint save -->
+        <circle cx="30" cy="50" r="10" fill="#7EE787"/>
+        <text x="30" y="53" fill="#paper" font-size="8" text-anchor="middle">1</text>
+        
+        <line x1="40" y1="50" x2="80" y2="50" stroke="#7EE787" stroke-width="1.5"/>
+        
+        <circle cx="90" cy="50" r="10" fill="#7EE787"/>
+        <text x="90" y="53" fill="#paper" font-size="8" text-anchor="middle">2</text>
+        
+        <line x1="100" y1="50" x2="140" y2="50" stroke="#FF7B72" stroke-width="1.5" stroke-dasharray="2 2"/>
+        <!-- Crash Node -->
+        <circle cx="150" cy="50" r="10" fill="#FF7B72"/>
+        <text x="150" y="53" fill="#paper" font-size="8" text-anchor="middle">X</text>
+        
+        <!-- Recover pointer -->
+        <path d="M150 70 L90 90" stroke="#E3B341" stroke-width="1.5"/>
+        <polygon points="90,90 98,85 95,93" fill="#E3B341"/>
+        <text x="130" y="95" fill="#E3B341" font-size="7">Checkpoint Load</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Runkle highlights that long-running agents crash due to infrastructure errors, not model errors. A production-grade harness must use durable execution libraries. Checkpoint the task list, commit files iteratively, and support dry-run recovery. Skip recovery details if brief.</p>
+  </div>
+</section>
+
+<!-- SLIDE 22 · MEMORY: CONTEXT LAYER VS HARNESS LAYER -->
+<section class="slide" data-act="Act III · Engineering">
+  <div class="eyebrow">Act III &middot; Engineering the Harness</div>
+  <h2>Memory: Context vs Harness</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Distinguish between volatile in-context prompts and persistent harness-level memory.</p>
+      <div style="overflow-x:auto">
+      <table class="map">
+        <tr><th>Metric</th><th>Context</th><th>Harness</th></tr>
+        <tr><td>Storage</td><td>LLM RAM</td><td>Disk/SQLite</td></tr>
+        <tr><td>Capacity</td><td>Prone to rot</td><td>Infinite</td></tr>
+        <tr><td>Stability</td><td>Vague</td><td>Deterministic</td></tr>
+      </table>
+      </div>
+      <div class="attrib">Citations: Dhravya Shah · F15 | Sarah Wooders · F12 | LangChain · C4</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Cabinet vs Context register -->
+        <rect x="20" y="40" width="60" height="80" rx="3" fill="#121820" stroke="#58A6FF" stroke-width="1.5"/>
+        <text x="50" y="30" fill="#58A6FF" font-size="8" text-anchor="middle">Context Window</text>
+        <line x1="20" y1="65" x2="80" y2="65" stroke="#21262D"/>
+        <line x1="20" y1="90" x2="80" y2="90" stroke="#21262D"/>
+        
+        <!-- Cabinet -->
+        <rect x="120" y="40" width="60" height="80" rx="3" fill="#121820" stroke="#7EE787" stroke-width="2"/>
+        <text x="150" y="30" fill="#7EE787" font-size="8" text-anchor="middle">Harness Storage</text>
+        <rect x="130" y="50" width="40" height="15" fill="#161B22" stroke="#7EE787" stroke-width="1"/>
+        <rect x="130" y="70" width="40" height="15" fill="#161B22" stroke="#7EE787" stroke-width="1"/>
+        <rect x="130" y="90" width="40" height="15" fill="#161B22" stroke="#7EE787" stroke-width="1"/>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Do not rely on the LLM's chat history to remember system information. Shah and Wooders argue that memory belongs in the harness. Keep the model context window minimal. Pull down only the relevant schemas and prior steps when needed. Move to Act IV.</p>
+  </div>
+</section>
+
+<!-- SLIDE 23 · THE DEFAULT RECIPE -->
+<section class="slide" data-act="Act IV · Improvement Loops">
+  <div class="eyebrow">Act IV &middot; Improvement Loops &amp; Self-Harness</div>
+  <h2>The default recipe</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">How to build a reliable agent product from scratch. Start simple, build the harness, then tune.</p>
+      <ul>
+        <li><strong>Step 1:</strong> Strong wrapper around v0 agent weights</li>
+        <li><strong>Step 2:</strong> Capture failure execution traces</li>
+        <li><strong>Step 3:</strong> SFT / RL absorb rules into model weights</li>
+      </ul>
+      <div class="attrib">Citations: Viv Trivedy · D7 · 2026</div>
+    </div>
+    <div class="content-right">
+      <div class="inline-preview-box">
+        <div style="font-family: ui-monospace, monospace; font-size: 0.68rem; color: var(--yellow); margin-bottom: 0.3rem;">[Original Source Diagram]</div>
+        <img src="https://cdn.prod.website-files.com/65c81e88c254bb0f97633a71/69cba9b378fbdcbc9db30681_image-1.png" alt="LangChain behavior-to-harness flywheel diagram">
+      </div>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>This is diagram D5. Start with a baseline model and wrap it in a strong verification harness. Use the harness to collect traces. Only fine-tune once you've hit the limits of prompt and tool design. Once the model gets smarter, lighten the harness rules.</p>
+  </div>
+</section>
+
+<!-- SLIDE 24 · TRACE → EVAL → IMPROVE -->
+<section class="slide" data-act="Act IV · Improvement Loops">
+  <div class="eyebrow">Act IV &middot; Improvement Loops &amp; Self-Harness</div>
+  <h2>Trace → eval → improve</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Traces are the lifeblood of agentic engineering. Every pipeline failure must be mined to create a new evaluation case.</p>
+      <ul>
+        <li>Mine raw logs for exact loop thrashing points</li>
+        <li>Convert failing steps into regression tests</li>
+        <li>Verify prompts and tools against tests</li>
+      </ul>
+      <div class="attrib">Citations: Viv Trivedy · D8 | LangChain Better Harness · C3</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Feedback circular path -->
+        <path d="M100 20 A 60 60 0 1 1 99 20" fill="none" stroke="#58A6FF" stroke-width="2" stroke-dasharray="3 3"/>
+        <circle cx="100" cy="20" r="6" fill="#7EE787"/>
+        <text x="100" y="10" fill="#7EE787" font-size="7" text-anchor="middle">Trace Log</text>
+        
+        <circle cx="160" cy="80" r="6" fill="#E3B341"/>
+        <text x="180" y="84" fill="#E3B341" font-size="7">Eval Suite</text>
+        
+        <circle cx="100" cy="140" r="6" fill="#FF7B72"/>
+        <text x="100" y="155" fill="#FF7B72" font-size="7" text-anchor="middle">Fix Loop</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Trivedy calls this the hill-climbing machine. Instead of guessing how prompts work, look at actual traces. If the model fails, write a regression test. That way, when you update tools or switch models, you know immediately if performance improved.</p>
+  </div>
+</section>
+
+<!-- SLIDE 25 · CASE STUDIES THAT MOVE THE NEEDLE -->
+<section class="slide" data-act="Act IV · Improvement Loops">
+  <div class="eyebrow">Act IV &middot; Improvement Loops &amp; Self-Harness</div>
+  <h2>Quantified case studies</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Quantifiable gains showing how harness engineering drives agent breakthroughs in the wild.</p>
+      <ul>
+        <li><strong>OpenAI Codex:</strong> Sandboxes unlocked mass PRs</li>
+        <li><strong>Cursor:</strong> Context layers outperform model swaps</li>
+        <li><strong>AutoBE:</strong> Redesigned schemas raised Qwen from <strong>6.75% to 100%</strong></li>
+      </ul>
+      <div class="attrib">Citations: OpenAI · B3/B4 | Cursor · B5 | AutoBE · E6 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Performance Bar Chart -->
+        <rect x="20" y="120" width="30" height="20" fill="#FF7B72"/>
+        <text x="35" y="115" fill="#FF7B72" font-size="6" text-anchor="middle">6.75%</text>
+        <text x="35" y="150" fill="#8B949E" font-size="6" text-anchor="middle">Raw</text>
+        
+        <rect x="90" y="40" width="30" height="100" fill="#7EE787"/>
+        <text x="105" y="35" fill="#7EE787" font-size="6" text-anchor="middle">100%</text>
+        <text x="105" y="150" fill="#8B949E" font-size="6" text-anchor="middle">Harnessed</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>These are the 3 quantified/extreme examples. AutoBE is the most striking: they didn't train Qwen or prompt-engineer it to be smarter. They simply rewrote the function-calling harness to parse and feed back errors structurally. Same model, 15x success rate jump.</p>
+  </div>
+</section>
+
+<!-- SLIDE 26 · SELF-HARNESS: AGENTS REWRITE THE LOOP -->
+<section class="slide" data-act="Act IV · Improvement Loops">
+  <div class="eyebrow">Act IV &middot; Improvement Loops &amp; Self-Harness</div>
+  <h2>Self-harnessing agents</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">The next stage: agents inspect their own failures, propose new tool modifications, and rewrite their own harness.</p>
+      <ul>
+        <li>Agent analyzes local trace logs</li>
+        <li>Generates helper wrapper files dynamically</li>
+        <li>Verifies modifications against the test suite</li>
+      </ul>
+      <div class="attrib">Citations: Harrison Chase · C6 | MetaHarness · G3 | Memento · F13 | Nityesh · F14</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Self Modifying Loop -->
+        <rect x="60" y="20" width="80" height="50" rx="4" fill="#121820" stroke="#E3B341" stroke-width="1.5"/>
+        <text x="100" y="42" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">Agent Logic</text>
+        <text x="100" y="57" fill="#8B949E" font-size="7" text-anchor="middle">inspects failure</text>
+        
+        <!-- self edit arrow -->
+        <path d="M100 70 L100 100" stroke="#7EE787" stroke-width="1.5"/>
+        <polygon points="100,105 96,95 104,95" fill="#7EE787"/>
+        <text x="130" y="88" fill="#7EE787" font-size="6">self-edit</text>
+        
+        <rect x="60" y="105" width="80" height="30" rx="3" fill="#161B22" stroke="#58A6FF" stroke-width="1.5"/>
+        <text x="100" y="123" fill="#58A6FF" font-family="ui-monospace, monospace" font-size="8" text-anchor="middle">tools.json</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Self-harnessing shifts the outer loop to the agent. Harrison Chase and the MetaHarness paper demonstrated agents generating their own API wrappers to solve novel tasks. The developer's role moves from coding to grading the self-edit.</p>
+  </div>
+</section>
+
+<!-- SLIDE 27 · TENSION: HARNESS PROGRESS VS MODEL PROGRESS -->
+<section class="slide" data-act="Act V · Future">
+  <div class="eyebrow">Act V &middot; Future: Don't Impede the Model Path</div>
+  <h2>Harness progress vs Model progress</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Tension: Will massive engineering of custom harnesses be swallowed by next-generation native model updates?</p>
+      <div class="card" style="margin-bottom:0.6rem">
+        <h3>The Bitter Lesson</h3>
+        <p>General scale always wins; custom prompt and parser configurations eventually decay.</p>
+      </div>
+      <div class="card highlight-yellow">
+        <h3>The Integration Moat</h3>
+        <p>Durable database nodes, network authorization systems, and real-world tools live outside weights.</p>
+      </div>
+      <div class="attrib">Citations: Mike Knoop · F11 | Daniel Miessler · A8 · 2026</div>
+    </div>
+    <div class="content-right">
+      <div class="inline-preview-box">
+        <div style="font-family: ui-monospace, monospace; font-size: 0.68rem; color: var(--yellow); margin-bottom: 0.3rem;">[Original Source Diagram]</div>
+        <img src="https://cdn.prod.website-files.com/65c81e88c254bb0f97633a71/69cba9b378fbdcbc9db30684_image-2.png" alt="LangChain original co-evolution benchmark diagram">
+      </div>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>This is tension slide 3 (debate slide). Mike Knoop points out that complex prompt engineering can be wiped out by a new model release. However, Miessler shows that the harness handles what the model cannot: authorization, database connections, and real-world side effects.</p>
+  </div>
+</section>
+
+<!-- SLIDE 28 · DON'T OVERFIT THE HARNESS -->
+<section class="slide" data-act="Act V · Future">
+  <div class="eyebrow">Act V &middot; Future: Don't Impede the Model Path</div>
+  <h2>Don't overfit the harness</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Tension: Brittle prompt hacks and custom regex parsers overfit to today's model and block future upgrades.</p>
+      <div class="card highlight-red" style="margin-bottom:0.6rem">
+        <h3>Overfit Prompts</h3>
+        <p>Prompts adjusted for specific version token quirks fail on smarter models.</p>
+      </div>
+      <div class="card highlight-green">
+        <h3>General Contracts</h3>
+        <p>JSON schemas and standard sandbox loops persist across model updates.</p>
+      </div>
+      <div class="attrib">Citations: Drew Breunig · E9 · 2026 | Akash Bajwa · E7 · 2026</div>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 160" style="width: 80%;">
+        <!-- Tight Fit vs Loose Fit -->
+        <circle cx="60" cy="80" r="30" fill="none" stroke="#FF7B72" stroke-width="1.5"/>
+        <rect x="35" y="55" width="50" height="50" rx="3" fill="none" stroke="#FF7B72" stroke-width="1.5"/>
+        <text x="60" y="125" fill="#FF7B72" font-size="7" text-anchor="middle">Brittle Fit</text>
+        
+        <circle cx="140" cy="80" r="30" fill="none" stroke="#7EE787" stroke-width="1.5"/>
+        <rect x="125" y="65" width="30" height="30" rx="3" fill="none" stroke="#7EE787" stroke-width="1.5"/>
+        <text x="140" y="125" fill="#7EE787" font-size="7" text-anchor="middle">Clean Decoupled</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>This is tension slide 4 (debate slide). Breunig warns that building highly custom prompts to patch model quirks is a form of technical debt. Build clean interfaces and schemas. Let the next model succeed by keeping your harness simple and swappable.</p>
+  </div>
+</section>
+
+<!-- SLIDE 29 · DON'T IMPEDE THE MODEL PATH -->
+<section class="slide" data-act="Act V · Future">
+  <div class="eyebrow">Act V &middot; Future: Don't Impede the Model Path</div>
+  <h2>Don't impede the model path</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Build thin, measurable, swappable harnesses. Determinism where you can; probability where you must.</p>
+      <ul>
+        <li>Avoid locked model-specific prompt cages</li>
+        <li>Build clean, swappable JSON API interfaces</li>
+        <li>Leave optimization space for smarter models</li>
+      </ul>
+      <div class="attrib">Citations: Viv Trivedy · D9 · 2026 | Mike Knoop · F11 | Daniel Miessler · A8</div>
+    </div>
+    <div class="content-right">
+      <div class="inline-preview-box">
+        <div style="font-family: ui-monospace, monospace; font-size: 0.68rem; color: var(--yellow); margin-bottom: 0.3rem;">[Visual Concept Mapping]</div>
+        <svg viewBox="0 0 600 180" style="width: 100%; height: auto;">
+          <!-- Cage (Overengineered) -->
+          <rect x="20" y="30" width="250" height="130" rx="10" fill="rgba(255,123,114,0.03)" stroke="#FF7B72" stroke-width="2"/>
+          <text x="145" y="55" fill="#FF7B72" font-family="ui-monospace, monospace" font-size="14" font-weight="bold" text-anchor="middle">THE CAGE (Overengineered)</text>
+          <text x="145" y="80" fill="#8B949E" font-size="11" text-anchor="middle">✗ Brittle model-specific prompts</text>
+          <text x="145" y="100" fill="#8B949E" font-size="11" text-anchor="middle">✗ Frozen heuristics &amp; parsers</text>
+          <text x="145" y="120" fill="#8B949E" font-size="11" text-anchor="middle">✗ Blocks next-generation LLMs</text>
+
+          <!-- vs Divider -->
+          <text x="300" y="100" fill="#8B949E" font-size="16" font-weight="bold" text-anchor="middle">VS</text>
+
+          <!-- Thin Harness -->
+          <rect x="330" y="30" width="250" height="130" rx="10" fill="rgba(126,231,135,0.03)" stroke="#7EE787" stroke-width="2"/>
+          <text x="455" y="55" fill="#7EE787" font-family="ui-monospace, monospace" font-size="14" font-weight="bold" text-anchor="middle">THIN HARNESS (Substrate)</text>
+          <text x="455" y="80" fill="#8B949E" font-size="11" text-anchor="middle">✓ Decentralized tool contracts</text>
+          <text x="455" y="100" fill="#8B949E" font-size="11" text-anchor="middle">✓ Swappable models (JSON API)</text>
+          <text x="455" y="120" fill="#8B949E" font-size="11" text-anchor="middle">✓ Sandboxes &amp; continuous evals</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>This is diagram D6. Keep your harness architecture decoupled. If your harness relies on model-specific hacks, you can't swap when a cheaper or faster model drops. The harness should coordinate tools and verify outputs, leaving reasoning to the model.</p>
+  </div>
+</section>
+
+<!-- SLIDE 30 · CLOSE: SHIP THE FLYWHEEL -->
+<section class="slide" data-act="Close">
+  <div class="eyebrow">Close</div>
+  <h2>Close: Ship the flywheel</h2>
+  <div class="content-wrap">
+    <div class="content-left">
+      <p class="lede">Start building your harness engineering workflow today:</p>
+      <ul class="checklist">
+        <li><strong>Ship a v0 harness:</strong> Simple tools, clean sandbox wrapper.</li>
+        <li><strong>Instrument traces:</strong> Save every tool run and compiler failure.</li>
+        <li><strong>Hill-climb with evals:</strong> Convert failures into unit tests.</li>
+      </ul>
+      <p class="srcline" style="margin-top:1rem">Key Sources: LangChain &middot; Anthropic &middot; OpenAI &middot; Cursor &middot; HumanLayer &middot; awesome-harness-engineering (https://github.com/ai-boost/awesome-harness-engineering)</p>
+    </div>
+    <div class="content-right">
+      <svg viewBox="0 0 200 200" style="width: 75%;">
+        <!-- Circular Loop -->
+        <circle cx="100" cy="100" r="70" fill="none" stroke="#7EE787" stroke-width="3" stroke-dasharray="6 6"/>
+        <text x="100" y="95" fill="#7EE787" font-family="ui-monospace, monospace" font-size="12" font-weight="bold" text-anchor="middle">SHIP</text>
+        <text x="100" y="115" fill="#F0F6FC" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">FLYWHEEL</text>
+      </svg>
+    </div>
+  </div>
+  <div class="notes-src">
+    <h4>Speaker notes</h4>
+    <p>Summarize the closing CTA. Don't wait for the perfect model or the perfect prompt. Build your v0 harness, gather traces, and let the failures drive your eval suite. Evolve your execution loop continuously. Open up for Q&A.</p>
+  </div>
+</section>
+
+  <button class="navzone prev" aria-label="Previous slide"></button>
+  <button class="navzone next" aria-label="Next slide"></button>
+  <div class="hint sans">&larr; &rarr; navigate &middot; N notes</div>
+  <div class="foot sans">
+    <span>Harness Engineering &middot; Act V</span>
+    <span class="pos" id="pos">Page 1 of 30</span>
+  </div>
+  <div class="progress" id="progress"></div>
+  <aside class="notes sans" id="notes" aria-live="polite"></aside>
+</div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var pos = document.getElementById('pos');
+  var progress = document.getElementById('progress');
+  var notesPanel = document.getElementById('notes');
+  var notesOpen = false;
+  var i = 0;
+
+  var fromHash = parseInt((location.hash || '').replace('#', ''), 10);
+  if (fromHash >= 1 && fromHash <= slides.length) i = fromHash - 1;
+
+  function render() {
+    slides.forEach(function (s, k) { s.classList.toggle('active', k === i); });
+    pos.textContent = 'Page ' + (i + 1) + ' of ' + slides.length;
+    progress.style.width = (((i + 1) / slides.length) * 100) + '%';
+    location.replace('#' + (i + 1));
+    var src = slides[i].querySelector('.notes-src');
+    notesPanel.innerHTML = src ? src.innerHTML : '';
+    notesPanel.classList.toggle('open', notesOpen && !!src);
+    
+    // Update act name in footer
+    var actName = slides[i].getAttribute('data-act') || 'Act I';
+    document.querySelector('.foot span').innerHTML = 'Harness Engineering &middot; ' + actName;
+  }
+
+  function go(d) { i = Math.min(slides.length - 1, Math.max(0, i + d)); render(); }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); go(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
+    else if (e.key === 'Home') { i = 0; render(); }
+    else if (e.key === 'End') { i = slides.length - 1; render(); }
+    else if (e.key === 'n' || e.key === 'N') { notesOpen = !notesOpen; render(); }
+  });
+  document.querySelector('.navzone.prev').addEventListener('click', function () { go(-1); });
+  document.querySelector('.navzone.next').addEventListener('click', function () { go(1); });
+  window.addEventListener('hashchange', function () {
+    var h = parseInt(location.hash.replace('#', ''), 10);
+    if (h >= 1 && h <= slides.length && h - 1 !== i) { i = h - 1; render(); }
+  });
+  render();
+})();
+</script>
+<style>
+  .notes-src { display: none; }
+</style>
+</body>
+</html>

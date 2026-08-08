@@ -1,0 +1,21 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - paragraph [ref=e4]: Field Theory
+    - heading "Today" [level=1] [ref=e5]
+    - navigation "Field Theory sections" [ref=e6]:
+      - button "Home" [ref=e7] [cursor=pointer]
+      - button "Today" [ref=e8] [cursor=pointer]
+      - button "Analyze" [ref=e9] [cursor=pointer]
+      - button "Map" [ref=e10] [cursor=pointer]
+      - button "Sources" [ref=e11] [cursor=pointer]
+      - button "Discuss" [ref=e12] [cursor=pointer]
+      - button "Bookmarks" [ref=e13] [cursor=pointer]
+    - generic [ref=e14]: Loading stats…
+  - main [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e17]: X List ID
+      - textbox "X List ID" [ref=e18]: "1979812953135497678"
+    - generic [ref=e19]:
+      - searchbox "Search bookmarks, articles, links…" [ref=e20]
+      - button "Search" [ref=e21] [cursor=pointer]
+    - generic [ref=e22]: Loading home…

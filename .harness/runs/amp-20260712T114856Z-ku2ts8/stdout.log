@@ -1,0 +1,53 @@
+{
+  "error": null,
+  "comments": [
+    {
+      "filename": "src/cli.ts",
+      "startLine": 3180,
+      "endLine": 3180,
+      "text": "This help text now says the wiki command requires “claude, codex, grok, droid, or agy CLI on PATH”, but `droid` is not a CLI-on-PATH engine; it is available via `OPENCODE_GO_API_KEY`/OpenCode auth. As written, `ft wiki --help` gives users the wrong setup requirement for droid.",
+      "commentType": "bug",
+      "severity": "low",
+      "why": "Misleading setup guidance can make users think the droid engine is unavailable unless a `droid` binary exists, even though `resolveEngine()` treats droid as a cloud API engine.",
+      "fix": "Rephrase to avoid tying every engine to PATH, e.g. “requires an available LLM engine: claude, codex, grok, agy, or droid via OpenCode Go auth”. "
+    },
+    {
+      "filename": "src/cli.ts",
+      "startLine": 832,
+      "endLine": 832,
+      "text": "The shared `engineOption()` help now includes `agy`, but there are still bespoke `--engine` option strings in this file that omit it (for example the daily digest option around line 1482 and ideas options around lines 3392/3554 still list only claude/codex/grok/droid).",
+      "commentType": "suggested_edit",
+      "severity": "low",
+      "why": "Users see different supported-engine lists depending on the command, even though all of these paths feed into `resolveEngine()` and can accept the new agy engine.",
+      "fix": "Update the remaining command-specific engine help strings to include `agy`, or route those commands through the shared `engineOption()` helper where possible."
+    }
+  ],
+  "files": [
+    {
+      "path": "src/cli.ts",
+      "comments": [
+        {
+          "filename": "src/cli.ts",
+          "startLine": 3180,
+          "endLine": 3180,
+          "text": "This help text now says the wiki command requires “claude, codex, grok, droid, or agy CLI on PATH”, but `droid` is not a CLI-on-PATH engine; it is available via `OPENCODE_GO_API_KEY`/OpenCode auth. As written, `ft wiki --help` gives users the wrong setup requirement for droid.",
+          "commentType": "bug",
+          "severity": "low",
+          "why": "Misleading setup guidance can make users think the droid engine is unavailable unless a `droid` binary exists, even though `resolveEngine()` treats droid as a cloud API engine.",
+          "fix": "Rephrase to avoid tying every engine to PATH, e.g. “requires an available LLM engine: claude, codex, grok, agy, or droid via OpenCode Go auth”. "
+        },
+        {
+          "filename": "src/cli.ts",
+          "startLine": 832,
+          "endLine": 832,
+          "text": "The shared `engineOption()` help now includes `agy`, but there are still bespoke `--engine` option strings in this file that omit it (for example the daily digest option around line 1482 and ideas options around lines 3392/3554 still list only claude/codex/grok/droid).",
+          "commentType": "suggested_edit",
+          "severity": "low",
+          "why": "Users see different supported-engine lists depending on the command, even though all of these paths feed into `resolveEngine()` and can accept the new agy engine.",
+          "fix": "Update the remaining command-specific engine help strings to include `agy`, or route those commands through the shared `engineOption()` helper where possible."
+        }
+      ]
+    }
+  ],
+  "checks": []
+}

@@ -1,0 +1,30 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: FT
+      - generic [ref=e6]:
+        - generic [ref=e7]: Field Theory
+        - generic [ref=e8]: Bookmarks and list digests
+    - navigation "Field Theory sections" [ref=e9]:
+      - button "Home" [ref=e10] [cursor=pointer]
+      - button "Today" [ref=e11] [cursor=pointer]
+      - button "Analyze" [ref=e12] [cursor=pointer]
+      - button "Map" [ref=e13] [cursor=pointer]
+      - button "Sources" [ref=e14] [cursor=pointer]
+      - button "Discuss" [ref=e15] [cursor=pointer]
+      - button "Bookmarks" [ref=e16] [cursor=pointer]
+    - button "Dark theme" [ref=e18] [cursor=pointer]
+  - main [ref=e19]:
+    - generic [ref=e22]:
+      - heading "Home" [level=1] [ref=e23]
+      - paragraph [ref=e24]: Overview from your X list digest
+    - generic [ref=e25]:
+      - generic [ref=e26]:
+        - generic [ref=e27]: X List ID
+        - textbox "X List ID" [ref=e28]: "1979812953135497678"
+      - generic [ref=e29]:
+        - generic [ref=e30]: ⌕
+        - searchbox "Search bookmarks, articles, links…" [ref=e31]
+        - button "Search" [ref=e32] [cursor=pointer]
+      - status [ref=e33]: Loading home…
+      - button "Load more" [ref=e34] [cursor=pointer]
