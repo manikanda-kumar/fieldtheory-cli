@@ -176,6 +176,10 @@ function initCanonicalSchema(db: Database): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_dedupe_key ON bookmark_sources(dedupe_key)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_canonical_id ON bookmark_sources(canonical_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_source ON bookmark_sources(source, profile)`);
+  // Covers the correlated EXISTS(... WHERE s.canonical_id = c.id AND s.source = ?) source filter used by
+  // list/count. Without it SQLite drives the subquery off idx_bookmark_sources_source and scans ~10k source
+  // rows per canonical row: 102s vs 17ms for `?source=x`.
+  db.run(`CREATE INDEX IF NOT EXISTS idx_bookmark_sources_canonical_source ON bookmark_sources(canonical_id, source)`);
   ensureSourceColumn(db, 'content_path', 'TEXT');
   ensureSourceColumn(db, 'metadata_json', 'TEXT');
 
