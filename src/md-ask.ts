@@ -17,8 +17,8 @@ import {
   mdDomainsDir, mdEntitiesDir, mdSourcesDir, mdTopicsDir, mdDir,
 } from './paths.js';
 import { searchBookmarks } from './bookmarks-db.js';
-import { searchCanonicalBookmarks, listCanonicalBookmarks } from './canonical-bookmarks-db.js';
-import { resolveEngine, invokeEngineAsync } from './engine.js';
+import { searchCanonicalBookmarks, listCanonicalBookmarks, findRelatedCanonicalBookmarks } from './canonical-bookmarks-db.js';
+import { resolveEngine, invokeEngineAsync, type EngineRunProfile } from './engine.js';
 import { buildAskPrompt, type MdBookmark } from './md-prompts.js';
 import { slug, logEntry } from './md.js';
 
@@ -28,6 +28,12 @@ const MAX_RAW_BOOKMARKS = 20;
 export interface AskOptions {
   save?: boolean;
   onProgress?: (status: string) => void;
+  /**
+   * Engine selection. Callers without a terminal (the web server) must pass an
+   * explicit engine name: resolveEngine() prompts on stdin when several CLIs
+   * are installed and no default is saved.
+   */
+  profile?: EngineRunProfile;
 }
 
 export interface AskResult {
@@ -103,20 +109,27 @@ function stripWikiUpdatesSection(answer: string): string {
   return answer.replace(/\n## Wiki Updates[\s\S]*$/, '').trim();
 }
 
+function toMdBookmark(result: { id: string; canonicalUrl: string | null; displayTitle: string | null; searchText: string; sources: string[] }): MdBookmark {
+  return {
+    id: result.id,
+    url: result.canonicalUrl ?? result.id,
+    text: [
+      result.displayTitle,
+      result.searchText,
+      result.sources.length ? `Sources: ${result.sources.join(', ')}` : undefined,
+    ].filter((part): part is string => Boolean(part)).join('\n'),
+  };
+}
+
 async function searchRawGrounding(question: string): Promise<MdBookmark[]> {
   try {
     const canonical = await searchCanonicalBookmarks({ query: question, limit: MAX_RAW_BOOKMARKS });
-    if (canonical.length > 0) {
-      return canonical.map((result) => ({
-        id: result.id,
-        url: result.canonicalUrl ?? result.id,
-        text: [
-          result.displayTitle,
-          result.searchText,
-          result.sources.length ? `Sources: ${result.sources.join(', ')}` : undefined,
-        ].filter((part): part is string => Boolean(part)).join('\n'),
-      }));
-    }
+    if (canonical.length > 0) return canonical.map(toMdBookmark);
+
+    // FTS ANDs every word, so a full sentence usually matches nothing. Retry on
+    // the content words ORed together before falling back to the X-only index.
+    const related = await findRelatedCanonicalBookmarks(question, { limit: MAX_RAW_BOOKMARKS });
+    if (related.length > 0) return related.map(toMdBookmark);
   } catch {
     // Fall through to the legacy X-only index when canonical is absent/stale.
   }
@@ -133,7 +146,7 @@ async function searchRawGrounding(question: string): Promise<MdBookmark[]> {
 export async function askMd(question: string, options: AskOptions = {}): Promise<AskResult> {
   const progress = options.onProgress ?? ((s: string) => fs.writeSync(2, s + '\n'));
 
-  const engine = await resolveEngine();
+  const engine = await resolveEngine(options.profile ?? {});
 
   // ── L1: index ───────────────────────────────────────────────────────────
   progress('Reading index...');

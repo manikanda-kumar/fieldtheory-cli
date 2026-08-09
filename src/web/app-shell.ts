@@ -20,6 +20,7 @@ export function renderAppShell(): string {
       </div>
       <nav class="sidebar-nav ft-archive-nav" aria-label="Field Theory sections">
         <button class="nav-link active" type="button" data-lane="home"><span>Home</span><small>Ask, resume, and orient</small></button>
+        <button class="nav-link" type="button" data-lane="ask"><span>Ask</span><small>LLM answers from your archive</small></button>
         <button class="nav-link" type="button" data-lane="today"><span>Today</span><small>Fresh saves and resurfacing</small></button>
         <button class="nav-link" type="button" data-lane="bookmarks"><span>Library</span><small>Search saved items</small></button>
         <button class="nav-link" type="button" data-lane="sources"><span>Sources</span><small>Sync health and coverage</small></button>
@@ -323,6 +324,8 @@ button, input, textarea { font: inherit; }
 }
 .btn-secondary:hover { background: var(--bg-hover); }
 .load-more { display: block; margin: 16px auto 8px; }
+/* display:block above outranks the hidden attribute's UA rule. */
+.load-more[hidden] { display: none; }
 .active-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .status-line { margin: 0 0 12px; color: var(--ink-soft); font-size: 13px; }
 .results { display: grid; gap: 0; }
@@ -985,6 +988,53 @@ body {
 .trail-card span { margin-top: 7px; color: var(--ink-soft); font-size: 13px; line-height: 1.4; }
 .trail-card em { margin-top: 10px; color: #0f766e; font-size: 12px; font-style: normal; font-weight: 850; }
 
+.ask-form { display: grid; gap: 12px; margin-top: 14px; }
+
+.ask-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.ask-input:focus-visible { outline: 3px solid var(--ring); outline-offset: 1px; }
+.ask-input:disabled { opacity: 0.6; }
+
+.ask-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.ask-save { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 13px; }
+
+.ask-progress {
+  display: grid;
+  gap: 3px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg-active);
+  color: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.ask-error { margin: 14px 0 0; color: var(--alert); font-size: 14px; }
+.ask-answer h3 { margin: 20px 0 8px; color: var(--ink-soft); font-size: 12px; font-weight: 850; text-transform: uppercase; }
+.answer-md h2, .answer-md h3, .answer-md h4, .answer-md h5 { margin: 18px 0 8px; color: var(--ink); line-height: 1.2; }
+.answer-md h2 { font-size: 19px; }
+.answer-md h3 { font-size: 16px; }
+.answer-md h4, .answer-md h5 { font-size: 14px; }
+.answer-md p { margin: 0 0 10px; color: var(--ink); font-size: 15px; line-height: 1.5; }
+.answer-md ul { margin: 0 0 12px; padding-left: 20px; color: var(--ink); font-size: 15px; line-height: 1.5; }
+.answer-md li { margin-bottom: 5px; }
+.answer-md code { padding: 1px 5px; border-radius: 5px; background: var(--bg-active); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.answer-md a { color: var(--accent-strong); }
+.answer-md .wiki-ref { padding: 1px 6px; border-radius: 6px; background: var(--context-soft); color: var(--context); font-size: 13px; }
+[data-theme="dark"] .answer-md .wiki-ref { color: #b9a6ff; }
+
 .focus-panel {
   background: linear-gradient(180deg, rgb(15 23 42 / 96%), rgb(30 41 59 / 96%));
   color: #e5edf7;
@@ -1063,9 +1113,15 @@ body {
 `;
 
 export const appJs = `
-const state = { query:'', source:'', category:'', domain:'', folder:'', offset:0, limit:30, total:0, loading:false, lane:'home', statsPayload:null, selectedTrail:0 };
+const state = {
+  query:'', source:'', category:'', domain:'', folder:'', offset:0, limit:30, total:0, loading:false,
+  lane:'home', statsPayload:null, selectedTrail:0,
+  ask: { question:'', save:false, running:false, progress:[], answer:'', error:'', engine:'', pagesRead:[], wikiUpdates:[], savedAs:'' },
+};
+let askAbort = null;
 const laneMeta = {
   home: { title:'A calmer command center for resurfacing what you already saved.', subtitle:'Ask across the archive, continue useful trails, and tune search by source.' },
+  ask: { title:'Ask the library', subtitle:'A local LLM answers from your wiki pages and saved items, with the sources it read.' },
   today: { title:'Today', subtitle:'A lightweight daily surface for new saves, old memories, and what changed.' },
   bookmarks: { title:'Library', subtitle:'Search X bookmarks, Raindrop, GitHub stars, and YouTube notes.' },
   sources: { title:'Sources', subtitle:'Operational sync details and shared links live here, not on Home.' },
@@ -1635,10 +1691,220 @@ async function showDetail(id) {
   }
 }
 
+// ── Ask lane ──────────────────────────────────────────────────────────────
+
+function renderInline(text, target) {
+  const pattern = /(\\*\\*[^*]+\\*\\*)|(\`[^\`]+\`)|(\\[\\[[^\\]]+\\]\\])|(\\[[^\\]]+\\]\\([^)]+\\))|(https?:\\/\\/[^\\s)]+)/g;
+  let cursor = 0;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) target.append(document.createTextNode(text.slice(cursor, match.index)));
+    const token = match[0];
+    if (token.startsWith('**')) {
+      target.append(el('strong', '', token.slice(2, -2)));
+    } else if (token.startsWith('\`')) {
+      target.append(el('code', '', token.slice(1, -1)));
+    } else if (token.startsWith('[[')) {
+      target.append(el('span', 'wiki-ref', token.slice(2, -2)));
+    } else if (token.startsWith('[')) {
+      const split = token.indexOf('](');
+      const link = el('a', '', token.slice(1, split));
+      link.href = token.slice(split + 2, -1);
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      target.append(link);
+    } else {
+      const link = el('a', '', linkLabel(token));
+      link.href = token;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      target.append(link);
+    }
+    cursor = match.index + token.length;
+  }
+  if (cursor < text.length) target.append(document.createTextNode(text.slice(cursor)));
+  return target;
+}
+
+/** Minimal markdown: headings, bullets, and inline emphasis/links/wiki refs. */
+function renderMarkdown(markdown) {
+  const wrap = el('div', 'answer-md');
+  let list = null;
+  for (const rawLine of (markdown || '').split('\\n')) {
+    const line = rawLine.trimEnd();
+    const bullet = line.match(/^\\s*[-*]\\s+(.*)$/);
+    if (bullet) {
+      if (!list) { list = el('ul'); wrap.append(list); }
+      list.append(renderInline(bullet[1], el('li')));
+      continue;
+    }
+    list = null;
+    if (!line.trim()) continue;
+    const heading = line.match(/^(#{1,4})\\s+(.*)$/);
+    if (heading) {
+      wrap.append(renderInline(heading[2], el('h' + Math.min(4, heading[1].length + 1))));
+      continue;
+    }
+    wrap.append(renderInline(line, el('p', 'bookmark-text')));
+  }
+  return wrap;
+}
+
+function paintAsk() {
+  if (state.lane !== 'ask') return;
+  const ask = state.ask;
+  setResultsLayout('');
+  results.replaceChildren();
+
+  const panel = el('section', 'results-panel ask-panel');
+  const heading = el('div', 'section-title');
+  heading.append(el('p', '', 'Ask library'), el('h2', '', 'Answer grounded in your own saved material'));
+  const form = el('form', 'ask-form');
+  const input = el('textarea', 'ask-input');
+  input.rows = 3;
+  input.placeholder = 'What did I save about agent evaluation harnesses?';
+  input.value = ask.question;
+  input.disabled = ask.running;
+  const controls = el('div', 'ask-controls');
+  const saveLabel = el('label', 'ask-save');
+  const saveBox = el('input');
+  saveBox.type = 'checkbox';
+  saveBox.checked = ask.save;
+  saveLabel.append(saveBox, el('span', '', 'Save answer as a concept page'));
+  const submit = el('button', 'btn-primary', ask.running ? 'Asking…' : 'Ask');
+  submit.type = 'submit';
+  submit.disabled = ask.running;
+  controls.append(saveLabel, submit);
+  form.append(input, controls);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    startAsk(input.value.trim(), saveBox.checked);
+  });
+  panel.append(heading, el('p', 'bookmark-text', 'Reads the wiki index, the most relevant pages, and top FTS matches, then answers with a local LLM CLI. Takes up to three minutes.'), form);
+
+  if (ask.progress.length) {
+    const log = el('div', 'ask-progress');
+    for (const line of ask.progress.slice(-8)) log.append(el('span', '', line));
+    panel.append(log);
+  }
+  if (ask.error) panel.append(el('p', 'ask-error', ask.error));
+  results.append(panel);
+
+  if (ask.answer) {
+    const answerPanel = el('section', 'results-panel ask-answer');
+    const answerHeading = el('div', 'section-title');
+    answerHeading.append(el('p', '', ask.engine ? 'Answer · ' + ask.engine : 'Answer'), el('h2', '', ask.question));
+    answerPanel.append(answerHeading, renderMarkdown(ask.answer));
+    if (ask.pagesRead?.length) {
+      const pages = el('div', 'links');
+      for (const page of ask.pagesRead) pages.append(el('span', 'pill', page));
+      answerPanel.append(el('h3', '', 'Pages read'), pages);
+    }
+    if (ask.wikiUpdates?.length) {
+      const updates = el('ul');
+      for (const update of ask.wikiUpdates) updates.append(renderInline(update, el('li')));
+      answerPanel.append(el('h3', '', 'Suggested wiki updates'), updates);
+    }
+    if (ask.savedAs) answerPanel.append(el('p', 'bookmark-text', 'Saved to ' + ask.savedAs));
+    const followUp = el('button', 'details-btn', 'Search these terms');
+    followUp.type = 'button';
+    followUp.addEventListener('click', () => {
+      state.query = ask.question;
+      document.querySelector('#query').value = ask.question;
+      setActiveNav('bookmarks');
+      renderLane('bookmarks');
+    });
+    answerPanel.append(followUp);
+    results.append(answerPanel);
+  }
+  setStatus(ask.running ? 'Asking the library…' : (ask.answer ? 'Answer ready' : 'Ask a question about anything you saved'));
+}
+
+function applyAskEvent(event, data) {
+  if (event === 'progress') {
+    state.ask.progress.push(data.message);
+    return;
+  }
+  if (event === 'done') {
+    Object.assign(state.ask, {
+      running:false,
+      answer: data.answer || '',
+      engine: data.engine || '',
+      pagesRead: data.pagesRead || [],
+      wikiUpdates: data.wikiUpdates || [],
+      savedAs: data.savedAs || '',
+    });
+    return;
+  }
+  if (event === 'error') {
+    state.ask.running = false;
+    state.ask.error = data.error || 'Ask failed';
+  }
+}
+
+/**
+ * Read the SSE body with fetch rather than EventSource: EventSource hides the
+ * HTTP status (so 429/503 would surface as a generic transport drop) and
+ * auto-reconnects, which would re-run a minutes-long LLM call.
+ */
+async function startAsk(question, save) {
+  if (!question || state.ask.running) return;
+  askAbort?.abort();
+  state.ask = { question, save: Boolean(save), running:true, progress:[], answer:'', error:'', engine:'', pagesRead:[], wikiUpdates:[], savedAs:'' };
+  paintAsk();
+  const params = new URLSearchParams({ query: question });
+  if (save) params.set('save', '1');
+  askAbort = new AbortController();
+  try {
+    const response = await fetch('/api/ask?' + params, { signal: askAbort.signal });
+    if (!response.ok) {
+      let message = response.statusText;
+      try { message = (await response.json()).error || message; } catch {}
+      throw new Error(message);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream:true });
+      let split = buffer.indexOf('\\n\\n');
+      while (split !== -1) {
+        const frame = buffer.slice(0, split);
+        buffer = buffer.slice(split + 2);
+        const eventLine = frame.match(/^event: (.*)$/m);
+        const dataLine = frame.match(/^data: (.*)$/m);
+        if (eventLine && dataLine) {
+          try { applyAskEvent(eventLine[1], JSON.parse(dataLine[1])); } catch {}
+          paintAsk();
+        }
+        split = buffer.indexOf('\\n\\n');
+      }
+    }
+    if (state.ask.running) {
+      state.ask.running = false;
+      state.ask.error = 'Stream ended before an answer arrived';
+    }
+  } catch (error) {
+    state.ask.running = false;
+    if (error.name !== 'AbortError') state.ask.error = error.message || 'Ask failed';
+  } finally {
+    askAbort = null;
+    paintAsk();
+  }
+}
+
 function updateLaneChrome(lane) {
   const searchable = lane === 'home' || lane === 'bookmarks';
   document.querySelector('.search-card').hidden = !searchable;
   loadMore.hidden = lane !== 'bookmarks' || state.offset >= state.total;
+}
+
+function openAskLane(question) {
+  if (question != null) state.ask.question = question;
+  setActiveNav('ask');
+  renderLane('ask');
 }
 
 async function renderLane(lane) {
@@ -1647,6 +1913,7 @@ async function renderLane(lane) {
   updateLaneChrome(lane);
   try {
     setStatus('Loading ' + lane + '…');
+    if (lane === 'ask') return paintAsk();
     if (lane === 'home') return renderHomeLane();
     if (lane === 'today') return renderTodayLane();
     if (lane === 'sources') return renderSourcesLane();
@@ -1688,6 +1955,17 @@ for (const button of document.querySelectorAll('[data-lane]')) {
   button.addEventListener('click', () => {
     setActiveNav(button.dataset.lane);
     renderLane(button.dataset.lane);
+  });
+}
+
+for (const button of document.querySelectorAll('[data-action]')) {
+  button.addEventListener('click', () => {
+    if (button.dataset.action === 'ask') {
+      openAskLane(document.querySelector('#query').value.trim() || state.ask.question);
+      return;
+    }
+    setActiveNav('synthesis');
+    renderLane('synthesis');
   });
 }
 

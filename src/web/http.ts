@@ -58,6 +58,38 @@ export function sendText(
   res.end(body);
 }
 
+export interface SseStream {
+  send(event: string, data: unknown): void;
+  comment(text: string): void;
+  close(): void;
+}
+
+/** Open a server-sent-events response. Callers own the stream until close(). */
+export function openSse(res: ServerResponse): SseStream {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-store',
+    connection: 'keep-alive',
+    'x-content-type-options': 'nosniff',
+  });
+  let closed = false;
+  return {
+    send(event, data) {
+      if (closed) return;
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    },
+    comment(text) {
+      if (closed) return;
+      res.write(`: ${text}\n\n`);
+    },
+    close() {
+      if (closed) return;
+      closed = true;
+      res.end();
+    },
+  };
+}
+
 export function sendError(res: ServerResponse, error: unknown): void {
   if (error instanceof HttpError) {
     sendJson(res, error.statusCode, { error: error.message });

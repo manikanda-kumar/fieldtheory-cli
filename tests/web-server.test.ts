@@ -13,7 +13,9 @@ import { openDb, saveDb } from '../src/db.js';
 import { writeJsonLines } from '../src/fs.js';
 import type { GitHubStarRecord } from '../src/github-stars/types.js';
 import { twitterBookmarksIndexPath, xListsDir } from '../src/paths.js';
-import { createBookmarkWebServer } from '../src/web/server.js';
+import { createBookmarkWebServer, type WebServerDeps } from '../src/web/server.js';
+import { parseAskRequest, resetAskInFlightForTest } from '../src/web/ask.js';
+import { HttpError } from '../src/web/http.js';
 import { renderAppShell, appCss, appJs } from '../src/web/app-shell.js';
 
 test('parseBoundedInteger clamps defaults and rejects invalid values', () => {
@@ -160,8 +162,8 @@ async function seedUnifiedSources(root: string): Promise<void> {
   await rebuildCanonicalIndex();
 }
 
-async function startTestServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
-  const server = createBookmarkWebServer();
+async function startTestServer(deps: WebServerDeps = {}): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+  const server = createBookmarkWebServer(deps);
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address() as AddressInfo;
@@ -359,4 +361,111 @@ test('web API serves list-backed today digest surfaces', async () => {
       await server.close();
     }
   });
+});
+
+async function readSseEvents(response: Response): Promise<Array<{ event: string; data: any }>> {
+  const text = await response.text();
+  return text
+    .split('\n\n')
+    .map((frame) => {
+      const event = frame.match(/^event: (.*)$/m);
+      const data = frame.match(/^data: (.*)$/m);
+      return event && data ? { event: event[1]!, data: JSON.parse(data[1]!) } : null;
+    })
+    .filter((frame): frame is { event: string; data: any } => frame !== null);
+}
+
+test('parseAskRequest requires a bounded question and reads the save flag', () => {
+  const parsed = parseAskRequest(new URL('http://127.0.0.1/api/ask?query=%20what%20did%20I%20save%20&save=1'));
+  assert.deepEqual(parsed, { question: 'what did I save', save: true });
+  assert.equal(parseAskRequest(new URL('http://127.0.0.1/api/ask?query=hi')).save, false);
+  assert.throws(() => parseAskRequest(new URL('http://127.0.0.1/api/ask')), (error: unknown) =>
+    error instanceof HttpError && error.statusCode === 400);
+  assert.throws(() => parseAskRequest(new URL('http://127.0.0.1/api/ask?query=' + 'x'.repeat(2001))), (error: unknown) =>
+    error instanceof HttpError && error.statusCode === 400);
+});
+
+test('ask API streams progress and the final answer over SSE', async () => {
+  resetAskInFlightForTest();
+  const calls: Array<{ question: string; save?: boolean; engine?: string }> = [];
+  const server = await startTestServer({
+    pickEngine: () => 'claude',
+    ask: async (question, options) => {
+      calls.push({ question, save: options.save, engine: options.profile?.engine });
+      options.onProgress?.('Reading index...');
+      options.onProgress?.('Invoking LLM...');
+      return {
+        answer: '## Answer\n- grounded in saved items',
+        pagesRead: ['categories/ai.md'],
+        wikiUpdates: ['[[agents]] needs a note'],
+        engine: 'claude',
+        savedAs: '/tmp/concepts/answer.md',
+      };
+    },
+  });
+  try {
+    const response = await fetch(`${server.baseUrl}/api/ask?query=what%20about%20agents&save=1`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/);
+    const events = await readSseEvents(response);
+    assert.deepEqual(events.map((frame) => frame.event), ['progress', 'progress', 'progress', 'done']);
+    assert.equal(events[1]?.data.message, 'Reading index...');
+    assert.equal(events[3]?.data.answer, '## Answer\n- grounded in saved items');
+    assert.deepEqual(events[3]?.data.pagesRead, ['categories/ai.md']);
+    assert.deepEqual(calls, [{ question: 'what about agents', save: true, engine: 'claude' }]);
+  } finally {
+    await server.close();
+  }
+});
+
+test('ask API reports failures as an error event and frees the single-flight latch', async () => {
+  resetAskInFlightForTest();
+  let attempts = 0;
+  const server = await startTestServer({
+    pickEngine: () => 'codex',
+    ask: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('engine exited with code 1');
+      return { answer: 'ok', pagesRead: [], wikiUpdates: [], engine: 'codex' };
+    },
+  });
+  try {
+    const failed = await readSseEvents(await fetch(`${server.baseUrl}/api/ask?query=first`));
+    assert.deepEqual(failed.at(-1), { event: 'error', data: { error: 'engine exited with code 1' } });
+
+    const recovered = await readSseEvents(await fetch(`${server.baseUrl}/api/ask?query=second`));
+    assert.equal(recovered.at(-1)?.event, 'done');
+    assert.equal(attempts, 2);
+  } finally {
+    await server.close();
+  }
+});
+
+test('ask API rejects bad methods and missing engines', async () => {
+  resetAskInFlightForTest();
+  const server = await startTestServer({ pickEngine: () => undefined });
+  try {
+    const missingQuery = await fetch(`${server.baseUrl}/api/ask`);
+    assert.equal(missingQuery.status, 400);
+
+    const wrongMethod = await fetch(`${server.baseUrl}/api/ask?query=hi`, { method: 'POST' });
+    assert.equal(wrongMethod.status, 405);
+
+    const noEngine = await fetch(`${server.baseUrl}/api/ask?query=hi`);
+    assert.equal(noEngine.status, 503);
+    assert.match(((await noEngine.json()) as { error: string }).error, /No LLM engine/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('app shell ships the ask lane, streaming client, and answer styles', () => {
+  const html = renderAppShell();
+  assert.match(html, /data-lane="ask"/);
+  assert.match(html, /data-action="ask"/);
+  assert.match(appJs, /startAsk/);
+  assert.match(appJs, /renderMarkdown/);
+  assert.match(appJs, /\/api\/ask\?/);
+  assert.match(appCss, /\.ask-input/);
+  assert.match(appCss, /\.answer-md/);
 });

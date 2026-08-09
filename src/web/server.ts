@@ -20,6 +20,7 @@ import {
   type BookmarkTimelineItem,
 } from '../bookmarks-db.js';
 import { HttpError, parseBoundedInteger, requestUrl, safeRoutePath, sendError, sendJson, sendText } from './http.js';
+import { handleAsk, type AskDeps } from './ask.js';
 import { loadWebMediaIndex, resolveMediaFile, type WebMediaAsset } from './media.js';
 import {
   buildTodayContextPack,
@@ -286,13 +287,20 @@ async function handleMedia(res: ServerResponse, filename: string): Promise<void>
   createReadStream(mediaFile.path).pipe(res);
 }
 
-export function createBookmarkWebServer(): http.Server {
+/** Overridable so tests can drive the ask stream without spawning an LLM CLI. */
+export type WebServerDeps = AskDeps;
+
+export function createBookmarkWebServer(deps: WebServerDeps = {}): http.Server {
   return http.createServer((req, res) => {
     void (async () => {
       const pathname = safeRoutePath(req.url);
       if (pathname === '/') return sendText(res, 200, renderAppShell(), 'text/html; charset=utf-8');
       if (pathname === '/styles.css') return sendText(res, 200, appCss, 'text/css; charset=utf-8');
       if (pathname === '/app.js') return sendText(res, 200, appJs, 'text/javascript; charset=utf-8');
+      if (pathname === '/api/ask') {
+        if (req.method !== 'GET') throw new HttpError(405, 'Method not allowed');
+        return handleAsk(res, requestUrl(req), deps);
+      }
       if (pathname.startsWith('/api/')) return handleApi(req, res, pathname);
       if (pathname.startsWith('/media/')) return handleMedia(res, pathname.slice('/media/'.length));
       throw new HttpError(404, 'Not found');
