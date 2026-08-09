@@ -8,6 +8,7 @@ import {
   buildMechanicalSummary,
   buildXListSummaryPrompt,
   summarizeXList,
+  xListSummaryIndexPath,
   xListSummaryPath,
 } from '../src/x-list-summary.js';
 import { xListsDir } from '../src/paths.js';
@@ -96,6 +97,7 @@ test('summarizeXList writes dated summary and latest pointer via injected invoke
     assert.match(written, /## Top themes/);
     const latest = fs.readFileSync(path.join(xListsDir(), '197-summary-latest.md'), 'utf8');
     assert.equal(latest, written);
+    assert.match(fs.readFileSync(xListSummaryIndexPath(), 'utf8'), /2026-06-24\.md/);
   });
 });
 

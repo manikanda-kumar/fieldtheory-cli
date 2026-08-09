@@ -15,8 +15,9 @@ import { loadYoutubeState } from '../youtube/state.js';
 import { readDailyMeta, type DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
-import { dailyDigestHtmlPath, dailyDigestPath, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+import { dailyDigestHtmlPath, dailyDigestPath, dailyIndexPath, dailyLibraryDir, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
 import { renderDigestHtml } from './html.js';
+import { writeDailyIndexHtml } from './index-html.js';
 import { listDueReviewCards, markReviewCardsShown, queueReviewCards, type ReviewCard } from './review.js';
 
 const SNIPPET_CHARS = 240;
@@ -726,6 +727,20 @@ export async function synthesizeDaily(
       collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
       llmMeta,
     ));
+  }
+  try {
+    await writeDailyIndexHtml(dailyLibraryDir(), {
+      title: 'Daily Learning Review',
+      description: 'A date-indexed archive of Field Theory’s daily learning reviews.',
+      kind: 'daily',
+      now,
+      nav: [
+        { label: 'X List summaries', href: 'x-list/index.html' },
+        { label: 'YouTube library', href: '../youtube/index.html' },
+      ],
+    });
+  } catch (error) {
+    process.stderr.write(`  Warning: daily archive index regeneration failed (${dailyIndexPath()}): ${error instanceof Error ? error.message : String(error)}\n`);
   }
   if (!collection.isExplicitDate) {
     // Marked only after the digest is on disk: the rotation must reflect cards

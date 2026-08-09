@@ -51,3 +51,8 @@ export function dailyDigestPath(date: string): string {
 export function dailyDigestHtmlPath(date: string): string {
   return dailyDigestPath(date).replace(/\.md$/, '.html');
 }
+
+/** Date-indexed readable archive for all daily digests. */
+export function dailyIndexPath(): string {
+  return path.join(dailyLibraryDir(), 'index.html');
+}

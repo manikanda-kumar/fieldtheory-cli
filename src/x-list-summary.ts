@@ -11,6 +11,7 @@ import { invokeEngineAsync, resolveEngine, withSystemOverride, describeEngine, t
 import { deriveTodayAnalysis, deriveTodaySources, readLatestXListDigest, type StoredXListDigest } from './x-list-store.js';
 import { libraryDir, xListsDir } from './paths.js';
 import type { XListHtmlTweet } from './x-list-html.js';
+import { writeDailyIndexHtml } from './daily/index-html.js';
 
 const DEFAULT_PROMPT_TWEETS = 80;
 const TWEET_TEXT_CHARS = 400;
@@ -62,6 +63,10 @@ export function xListSummaryDir(): string {
 export function xListSummaryPath(date: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`Invalid summary date: ${date}`);
   return path.join(xListSummaryDir(), `${date}.md`);
+}
+
+export function xListSummaryIndexPath(): string {
+  return path.join(xListSummaryDir(), 'index.html');
 }
 
 export function buildXListSummaryPrompt(digest: StoredXListDigest, maxTweets: number = DEFAULT_PROMPT_TWEETS): string {
@@ -211,6 +216,20 @@ export async function summarizeXList(listId: string, options: XListSummaryOption
   fs.mkdirSync(path.dirname(summaryPath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(summaryPath, markdown, { mode: 0o600 });
   fs.writeFileSync(latestPath, markdown, { mode: 0o600 });
+  try {
+    await writeDailyIndexHtml(xListSummaryDir(), {
+      title: 'X List Daily Summary',
+      description: 'A date-indexed archive of the daily briefing from the X list.',
+      kind: 'x-list',
+      now,
+      nav: [
+        { label: 'Daily reviews', href: '../index.html' },
+        { label: 'YouTube library', href: '../../youtube/index.html' },
+      ],
+    });
+  } catch (error) {
+    process.stderr.write(`  Warning: X-list archive index regeneration failed (${xListSummaryIndexPath()}): ${error instanceof Error ? error.message : String(error)}\n`);
+  }
 
   return {
     summaryPath,

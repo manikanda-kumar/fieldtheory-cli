@@ -13,7 +13,7 @@ import { enrichBackfill, enrichThinItems, isEnrichmentEligible, mergeEnrichmentS
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
 import { buildDailyAliases, buildDailyPrompt, contentLength, dailyFallbackChain, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
-import { dailyDigestPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+import { dailyDigestPath, dailyIndexPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
 import { gradeReviewCard, listDueReviewCards, markReviewCardsShown, queueReviewCards } from '../src/daily/review.js';
 
 async function readFileText(filePath: string): Promise<string> {
@@ -331,6 +331,7 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
     assert.match(digest, /synthesis_error: ".*engine down.*"/);
     assert.match(digest, /## System details/);
     assert.match(digest, /- raindrop: never synced/);
+    assert.match(await readFileText(dailyIndexPath()), /2026-07-06\.html/);
   });
 });
 
