@@ -522,9 +522,11 @@ export async function buildIndex(options?: { force?: boolean }): Promise<{ dbPat
  * like `foo(bar)` throws a parse error before it even hits the index.
  */
 export function sanitizeFtsQuery(query: string): string {
+  // Any punctuation can be FTS5 syntax, not just operator characters: a trailing
+  // "?" on a natural-language question is a syntax error on its own. Quote every
+  // term whenever the query is not plain words.
   const hasFts5Operator =
-    /[*{}:^"()\\+]/.test(query) ||
-    /(^|\s)-\S/.test(query) ||
+    /[^\p{L}\p{N}_\s]/u.test(query) ||
     /(^|\s)(AND|OR|NOT|NEAR)(\s|$)/i.test(query);
 
   if (!hasFts5Operator) return query;

@@ -333,3 +333,14 @@ test('sanitizeFtsQuery: strips internal quotes to avoid double-escaping', () => 
   // Internal quotes stripped; term wrapped once
   assert.ok(!result.includes('""'));
 });
+
+test('sanitizeFtsQuery: quotes natural-language questions (trailing ? was a syntax error)', () => {
+  assert.equal(
+    sanitizeFtsQuery('what did I save about agents?'),
+    '"what" "did" "I" "save" "about" "agents?"',
+  );
+  assert.ok(sanitizeFtsQuery("it's fine").includes('"it\'s"'));
+  assert.ok(sanitizeFtsQuery('node.js streams').includes('"node.js"'));
+  // Accented words are still plain terms, not punctuation.
+  assert.equal(sanitizeFtsQuery('café notes'), 'café notes');
+});
