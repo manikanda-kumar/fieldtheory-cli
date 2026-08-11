@@ -16,6 +16,13 @@ import { writeDailyIndexHtml } from './daily/index-html.js';
 const DEFAULT_PROMPT_TWEETS = 80;
 const TWEET_TEXT_CHARS = 400;
 const SUMMARY_INVOKE_TIMEOUT_MS = 300_000;
+/**
+ * The digest is a rolling "last 24h" fetch, so anything older than this is not
+ * today's data. Without the guard a failed `ft x-list` fetch leaves the old
+ * `<listId>-latest.json` in place and the summary silently re-publishes
+ * yesterday's briefing under today's date.
+ */
+const DEFAULT_MAX_DIGEST_AGE_HOURS = 24;
 
 export interface XListSummaryOptions {
   profile?: EngineRunProfile;
@@ -25,8 +32,10 @@ export interface XListSummaryOptions {
   maxTweets?: number;
   /** Explicit markdown output path; defaults to the library daily x-list dir. */
   outputPath?: string;
-  /** Overwrite an existing summary for the same date. */
+  /** Overwrite an existing summary for the same date, and accept a stale digest. */
   force?: boolean;
+  /** Max age of the stored digest before it counts as stale. Default: 24h. */
+  maxDigestAgeHours?: number;
   /** Stable clock injection for tests. */
   now?: Date;
 }
@@ -43,6 +52,12 @@ export interface XListSummaryResult {
   engineLabel?: string;
   llmError?: string;
   skipped?: boolean;
+  /** Hours between the digest's fetchedAt and now; undefined if unparseable. */
+  digestAgeHours?: number;
+  /** Digest is older than the freshness window — nothing was written. */
+  stale?: boolean;
+  /** Set when a stale digest was summarized anyway (--force). */
+  staleForced?: boolean;
 }
 
 function engagementScore(tweet: XListHtmlTweet): number {
@@ -127,6 +142,19 @@ export function buildMechanicalSummary(digest: StoredXListDigest): string {
   ].join('\n');
 }
 
+function maxDigestAgeHours(explicit?: number): number {
+  if (Number.isFinite(explicit) && (explicit as number) > 0) return explicit as number;
+  const raw = Number(process.env.FT_XLIST_MAX_DIGEST_AGE_HOURS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_DIGEST_AGE_HOURS;
+}
+
+/** Age of the stored digest in hours, or undefined when `fetchedAt` is unusable. */
+export function digestAgeHours(fetchedAt: string, now: Date): number | undefined {
+  const fetched = Date.parse(fetchedAt);
+  if (!Number.isFinite(fetched)) return undefined;
+  return Math.max(0, (now.getTime() - fetched) / 3_600_000);
+}
+
 function summaryTimeoutMs(): number {
   const raw = Number(process.env.FT_DAILY_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : SUMMARY_INVOKE_TIMEOUT_MS;
@@ -151,6 +179,12 @@ export async function summarizeXList(listId: string, options: XListSummaryOption
   const summaryPath = options.outputPath ?? xListSummaryPath(date);
   const latestPath = path.join(xListsDir(), `${digest.listId}-summary-latest.md`);
 
+  const ageHours = digestAgeHours(digest.fetchedAt, now);
+  const maxAge = maxDigestAgeHours(options.maxDigestAgeHours);
+  // A failed fetch leaves the previous run's `<listId>-latest.json` behind;
+  // summarizing it would republish yesterday's briefing under today's date.
+  const stale = ageHours === undefined || ageHours > maxAge;
+
   if (!options.outputPath && !options.force && fs.existsSync(summaryPath)) {
     return {
       summaryPath,
@@ -161,6 +195,22 @@ export async function summarizeXList(listId: string, options: XListSummaryOption
       promptTweets: 0,
       usedLlm: false,
       skipped: true,
+      digestAgeHours: ageHours,
+    };
+  }
+
+  if (stale && !options.force) {
+    return {
+      summaryPath,
+      latestPath,
+      date,
+      listId: digest.listId,
+      tweetCount: digest.tweets.length,
+      promptTweets: 0,
+      usedLlm: false,
+      skipped: true,
+      stale: true,
+      digestAgeHours: ageHours,
     };
   }
 
@@ -201,6 +251,8 @@ export async function summarizeXList(listId: string, options: XListSummaryOption
     `tweets: ${digest.tweets.length}`,
     `list_tweets: ${analysis.listTweets}`,
     `prompt_tweets: ${promptTweets}`,
+    ...(ageHours === undefined ? [] : [`digest_age_hours: ${ageHours.toFixed(1)}`]),
+    ...(stale ? ['stale_digest: true'] : []),
     `synthesis: ${usedLlm ? 'llm' : 'mechanical'}`,
     ...(engineLabel ? [`synthesis_engine: "${engineLabel}"`] : []),
     '---',
@@ -208,6 +260,7 @@ export async function summarizeXList(listId: string, options: XListSummaryOption
     `# X List Daily Summary — ${date}`,
     '',
     `> List ${digest.listId} · ${analysis.listTweets} posts in the last 24h · fetched ${digest.fetchedAt}`,
+    ...(stale ? ['', `> ⚠️ Stale digest: fetched ${ageHours === undefined ? 'at an unreadable time' : `${ageHours.toFixed(1)}h ago`} (limit ${maxAge}h). The X list fetch likely failed; this briefing may repeat an earlier day.`] : []),
     '',
     body,
     '',
@@ -241,5 +294,7 @@ export async function summarizeXList(listId: string, options: XListSummaryOption
     usedLlm,
     engineLabel,
     llmError,
+    digestAgeHours: ageHours,
+    ...(stale ? { staleForced: true } : {}),
   };
 }

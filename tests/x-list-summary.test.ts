@@ -132,6 +132,48 @@ test('summarizeXList skips an existing summary unless forced', async () => {
   });
 });
 
+test('summarizeXList refuses a stale digest and writes nothing', async () => {
+  await withTempRoot(async () => {
+    await writeDigest();
+    // Digest fetched 2026-06-24T12:00Z; "now" is two days later.
+    const result = await summarizeXList('197', {
+      invoke: async () => '## Top themes\nshould not be written',
+      now: new Date('2026-06-26T13:00:00.000Z'),
+    });
+    assert.equal(result.stale, true);
+    assert.equal(result.skipped, true);
+    assert.ok((result.digestAgeHours ?? 0) > 24);
+    assert.equal(fs.existsSync(result.summaryPath), false);
+  });
+});
+
+test('summarizeXList summarizes a stale digest with --force and flags it', async () => {
+  await withTempRoot(async () => {
+    await writeDigest();
+    const result = await summarizeXList('197', {
+      invoke: async () => '## Top themes\nforced',
+      now: new Date('2026-06-26T13:00:00.000Z'),
+      force: true,
+    });
+    assert.equal(result.staleForced, true);
+    const written = fs.readFileSync(result.summaryPath, 'utf8');
+    assert.match(written, /stale_digest: true/);
+    assert.match(written, /Stale digest: fetched 49\.0h ago/);
+  });
+});
+
+test('summarizeXList honours an explicit freshness window', async () => {
+  await withTempRoot(async () => {
+    await writeDigest();
+    const now = new Date('2026-06-24T20:00:00.000Z'); // 8h after fetch
+    const strict = await summarizeXList('197', { invoke: async () => '## Top themes\nx', now, maxDigestAgeHours: 4 });
+    assert.equal(strict.stale, true);
+    const relaxed = await summarizeXList('197', { invoke: async () => '## Top themes\nx', now, maxDigestAgeHours: 12 });
+    assert.equal(relaxed.stale, undefined);
+    assert.match(fs.readFileSync(relaxed.summaryPath, 'utf8'), /digest_age_hours: 8\.0/);
+  });
+});
+
 test('buildMechanicalSummary lists top posts and links', () => {
   const summary = buildMechanicalSummary(digest as never);
   assert.match(summary, /## Top posts/);

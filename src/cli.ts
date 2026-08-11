@@ -2104,12 +2104,14 @@ export function buildCli() {
     .option('--effort <effort>', 'Effort override for the summary')
     .option('--tweets <n>', 'Top tweets (by engagement) included in the prompt', (v: string) => Number(v), 80)
     .option('--output <path>', 'Write the summary markdown to this path instead of the library daily dir')
-    .option('--force', 'Overwrite an existing summary for the same date', false)
+    .option('--force', 'Overwrite an existing summary, and summarize even a stale digest', false)
+    .option('--max-age-hours <n>', 'Refuse to summarize a digest older than this (default: 24)', (v: string) => Number(v))
     .option('--json', 'JSON output', false)
     .action(safe(async (list: string, options) => {
       ensureDataDir();
       const listId = parseListId(list);
       const maxTweets = Number(options.tweets);
+      const maxAgeHours = Number(options.maxAgeHours);
       // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin the engine
       // without baking flags into the sync-all step list — same contract as
       // `ft daily --write`.
@@ -2117,14 +2119,24 @@ export function buildCli() {
         maxTweets: Number.isFinite(maxTweets) && maxTweets > 0 ? Math.floor(maxTweets) : undefined,
         outputPath: pathOption(options.output),
         force: Boolean(options.force),
+        maxDigestAgeHours: Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours : undefined,
         profile: {
           engine: stringOption(options.engine) ?? stringOption(process.env.FT_DAILY_ENGINE),
           model: stringOption(options.model) ?? stringOption(process.env.FT_DAILY_MODEL),
           effort: stringOption(options.effort) ?? stringOption(process.env.FT_DAILY_EFFORT),
         },
       });
+      const ageLabel = result.digestAgeHours === undefined ? 'unknown age' : `${result.digestAgeHours.toFixed(1)}h old`;
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
+        // Stale is a failure for unattended runs: the fetch step did not land.
+        if (result.stale) process.exitCode = 1;
+        return;
+      }
+      if (result.stale) {
+        console.error(`  Error: stored digest for list ${result.listId} is ${ageLabel} — refusing to publish it as ${result.date}.`);
+        console.error(`  Re-run \`ft x-list ${result.listId} --since-hours 24\` first, or pass --force to summarize the old digest anyway.`);
+        process.exitCode = 1;
         return;
       }
       if (result.skipped) {
@@ -2135,6 +2147,7 @@ export function buildCli() {
       console.log(`  ✓ X list summary written: ${result.summaryPath}`);
       console.log(`  ✓ Latest pointer: ${result.latestPath}`);
       console.log(`    ${result.tweetCount} tweets · ${result.promptTweets} in prompt · ${result.usedLlm ? `llm via ${result.engineLabel ?? 'default'}` : 'mechanical fallback'}`);
+      if (result.staleForced) console.log(`    ⚠️ digest is ${ageLabel} — summary marked stale_digest: true`);
       if (!result.usedLlm && result.llmError) console.log(`    llm failed: ${result.llmError}`);
     }));
 
