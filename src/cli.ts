@@ -32,6 +32,7 @@ import {
   upsertYoutubeVideosAsSources,
   type YoutubeSourceVideoInput,
 } from './canonical-bookmarks-db.js';
+import { getLibraryIndexStats, reindexLibraryDocs } from './library-index-db.js';
 import { formatClassificationSummary } from './bookmark-classify.js';
 import { classifyWithLlm, classifyDomainsWithLlm } from './bookmark-classify-llm.js';
 import { resolveEngine, detectAvailableEngines } from './engine.js';
@@ -114,6 +115,7 @@ import {
   formatNavigationState,
   formatNavigationTags,
   grepNavigationContent,
+  searchNavigationContent,
   listNavigationBacklinks,
   listNavigationEntries,
   listNavigationLinks,
@@ -2951,6 +2953,32 @@ export function buildCli() {
       console.log(`Indexed ${result.recordCount} bookmarks (${result.newRecords} new) \u2192 ${result.dbPath}`);
       const canonical = await rebuildCanonicalIndex();
       console.log(`Indexed ${canonical.canonicalCount} unified items (${canonical.sourceCount} sources) \u2192 ${canonical.dbPath}`);
+      const library = await reindexLibraryDocs({ force: Boolean(options.force) });
+      console.log(
+        `Indexed ${library.total} Library documents (${library.added} new, ${library.updated} changed, ${library.removed} removed) \u2192 ${library.dbPath}`,
+      );
+    }));
+
+  program
+    .command('library-index')
+    .description('Rebuild the full-text index over Library markdown')
+    .option('--force', 'Drop and reindex every document')
+    .option('--stats', 'Show what is indexed instead of reindexing')
+    .option('--json', 'JSON output')
+    .action(safe(async (options) => {
+      if (options.stats) {
+        const stats = await getLibraryIndexStats();
+        if (options.json) return printJson(stats);
+        if (!stats.indexed) return console.log('Library index is empty. Run ft library-index.');
+        console.log(`${stats.total} documents indexed (last change ${stats.lastUpdatedAt ?? 'unknown'})`);
+        for (const section of stats.sections) console.log(`  ${section.section}  ${section.count}`);
+        return;
+      }
+      const result = await reindexLibraryDocs({ force: Boolean(options.force) });
+      if (options.json) return printJson(result);
+      console.log(
+        `Indexed ${result.total} Library documents (${result.added} new, ${result.updated} changed, ${result.removed} removed) \u2192 ${result.dbPath}`,
+      );
     }));
 
   // ── auth ────────────────────────────────────────────────────────────────
@@ -3084,9 +3112,12 @@ export function buildCli() {
     .description('Search inside Field Theory markdown content')
     .argument('<query>', 'Content query')
     .option('--limit <n>', 'Max results', parsePositiveInteger, 20)
+    .option('--scan', 'Skip the FTS index and scan files directly')
     .option('--json', 'JSON output')
     .action(safe(async (query: string, options) => {
-      const entries = grepNavigationContent(query, options.limit);
+      const entries = options.scan
+        ? grepNavigationContent(query, options.limit)
+        : await searchNavigationContent(query, options.limit);
       if (options.json) printJson(entries);
       else process.stdout.write(formatNavigationSearchResults(entries));
     }));

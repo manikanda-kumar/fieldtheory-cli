@@ -19,6 +19,14 @@ import {
   type BookmarkTimelineFilters,
   type BookmarkTimelineItem,
 } from '../bookmarks-db.js';
+import {
+  countLibraryDocs,
+  ensureLibraryIndexFresh,
+  getLibraryDocById,
+  getLibraryIndexStats,
+  searchLibraryDocs,
+  type LibraryDocPlace,
+} from '../library-index-db.js';
 import { HttpError, parseBoundedInteger, requestUrl, safeRoutePath, sendError, sendJson, sendText } from './http.js';
 import { handleAsk, type AskDeps } from './ask.js';
 import { loadWebMediaIndex, resolveMediaFile, type WebMediaAsset } from './media.js';
@@ -90,6 +98,18 @@ function parseUnifiedFilters(url: URL) {
     category: optionalParam(url, 'category'),
     domain: optionalParam(url, 'domain'),
     limit: parseBoundedInteger(url.searchParams.get('limit'), { defaultValue: 30, min: 1, max: 100 }),
+    offset: parseBoundedInteger(url.searchParams.get('offset'), { defaultValue: 0, min: 0, max: 1_000_000 }),
+  };
+}
+
+function parseLibraryDocFilters(url: URL) {
+  const placeValue = optionalParam(url, 'place');
+  if (placeValue && placeValue !== 'library' && placeValue !== 'commands') throw new HttpError(400, 'Invalid place');
+  return {
+    query: optionalParam(url, 'query'),
+    section: optionalParam(url, 'section'),
+    place: placeValue as LibraryDocPlace | undefined,
+    limit: parseBoundedInteger(url.searchParams.get('limit'), { defaultValue: 10, min: 1, max: 100 }),
     offset: parseBoundedInteger(url.searchParams.get('offset'), { defaultValue: 0, min: 0, max: 1_000_000 }),
   };
 }
@@ -204,6 +224,32 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     if (!item) throw new HttpError(404, 'Unified item not found');
     const sources = await getCanonicalBookmarkSources(item.id);
     sendJson(res, 200, { item: toUnifiedWebItem(item), sources });
+    return;
+  }
+
+  if (pathname === '/api/library-docs') {
+    const filters = parseLibraryDocFilters(url);
+    await ensureLibraryIndexFresh();
+    const [items, total] = await Promise.all([
+      searchLibraryDocs(filters),
+      countLibraryDocs(filters),
+    ]);
+    sendJson(res, 200, { items, total, limit: filters.limit, offset: filters.offset });
+    return;
+  }
+
+  if (pathname === '/api/library-doc') {
+    const id = url.searchParams.get('id')?.trim();
+    if (!id) throw new HttpError(400, 'Missing id');
+    const doc = await getLibraryDocById(id);
+    if (!doc) throw new HttpError(404, 'Document not found');
+    sendJson(res, 200, doc);
+    return;
+  }
+
+  if (pathname === '/api/library-docs/stats') {
+    await ensureLibraryIndexFresh();
+    sendJson(res, 200, await getLibraryIndexStats());
     return;
   }
 

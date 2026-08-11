@@ -5,7 +5,8 @@
  *
  * Answers a question against the markdown knowledge base using layered context:
  *   L1: md/index.md (always included)
- *   L2: relevant category/domain/entity pages (keyword + FTS5 matched)
+ *   L2: relevant wiki pages (keyword matched) plus full-text hits from any
+ *       Library markdown — YouTube notes, daily digests, project pages
  *   L3: raw FTS5 bookmark results (for grounding)
  */
 
@@ -18,12 +19,17 @@ import {
 } from './paths.js';
 import { searchBookmarks } from './bookmarks-db.js';
 import { searchCanonicalBookmarks, listCanonicalBookmarks, findRelatedCanonicalBookmarks } from './canonical-bookmarks-db.js';
+import { ensureLibraryIndexFresh, searchLibraryDocs } from './library-index-db.js';
 import { resolveEngine, invokeEngineAsync, type EngineRunProfile } from './engine.js';
 import { buildAskPrompt, type MdBookmark } from './md-prompts.js';
 import { slug, logEntry } from './md.js';
 
 const MAX_WIKI_PAGES    = 5;
 const MAX_RAW_BOOKMARKS = 20;
+/** Body hits from the Library index; capped so notes cannot crowd out the wiki. */
+const MAX_LIBRARY_DOCS  = 3;
+/** A YouTube transcript note can be tens of KB — keep any one page prompt-sized. */
+const MAX_PAGE_CHARS    = 8000;
 
 export interface AskOptions {
   save?: boolean;
@@ -84,6 +90,21 @@ async function selectRelevantPages(question: string): Promise<string[]> {
       if (ftsBoosts.has(page.relPath)) page.score += 2;
     }
   } catch { /* FTS failed — keyword matching only */ }
+
+  // Body matches from the Library index. Page-name scoring can only find pages
+  // whose filename echoes the question, which misses every note whose answer is
+  // in its text (YouTube notes, daily digests, project pages).
+  try {
+    await ensureLibraryIndexFresh();
+    const docs = await searchLibraryDocs({ query: question, place: 'library', limit: MAX_LIBRARY_DOCS });
+    const byPath = new Map(allPages.map((page) => [path.resolve(page.absPath), page]));
+    docs.forEach((doc, index) => {
+      const rankBoost = 3 + (docs.length - index) / docs.length;
+      const existing = byPath.get(path.resolve(doc.path));
+      if (existing) existing.score += rankBoost;
+      else allPages.push({ relPath: doc.relPath, absPath: doc.path, score: rankBoost });
+    });
+  } catch { /* Library index unavailable — wiki pages only */ }
 
   allPages.sort((a, b) => b.score - a.score);
   const selected = allPages.filter((p) => p.score > 0).slice(0, MAX_WIKI_PAGES).map((p) => p.absPath);
@@ -169,7 +190,8 @@ export async function askMd(question: string, options: AskOptions = {}): Promise
       try {
         const content  = await readMd(absPath);
         const relPath  = path.relative(mdDir(), absPath);
-        mdContext   += `### ${relPath}\n${content}\n\n`;
+        const body     = content.length > MAX_PAGE_CHARS ? `${content.slice(0, MAX_PAGE_CHARS)}\n…(truncated)` : content;
+        mdContext   += `### ${relPath}\n${body}\n\n`;
         pagesRead.push(relPath);
         progress(`  [read] ${relPath}`);
       } catch { /* skip unreadable pages */ }

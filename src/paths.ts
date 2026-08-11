@@ -169,6 +169,15 @@ export function bookmarkMediaManifestPath(): string {
   return path.join(dataDir(), 'media-manifest.json');
 }
 
+/**
+ * Full-text index of Library markdown. A separate database from bookmarks.db:
+ * notes have no URL and no dedupe key, so they are their own archive rather
+ * than rows in canonical_bookmarks.
+ */
+export function libraryIndexPath(): string {
+  return path.join(dataDir(), 'library.db');
+}
+
 export function twitterBookmarksIndexPath(): string {
   return path.join(dataDir(), 'bookmarks.db');
 }

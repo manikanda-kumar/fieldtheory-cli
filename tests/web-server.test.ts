@@ -15,6 +15,7 @@ import type { GitHubStarRecord } from '../src/github-stars/types.js';
 import { twitterBookmarksIndexPath, xListsDir } from '../src/paths.js';
 import { createBookmarkWebServer, type WebServerDeps } from '../src/web/server.js';
 import { parseAskRequest, resetAskInFlightForTest } from '../src/web/ask.js';
+import { resetLibraryIndexFreshnessForTest } from '../src/library-index-db.js';
 import { HttpError } from '../src/web/http.js';
 import { renderAppShell, appCss, appJs } from '../src/web/app-shell.js';
 
@@ -259,6 +260,68 @@ test('web API exposes YouTube note path and metadata in unified provenance', asy
   });
 });
 
+async function withTempLibrary<T>(fn: (library: string) => Promise<T>): Promise<T> {
+  const previous = { library: process.env.FT_LIBRARY_DIR, commands: process.env.FT_COMMANDS_DIR };
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ft-web-library-'));
+  const library = path.join(root, 'library');
+  const commands = path.join(root, 'commands');
+  await mkdir(library, { recursive: true });
+  await mkdir(commands, { recursive: true });
+  process.env.FT_LIBRARY_DIR = library;
+  process.env.FT_COMMANDS_DIR = commands;
+  resetLibraryIndexFreshnessForTest();
+  try {
+    return await fn(library);
+  } finally {
+    resetLibraryIndexFreshnessForTest();
+    for (const [key, value] of [['FT_LIBRARY_DIR', previous.library], ['FT_COMMANDS_DIR', previous.commands]] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test('web API searches Library markdown as its own archive', async () => {
+  await withTempFieldTheoryData(async () => {
+    await withTempLibrary(async (library) => {
+      await mkdir(path.join(library, 'concepts'), { recursive: true });
+      await writeFile(path.join(library, 'concepts', 'retrieval.md'), '# Retrieval notes\n\n#search Hybrid retrieval beats keyword search.\n');
+      const server = await startTestServer();
+      try {
+        const searchResponse = await fetch(`${server.baseUrl}/api/library-docs?query=retrieval&limit=5`);
+        assert.equal(searchResponse.status, 200);
+        const search = await searchResponse.json() as {
+          items: Array<{ id: string; relPath: string; section: string; title: string; tags: string[]; snippet: string }>;
+          total: number;
+        };
+        assert.equal(search.total, 1);
+        assert.equal(search.items[0]?.relPath, 'concepts/retrieval.md');
+        assert.equal(search.items[0]?.section, 'concepts');
+        assert.deepEqual(search.items[0]?.tags, ['search']);
+
+        const statsResponse = await fetch(`${server.baseUrl}/api/library-docs/stats`);
+        assert.equal(statsResponse.status, 200);
+        const stats = await statsResponse.json() as { total: number; indexed: boolean; sections: Array<{ section: string; count: number }> };
+        assert.equal(stats.total, 1);
+        assert.equal(stats.indexed, true);
+        assert.deepEqual(stats.sections, [{ section: 'concepts', count: 1 }]);
+
+        const docResponse = await fetch(`${server.baseUrl}/api/library-doc?id=${encodeURIComponent(search.items[0]!.id)}`);
+        assert.equal(docResponse.status, 200);
+        const doc = await docResponse.json() as { title: string; body: string };
+        assert.equal(doc.title, 'Retrieval notes');
+        assert.match(doc.body, /Hybrid retrieval/);
+
+        assert.equal((await fetch(`${server.baseUrl}/api/library-docs?place=nope`)).status, 400);
+        assert.equal((await fetch(`${server.baseUrl}/api/library-doc`)).status, 400);
+        assert.equal((await fetch(`${server.baseUrl}/api/library-doc?id=library:missing.md`)).status, 404);
+      } finally {
+        await server.close();
+      }
+    });
+  });
+});
+
 test('bookmark web API returns status errors for invalid requests', async () => {
   await withTempFieldTheoryData(async () => {
     await seedBookmarks(process.env.FT_DATA_DIR!);
@@ -468,4 +531,13 @@ test('app shell ships the ask lane, streaming client, and answer styles', () => 
   assert.match(appJs, /\/api\/ask\?/);
   assert.match(appCss, /\.ask-input/);
   assert.match(appCss, /\.answer-md/);
+});
+
+test('app shell renders Library notes as their own result group', () => {
+  assert.match(appJs, /fetchNotesPanel/);
+  assert.match(appJs, /\/api\/library-docs\?/);
+  assert.match(appJs, /\/api\/library-doc\?id=/);
+  assert.match(appJs, /From your notes/);
+  assert.match(appCss, /\.notes-panel/);
+  assert.match(appCss, /\.note-path/);
 });

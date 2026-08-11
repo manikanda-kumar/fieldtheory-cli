@@ -959,6 +959,11 @@ body {
   line-height: 1.12;
 }
 
+.notes-panel { display: grid; gap: 10px; }
+.notes-panel .section-title { margin-bottom: 4px; }
+.note-card .card-author span { color: var(--ink-mute); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.note-path { margin: 0 0 12px; color: var(--ink-mute); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+
 .trail-list {
   display: grid;
   gap: 10px;
@@ -1637,17 +1642,81 @@ async function renderDiscussLane() {
   setStatus('Discussion context ready');
 }
 
+function renderNoteCard(doc) {
+  const card = el('article', 'bookmark-card note-card');
+  const header = el('header');
+  const title = el('div', 'card-author');
+  title.append(el('strong', '', doc.title || doc.relPath), el('span', '', doc.relPath));
+  header.append(title, el('time', 'card-time', formatTime(doc.updatedAt)));
+  const meta = el('div', 'meta-row');
+  meta.append(el('span', 'pill pill-kind', 'note'), el('span', 'pill', doc.section));
+  for (const tag of (doc.tags || []).slice(0, 6)) meta.append(el('span', 'pill', tag));
+  const actions = el('div', 'actions');
+  const read = el('button', 'details-btn', 'Read note');
+  read.type = 'button';
+  read.addEventListener('click', () => { showNoteDetail(doc.id).catch((error) => setStatus(error.message || 'Failed to open note')); });
+  actions.append(read);
+  card.append(header, el('p', 'bookmark-text', doc.snippet || ''), meta, actions);
+  return card;
+}
+
+/** YAML frontmatter is metadata the reader already sees in the card chrome. */
+function stripFrontmatter(body) {
+  const text = body || '';
+  if (!text.startsWith('---')) return text;
+  const closing = text.indexOf('\\n---', 3);
+  if (closing === -1) return text;
+  const lineEnd = text.indexOf('\\n', closing + 1);
+  return lineEnd === -1 ? '' : text.slice(lineEnd + 1).replace(/^\\s+/, '');
+}
+
+async function showNoteDetail(id) {
+  const doc = await fetchJson('/api/library-doc?id=' + encodeURIComponent(id));
+  setDetailOpen(true);
+  detail.replaceChildren();
+  const close = el('button', 'detail-close', 'Close');
+  close.addEventListener('click', () => setDetailOpen(false));
+  detail.append(close, el('p', 'note-path', doc.relPath), renderMarkdown(stripFrontmatter(doc.body)));
+}
+
+/**
+ * Library markdown is a separate FTS archive from the canonical bookmark index,
+ * so it is ranked on its own and shown as its own group rather than merged into
+ * the bookmark feed (bm25 scores from two tables are not comparable).
+ */
+async function fetchNotesPanel(query) {
+  try {
+    const search = new URLSearchParams({ limit:'5' });
+    if (query) search.set('query', query);
+    const data = await fetchJson('/api/library-docs?' + search);
+    if (!data.items?.length) return null;
+    const panel = el('section', 'results-panel notes-panel');
+    const heading = el('div', 'section-title');
+    const label = query ? data.total + ' Library pages match' : 'Recently written Library pages';
+    heading.append(el('p', '', 'From your notes'), el('h2', '', label));
+    panel.append(heading);
+    for (const doc of data.items) panel.append(renderNoteCard(doc));
+    return panel;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchBookmarks(reset = false) {
   if (state.loading) return;
   state.loading = true;
   try {
     setStatus('Loading…');
     setResultsLayout('feed');
-    const data = await fetchJson('/api/unified?' + params(reset));
+    const [data, notes] = await Promise.all([
+      fetchJson('/api/unified?' + params(reset)),
+      reset ? fetchNotesPanel(state.query) : Promise.resolve(null),
+    ]);
     if (reset) results.replaceChildren();
+    if (notes) results.append(notes);
     for (const item of data.items) results.append(renderCard(item));
     state.total = data.total;
-    state.offset = results.children.length;
+    state.offset += data.items.length;
     loadMore.hidden = state.offset >= state.total;
     setStatus('Showing ' + state.offset + ' of ' + state.total + ' library items');
   } catch (error) {
