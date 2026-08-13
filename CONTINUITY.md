@@ -2,13 +2,18 @@
 
 ## Goal (incl. success criteria)
 
-Daily summary of X list 1979812953135497678 as part of daily work: `ft x-list-summary` command + sync-all step so the 09:00 launchd job (dev.fieldtheory.sync-all-daily) produces a markdown briefing every day.
+Augment `ft search` / `ft research` / `ft ask` with live Tweetsmash keyword+semantic search so paraphrases that miss local FTS still surface. Library web typeahead stays local-only.
 
 ## Constraints/Assumptions
 
+- Tweetsmash remains enrichment, not a source of truth. Overlay soft-fails (no key / 429 / network).
+- 100 req/hour: never call live search from `ft serve` Library typeahead.
+- `--json` for `ft search` stays a result array.
+
 ## Key decisions
 
-- Summary implemented as separate sync-all step reading <listId>-latest.json rather than folding list tweets into the canonical daily digest — keeps the 1000+-tweet firehose out of the bookmark index and reuses existing x-list-store ranking helpers.
+- Live `GET /v1/bookmarks?q=&vector_search_term=` overlay on search/research/ask; local FTS first, remote hits appended and de-duped by tweet id.
+- Research JSON adds a `tweetsmash` group rather than mixing scores with BM25.
 
 ## State
 
@@ -17,6 +22,8 @@ Daily summary of X list 1979812953135497678 as part of daily work: `ft x-list-su
 - Shipped `ft x-list-summary <list>`: src/x-list-summary.ts (LLM briefing via engine chain w/ FT_DAILY_* env, mechanical fallback, skip-unless-force), CLI wiring, sync-all step 'x-list-summary' (source x-list, after fetch, disabled by --no-synthesis), tests/x-list-summary.test.ts (5 tests; suite 968/968), dist rebuilt, live run OK → ~/.fieldtheory/library/daily/x-list/2026-08-08.md + <listId>-summary-latest.md (grok/grok-4.5, 80/1050 tweets in prompt). Docs updated in docs/x-list-digest-prototype.md.
 
 ### Now
+
+- Tweetsmash semantic overlay is implemented on `feat/tweetsmash-semantic-search`. Uncommitted. Full suite 996/996.
 
 - 2026-08-09 PM: Shipped date-indexed archive pages (repojournal-style "pick a date"): src/daily/index-html.ts (scan dir of YYYY-MM-DD.md → numbered newest-first list, month headings, Today badge, items/themes/engine meta, theme preview), wired non-fatally into daily --write + x-list-summary. Committed 16dd2c3 (971/971 tests, dist rebuilt), NOT pushed. Live: library/daily/index.html (33 days) + x-list/index.html, visually verified. Prior perf commit 8bd899e also unpushed.
 
@@ -31,6 +38,8 @@ Daily summary of X list 1979812953135497678 as part of daily work: `ft x-list-su
 - 2026-08-11 PM: Fixed the stale-digest bug found in today's run. Commit 3620ab9: summarizeXList compares digest `fetchedAt` to a freshness window (24h default; `--max-age-hours`, FT_XLIST_MAX_DIGEST_AGE_HOURS), returns `stale` and writes nothing, CLI exits 1 so the sync-all step fails loudly; `--force` still writes but stamps `stale_digest: true` + a warning callout; all summaries now record `digest_age_hours`. +3 tests (988/988), dist rebuilt. Re-ran live: `ft x-list` succeeded (1028 tweets / 12 pages, earlier failure was transient), `ft x-list-summary --force` regenerated daily/x-list/2026-08-11.md from the fresh digest (658 list posts, llm via codex, age 0.0h) — no longer a copy of 08-10. NOT pushed.
 
 ### Next
+
+- Commit when requested.
 
 - 2026-08-11 review of github.com/opentrawl/opentrawl (Go, local-first, per-app SQLite archives + federated `trawl` CLI) for design ideas. Takeaways worth stealing, in order: (1) federated search over N archives instead of one schema — lets library markdown become its own FTS archive rather than a shoehorned bookmark row; (2) globally routable links (trawler id + stable alias) + `trawl open LINK` so agents/answers can cite and re-open anything; (3) self-describing manifest — bare `trawl` lists sources/capabilities/privacy boundary, agents told to run `--help` instead of reading a doc that drifts; (4) typed partial failure + exit code 3 (partial-with-usable-output); (5) explicit `update` vs read-only reads. Not worth copying: their ranking is recency-only, no bm25, no cross-source dedupe (we have both).
 

@@ -63,6 +63,7 @@ export async function handleAsk(res: ServerResponse, url: URL, deps: AskDeps = {
     stream.send('progress', { message: `Using ${engine}…` });
     const result = await ask(question, {
       save,
+      tweetsmash: false,
       profile: { engine },
       onProgress: (message) => stream.send('progress', { message }),
     });

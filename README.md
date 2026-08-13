@@ -116,12 +116,16 @@ is used to determine your X user ID for the following list query. No paid API ti
 
 ```bash
 ft search --unified "agent harness" --json   # tier 1: bookmarks
+ft research "agent harness" --json           # local FTS + Tweetsmash semantic overlay
 ft experts search "agent harness" --json     # tier 2: trusted accounts you follow
 # tier 3: broader web/X research via external tools (e.g. grok-cli)
 ```
 
 Check your bookmarks first, then your trusted following roster for domain experts,
 then fall through to broader web search only when local signal is insufficient.
+`ft search` / `ft research` / `ft ask` call Tweetsmash `GET /v1/bookmarks` with
+keyword + semantic search when `TWEETSMASH_API_KEY` is set (100 req/hour). The
+Library web UI stays local-only so typeahead cannot burn that budget.
 
 ### YouTube playlists
 
@@ -201,8 +205,9 @@ Overview modes:
 
 | Command | Description |
 |---------|-------------|
-| `ft search <query>` | Full-text search with BM25 ranking |
+| `ft search <query>` | Full-text search with BM25 ranking; live Tweetsmash semantic overlay when `TWEETSMASH_API_KEY` is set |
 | `ft search --unified <query>` | Search deduped X, Raindrop, GitHub Stars, and YouTube bookmarks |
+| `ft search --no-tweetsmash <query>` | Local FTS only (skip the live Tweetsmash overlay) |
 | `ft list --unified` | List unified canonical bookmarks |
 | `ft list --unified --source github-stars` | List canonical rows that include a GitHub star source |
 | `ft show --unified <id>` | Show one unified canonical bookmark |

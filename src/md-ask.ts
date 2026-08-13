@@ -7,7 +7,7 @@
  *   L1: md/index.md (always included)
  *   L2: relevant wiki pages (keyword matched) plus full-text hits from any
  *       Library markdown — YouTube notes, daily digests, project pages
- *   L3: raw FTS5 bookmark results (for grounding)
+ *   L3: raw FTS5 bookmark results plus live Tweetsmash semantic hits (for grounding)
  */
 
 import fs from 'node:fs';
@@ -20,12 +20,15 @@ import {
 import { searchBookmarks } from './bookmarks-db.js';
 import { searchCanonicalBookmarks, listCanonicalBookmarks, findRelatedCanonicalBookmarks } from './canonical-bookmarks-db.js';
 import { ensureLibraryIndexFresh, searchLibraryDocs } from './library-index-db.js';
+import { searchTweetsmashBookmarks, tweetIdFromStatusUrl } from './tweetsmash-search.js';
 import { resolveEngine, invokeEngineAsync, type EngineRunProfile } from './engine.js';
 import { buildAskPrompt, type MdBookmark } from './md-prompts.js';
 import { slug, logEntry } from './md.js';
 
 const MAX_WIKI_PAGES    = 5;
 const MAX_RAW_BOOKMARKS = 20;
+/** Extra Tweetsmash semantic hits appended after local FTS grounding. */
+const MAX_TWEETSMASH_BOOKMARKS = 5;
 /** Body hits from the Library index; capped so notes cannot crowd out the wiki. */
 const MAX_LIBRARY_DOCS  = 3;
 /** A YouTube transcript note can be tens of KB — keep any one page prompt-sized. */
@@ -33,6 +36,7 @@ const MAX_PAGE_CHARS    = 8000;
 
 export interface AskOptions {
   save?: boolean;
+  tweetsmash?: boolean;
   onProgress?: (status: string) => void;
   /**
    * Engine selection. Callers without a terminal (the web server) must pass an
@@ -142,26 +146,50 @@ function toMdBookmark(result: { id: string; canonicalUrl: string | null; display
   };
 }
 
-async function searchRawGrounding(question: string): Promise<MdBookmark[]> {
+async function searchRawGrounding(question: string, useTweetsmash = true): Promise<MdBookmark[]> {
+  let local: MdBookmark[] = [];
   try {
     const canonical = await searchCanonicalBookmarks({ query: question, limit: MAX_RAW_BOOKMARKS });
-    if (canonical.length > 0) return canonical.map(toMdBookmark);
-
-    // FTS ANDs every word, so a full sentence usually matches nothing. Retry on
-    // the content words ORed together before falling back to the X-only index.
-    const related = await findRelatedCanonicalBookmarks(question, { limit: MAX_RAW_BOOKMARKS });
-    if (related.length > 0) return related.map(toMdBookmark);
+    if (canonical.length > 0) local = canonical.map(toMdBookmark);
+    else {
+      // FTS ANDs every word, so a full sentence usually matches nothing. Retry on
+      // the content words ORed together before falling back to the X-only index.
+      const related = await findRelatedCanonicalBookmarks(question, { limit: MAX_RAW_BOOKMARKS });
+      if (related.length > 0) local = related.map(toMdBookmark);
+    }
   } catch {
     // Fall through to the legacy X-only index when canonical is absent/stale.
   }
 
-  const rawResults = await searchBookmarks({ query: question, limit: MAX_RAW_BOOKMARKS });
-  return rawResults.map((r) => ({
-    id: r.id,
-    url: r.url,
-    text: r.text,
-    authorHandle: r.authorHandle,
+  if (local.length === 0) {
+    const rawResults = await searchBookmarks({ query: question, limit: MAX_RAW_BOOKMARKS });
+    local = rawResults.map((r) => ({
+      id: r.id,
+      url: r.url,
+      text: r.text,
+      authorHandle: r.authorHandle,
+    }));
+  }
+
+  if (!useTweetsmash) return local;
+  const overlay = await searchTweetsmashBookmarks({ query: question, limit: MAX_TWEETSMASH_BOOKMARKS });
+  if (overlay.skipped || overlay.hits.length === 0) return local;
+
+  const seen = new Set(local.flatMap((hit) => {
+    const tweetId = tweetIdFromStatusUrl(hit.url);
+    return tweetId ? [hit.id, tweetId] : [hit.id];
   }));
+  for (const hit of overlay.hits) {
+    if (seen.has(hit.postId)) continue;
+    seen.add(hit.postId);
+    local.push({
+      id: hit.postId,
+      url: hit.url,
+      text: hit.text,
+      authorHandle: hit.authorHandle,
+    });
+  }
+  return local;
 }
 
 export async function askMd(question: string, options: AskOptions = {}): Promise<AskResult> {
@@ -200,7 +228,7 @@ export async function askMd(question: string, options: AskOptions = {}): Promise
 
   // ── L3: raw FTS5 bookmark results ───────────────────────────────────────
   progress('Searching bookmarks...');
-  const rawBookmarks = await searchRawGrounding(question);
+  const rawBookmarks = await searchRawGrounding(question, options.tweetsmash !== false);
 
   // ── LLM call ────────────────────────────────────────────────────────────
   progress('Invoking LLM...');

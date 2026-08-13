@@ -140,8 +140,9 @@ ft current update --stdin --expected-sha256 <sha>   # Replace the actual current
 ft state --json                # Repo workflow state: root, workers, PRs, cleanup, next step
 ft recent --json               # Current repo last-modified file and recent files for agent references
 
-ft search <query>              # Full-text BM25 search ("exact phrase", AND, OR, NOT)
+ft search <query>              # Full-text BM25 search ("exact phrase", AND, OR, NOT); Tweetsmash semantic overlay when TWEETSMASH_API_KEY is set
 ft search --unified <query>    # Search X, Raindrop, GitHub Stars, and YouTube canonical rows
+ft search --no-tweetsmash <query>  # Local FTS only
 ft list --category <cat>       # tool, technique, research, opinion, launch, security, commerce
 ft list --unified --source github-stars
 ft list --unified --category <cat>  # Filter canonical by category

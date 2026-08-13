@@ -44,6 +44,14 @@ import { lintMd, fixLintIssues } from './md-lint.js';
 import { exportBookmarks, exportCanonicalBookmarks } from './md-export.js';
 import { renderViz } from './bookmarks-viz.js';
 import { applyTweetsmashEnrichment, formatTweetsmashResult, syncTweetsmash } from './tweetsmash.js';
+import {
+  mergeLocalAndTweetsmashHits,
+  searchTweetsmashBookmarks,
+  tweetIdFromStatusUrl,
+  tweetsmashHitToSearchResult,
+  type TweetsmashSearchHit,
+  type TweetsmashSearchResult,
+} from './tweetsmash-search.js';
 import { syncRaindropBookmarks } from './raindrop/sync.js';
 import type { SyncRaindropOptions } from './raindrop/sync.js';
 import { syncGitHubStars } from './github-stars/sync.js';
@@ -767,6 +775,29 @@ function requireUnifiedIndex(): boolean {
  */
 export function sanitizeForDisplay(value: string): string {
   return value.replace(/[\x00-\x1f\x7f-\x9f]/g, '?');
+}
+
+function tweetsmashHitToCanonicalSearch(hit: TweetsmashSearchHit) {
+  return {
+    id: hit.postId,
+    canonicalUrl: hit.url,
+    displayTitle: hit.authorHandle ? `@${hit.authorHandle}: ${hit.text}` : hit.text,
+    searchText: hit.text,
+    sourceCount: 1,
+    sources: ['tweetsmash'],
+    score: 0,
+  };
+}
+
+function printTweetsmashOverlayNote(overlay: TweetsmashSearchResult, added: number): void {
+  if (overlay.skipped) {
+    if (overlay.reason === 'no-api-key' || overlay.reason === 'disabled') return;
+    process.stderr.write(`  Tweetsmash overlay skipped (${overlay.reason}).\n`);
+    return;
+  }
+  if (added > 0) {
+    process.stderr.write(`  +${added} from Tweetsmash semantic search\n`);
+  }
 }
 
 function formatQuotedTweetLines(quoted: QuotedTweetSnapshot): string[] {
@@ -2452,33 +2483,66 @@ export function buildCli() {
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 20)
     .option('--json', 'JSON output')
     .option('--unified', 'Search unified X, Raindrop, GitHub Stars, project, and YouTube bookmarks')
+    .option('--no-tweetsmash', 'Skip the live Tweetsmash semantic overlay (default: on when TWEETSMASH_API_KEY is set)')
     .action(safe(async (query: string, options) => {
+      const limit = Number(options.limit) || 20;
+      const useTweetsmash = options.tweetsmash !== false;
       if (options.unified) {
         if (!requireUnifiedIndex()) return;
-        const results = await searchCanonicalBookmarks({
-          query,
-          limit: Number(options.limit) || 20,
-        });
+        const local = await searchCanonicalBookmarks({ query, limit });
+        const overlay = useTweetsmash
+          ? await searchTweetsmashBookmarks({ query, limit })
+          : { hits: [], skipped: true, reason: 'disabled' };
+        const knownTweetIds = new Set(
+          local.flatMap((row) => {
+            const tweetId = tweetIdFromStatusUrl(row.canonicalUrl);
+            return tweetId ? [tweetId] : [];
+          }),
+        );
+        const results = mergeLocalAndTweetsmashHits(
+          local,
+          overlay.hits,
+          tweetsmashHitToCanonicalSearch,
+          limit,
+          knownTweetIds,
+        );
         if (options.json) {
           printJson(results);
           return;
         }
         console.log(formatCanonicalSearchResults(results));
+        printTweetsmashOverlayNote(overlay, Math.max(0, results.length - local.length));
         return;
       }
       if (!requireIndex()) return;
-      const results = await searchBookmarks({
+      const local = await searchBookmarks({
         query,
         author: options.author ? String(options.author) : undefined,
         after: options.after ? String(options.after) : undefined,
         before: options.before ? String(options.before) : undefined,
-        limit: Number(options.limit) || 20,
+        limit,
       });
+      const overlay = useTweetsmash
+        ? await searchTweetsmashBookmarks({
+          query,
+          limit,
+          author: options.author ? String(options.author) : undefined,
+          after: options.after ? String(options.after) : undefined,
+          before: options.before ? String(options.before) : undefined,
+        })
+        : { hits: [], skipped: true, reason: 'disabled' };
+      const results = mergeLocalAndTweetsmashHits(
+        local,
+        overlay.hits,
+        tweetsmashHitToSearchResult,
+        limit,
+      );
       if (options.json) {
         printJson(results);
         return;
       }
       console.log(formatSearchResults(results));
+      printTweetsmashOverlayNote(overlay, Math.max(0, results.length - local.length));
     }));
 
   // ── research ───────────────────────────────────────────────────────────
@@ -2489,11 +2553,13 @@ export function buildCli() {
     .argument('<topic>', 'Research topic or question')
     .option('--limit <n>', 'Max results per group', (v: string) => Number(v), 10)
     .option('--x-list <id>', 'Include matching sources from the latest stored X list digest')
+    .option('--no-tweetsmash', 'Skip the live Tweetsmash semantic overlay')
     .option('--json', 'Output JSON instead of text')
     .action(safe(async (topic: string, options) => {
       const result = await researchLocalContext(topic, {
         limit: Number(options.limit) || 10,
         xListId: options.xList ? String(options.xList) : undefined,
+        tweetsmash: options.tweetsmash !== false,
       });
       if (options.json) {
         printJson(result);
@@ -3723,6 +3789,7 @@ export function buildCli() {
     .description('Ask a question against the markdown knowledge base')
     .argument('<question>', 'The question to answer')
     .option('--save', 'Save the answer as a concept page')
+    .option('--no-tweetsmash', 'Skip the live Tweetsmash semantic overlay')
     .option('--json', 'Output JSON instead of text')
     .action(safe(async (question, options) => {
       if (!requireIndex()) return;
@@ -3730,6 +3797,7 @@ export function buildCli() {
       const spinner = createSpinner(() => lastLine);
       const result = await askMd(question, {
         save: options.save,
+        tweetsmash: options.tweetsmash !== false,
         onProgress: (s) => {
           lastLine = s;
           spinner.update();

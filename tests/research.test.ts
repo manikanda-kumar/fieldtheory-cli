@@ -58,7 +58,7 @@ test('researchLocalContext returns grouped canonical and library results with ne
     await writeFile(path.join(libraryDir, 'memory.md'), '# Agent memory\n\nNotes about agent memory systems.\n');
     await rebuildCanonicalIndex();
 
-    const result = await researchLocalContext('agent memory', { limit: 5 });
+    const result = await researchLocalContext('agent memory', { limit: 5, tweetsmash: false });
     assert.equal(result.query, 'agent memory');
     assert.equal(result.canonical.length, 1);
     assert.equal(result.canonical[0].title, 'example/tool');
@@ -66,7 +66,43 @@ test('researchLocalContext returns grouped canonical and library results with ne
     assert.equal(result.library.length, 1);
     assert.equal(result.library[0].relPath, 'memory.md');
     assert.equal(result.schemaVersion, 1);
-    assert.deepEqual(result.truncated, { canonical: false, library: false, today: false, experts: false });
+    assert.equal(result.tweetsmash.length, 0);
+    assert.deepEqual(result.truncated, { canonical: false, library: false, today: false, experts: false, tweetsmash: false });
     assert.ok(result.next.includes('ft show --unified <id> --json'));
+  });
+});
+
+test('researchLocalContext appends Tweetsmash hits that local FTS missed', async () => {
+  await withIsolatedRoots(async (dataDir, libraryDir) => {
+    await mkdir(path.join(dataDir, 'github-stars'), { recursive: true });
+    await writeJsonLines(path.join(dataDir, 'github-stars', 'stars.jsonl'), [githubStarRecord()]);
+    await writeFile(path.join(libraryDir, 'memory.md'), '# Agent memory\n\nNotes about agent memory systems.\n');
+    await rebuildCanonicalIndex();
+
+    const previousKey = process.env.TWEETSMASH_API_KEY;
+    process.env.TWEETSMASH_API_KEY = 'test-key';
+    try {
+      const result = await researchLocalContext('agent memory', {
+        limit: 5,
+        fetchImpl: (async () => new Response(JSON.stringify({
+          status: true,
+          data: [{
+            post_id: '999',
+            author_username: 'swyx',
+            tweet_details: {
+              text: 'closing the agent memory loop',
+              link: 'https://x.com/swyx/status/999',
+            },
+          }],
+        }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch,
+      });
+      assert.equal(result.tweetsmash.length, 1);
+      assert.equal(result.tweetsmash[0].id, '999');
+      assert.equal(result.tweetsmash[0].title, '@swyx');
+      assert.deepEqual(result.tweetsmash[0].sources, ['tweetsmash']);
+    } finally {
+      if (previousKey === undefined) delete process.env.TWEETSMASH_API_KEY;
+      else process.env.TWEETSMASH_API_KEY = previousKey;
+    }
   });
 });

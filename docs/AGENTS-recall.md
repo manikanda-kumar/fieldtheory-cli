@@ -20,7 +20,7 @@ Sources in the canonical index: `x`, `raindrop`, `github-stars`, `youtube`, `pro
 
 1. **Always-affordable context**: read `interests.md` + `projects-active.md` (≤200 lines combined).
 2. **Temporal recall** ("yesterday", "last week"): read/grep `library/daily/<date>.md`.
-3. **Topic search**: `ft research "<topic>" --json` (ranked cross-source), or direct SQL:
+3. **Topic search**: `ft research "<topic>" --json` (ranked cross-source; adds a `tweetsmash` group when `TWEETSMASH_API_KEY` is set), or direct SQL:
    ```bash
    sqlite3 ~/.fieldtheory/bookmarks/bookmarks.db \
      "SELECT display_title, canonical_url, sources_json, last_saved_at
