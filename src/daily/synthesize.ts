@@ -21,6 +21,7 @@ import { writeDailyIndexHtml } from './index-html.js';
 import { listDueReviewCards, markReviewCardsShown, queueReviewCards, type ReviewCard } from './review.js';
 
 const SNIPPET_CHARS = 240;
+const ITEM_SUMMARY_CHARS = 220;
 const MAX_THEMES = 7;
 // Historically, 21% of X bookmarks and 29% of Raindrop items were bare link
 // shares. Excluding these saves prevents URL/title-word matching from wasting
@@ -30,6 +31,32 @@ export const THIN_CONTENT_CHARS = 120;
 /** Length of meaningful saved text after URL-only content is removed. */
 export function contentLength(text: string): number {
   return text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim().length;
+}
+
+/** The best concise summary already present in a canonical item's saved text. */
+export function dailyItemSummary(item: CanonicalRecentItem): string {
+  const compact = (value: string): string => value.replace(/\s+/g, ' ').trim();
+  const truncate = (value: string): string => value.length <= ITEM_SUMMARY_CHARS
+    ? value
+    : `${value.slice(0, ITEM_SUMMARY_CHARS - 1).trimEnd()}…`;
+  const explicitSummary = item.searchText.match(/(?:^|\s)summary:\s*(.+)$/is)?.[1];
+  if (explicitSummary) return truncate(compact(explicitSummary));
+
+  const title = compact(item.displayTitle ?? '');
+  const text = compact(item.searchText.replace(/https?:\/\/\S+/g, ' '));
+  const withoutTitle = title && text.toLowerCase().startsWith(title.toLowerCase())
+    ? text.slice(title.length).trim()
+    : text;
+  // Merged X/Raindrop rows can leave only an author handle, tweet id, and
+  // domain after the post text (which is also the title) is removed. Repeat
+  // the substantive title instead of presenting that indexing metadata as a
+  // summary.
+  const meaningfulRemainder = withoutTitle
+    .replace(/\b\d{8,}\b/g, ' ')
+    .replace(/\b(?:[\w-]+\.)+[a-z]{2,}\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return truncate(meaningfulRemainder.length >= 40 ? withoutTitle : title || text);
 }
 
 export interface DailyExternalNote {
@@ -491,6 +518,8 @@ export function renderDigestMarkdown(
       const item = itemById.get(id);
       if (!item) continue;
       lines.push(renderItem(item, id));
+      const summary = dailyItemSummary(item);
+      if (summary) lines.push(`  ${summary}`);
     }
     lines.push('');
   }

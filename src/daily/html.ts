@@ -22,7 +22,7 @@ import type { DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import type { DailyCoverage } from './coverage.js';
 import type { ReviewCard } from './review.js';
-import { extractYoutubeVideoId, type DailyTheme } from './synthesize.js';
+import { dailyItemSummary, extractYoutubeVideoId, type DailyTheme } from './synthesize.js';
 
 const SNIPPET_CHARS = 220;
 const CHIP_LABEL_CHARS = 26;
@@ -34,16 +34,6 @@ function oneLine(value: string): string {
 function truncate(value: string, max: number): string {
   const text = oneLine(value);
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
-}
-
-/** Saved text minus bare URLs — the closest thing an item has to a blurb. */
-function itemBlurb(item: CanonicalRecentItem): string {
-  const title = oneLine(item.displayTitle ?? '');
-  const text = oneLine(item.searchText.replace(/https?:\/\/\S+/g, ' ').replace(/^summary:\s*/i, ''));
-  const withoutTitle = title && text.toLowerCase().startsWith(title.toLowerCase())
-    ? text.slice(title.length).trim()
-    : text;
-  return truncate(withoutTitle || text, SNIPPET_CHARS);
 }
 
 function savedLabel(item: CanonicalRecentItem, fallbackDate: string): string {
@@ -90,7 +80,7 @@ export function renderDigestHtml(
       url: item.canonicalUrl ?? undefined,
       eyebrow: item.sources.join(' · '),
       byline: [savedLabel(item, collection.date), item.primaryCategory ?? undefined].filter(Boolean).join(' · '),
-      body: htmlEscape(itemBlurb(item)),
+      body: htmlEscape(dailyItemSummary(item)),
       extra: notes ? [notes] : undefined,
       media: thumbnail(item.canonicalUrl),
       lead,

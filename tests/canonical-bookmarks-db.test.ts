@@ -165,6 +165,57 @@ test('rebuildCanonicalIndex dedupes X external link with raindrop bookmark URL',
   });
 });
 
+test('rebuildCanonicalIndex folds Raindrop X status mirrors into their rich X bookmarks', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [
+      {
+        id: 'x-plain',
+        tweetId: '101',
+        url: 'https://x.com/alice/status/101',
+        text: 'A detailed explanation of deterministic agent evaluation without executing tool calls.',
+        links: [],
+        syncedAt: '2026-08-13T00:00:00.000Z',
+      },
+      {
+        id: 'x-link',
+        tweetId: '102',
+        url: 'https://x.com/bob/status/102',
+        text: 'A useful introduction to compression as prediction, with practical implementation context.',
+        links: ['https://example.com/compression'],
+        syncedAt: '2026-08-13T00:00:00.000Z',
+      },
+    ]);
+    await writeRaindropBookmarks(dir, [
+      {
+        id: 101,
+        url: 'https://twitter.com/alice/status/101',
+        title: '101',
+        createdAt: '2026-08-13T00:01:00.000Z',
+        syncedAt: '2026-08-13T00:01:00.000Z',
+      },
+      {
+        id: 102,
+        url: 'https://twitter.com/bob/status/102',
+        title: '102',
+        createdAt: '2026-08-13T00:01:00.000Z',
+        syncedAt: '2026-08-13T00:01:00.000Z',
+      },
+    ]);
+
+    const result = await rebuildCanonicalIndex();
+    assert.equal(result.sourceCount, 4);
+    assert.equal(result.canonicalCount, 2);
+
+    const listed = await listCanonicalBookmarks({ source: 'raindrop', limit: 10 });
+    assert.equal(listed.length, 2);
+    assert.ok(listed.every((item) => item.sourceCount === 2));
+    assert.ok(listed.every((item) => item.sources.includes('x')));
+    assert.ok(listed.every((item) => !/^\d+$/.test(item.displayTitle ?? '')));
+    assert.match(listed.map((item) => item.searchText).join('\n'), /deterministic agent evaluation/);
+    assert.match(listed.map((item) => item.searchText).join('\n'), /compression as prediction/);
+  });
+});
+
 test('rebuildCanonicalIndex folds cached enrichment summaries into FTS and tolerates an absent cache table', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeGitHubStars(dir, [githubStarRecord({ id: 990, fullName: 'a/summary-index', htmlUrl: 'https://github.com/a/summary-index', description: 'brief' })]);

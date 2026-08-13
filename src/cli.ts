@@ -1724,11 +1724,27 @@ export function buildCli() {
     .option('--json', 'JSON output')
     .action(safe(async (options, command) => {
       ensureDataDir();
+      // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin engine
+      // without baking flags into the sync-all step list.
+      // An explicit CLI flag wins; omission falls back to FT_DAILY_GROUND.
+      // Commander represents both an omitted --ground and --no-ground as
+      // false, so the value source is required to distinguish them.
+      const groundEnv = /^(1|true|yes)$/i.test(process.env.FT_DAILY_GROUND ?? '');
+      const groundExternal = command.getOptionValueSource('ground') === 'cli'
+        ? Boolean(options.ground)
+        : groundEnv;
+      const profile = {
+        engine: stringOption(options.engine) ?? stringOption(process.env.FT_DAILY_ENGINE),
+        model: stringOption(options.model) ?? stringOption(process.env.FT_DAILY_MODEL),
+        effort: stringOption(options.effort) ?? stringOption(process.env.FT_DAILY_EFFORT),
+      };
       const collection = await collectDaily({
         date: stringOption(options.date),
         windowHours: typeof options.windowHours === 'number' && Number.isFinite(options.windowHours) ? options.windowHours : 24,
       });
       const enrichment = await enrichThinItems(collection.items, {
+        engine: groundExternal && profile.engine ? profile : undefined,
+        webSearch: groundExternal,
         onMissingKey: () => console.error('  Link enrichment skipped: OPENCODE_GO_API_KEY or OPENCODE_API_KEY is not set.'),
       });
       // This remains useful before a backfilled summary has been folded into the
@@ -1743,25 +1759,12 @@ export function buildCli() {
           console.log('  Re-run with --force to regenerate.');
           return;
         }
-        // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin engine
-        // without baking flags into the sync-all step list.
-        // An explicit CLI flag wins; omission falls back to FT_DAILY_GROUND.
-        // Commander represents both an omitted --ground and --no-ground as
-        // false, so the value source is required to distinguish them.
-        const groundEnv = /^(1|true|yes)$/i.test(process.env.FT_DAILY_GROUND ?? '');
-        const groundExternal = command.getOptionValueSource('ground') === 'cli'
-          ? Boolean(options.ground)
-          : groundEnv;
         const result = await synthesizeDaily(collection, connected, {
           html: options.html !== false,
           enrichedCount: enrichment.enrichedCount,
           enrichedItemIds: collection.items.filter((item) => item.canonicalUrl && enrichment.summaries.has(item.canonicalUrl)).map((item) => item.id),
           groundExternal,
-          profile: {
-            engine: stringOption(options.engine) ?? stringOption(process.env.FT_DAILY_ENGINE),
-            model: stringOption(options.model) ?? stringOption(process.env.FT_DAILY_MODEL),
-            effort: stringOption(options.effort) ?? stringOption(process.env.FT_DAILY_EFFORT),
-          },
+          profile,
         });
         if (result.skipped) {
           console.log(`  Nothing new in this window — no digest written.`);

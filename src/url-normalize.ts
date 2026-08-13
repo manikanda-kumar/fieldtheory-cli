@@ -50,6 +50,18 @@ export function dedupeKeyForUrl(input: string): string {
   return `url:${normalizeBookmarkUrl(input)}`;
 }
 
+/** Status URLs from X, Twitter, and their common subdomains share one tweet id. */
+export function xStatusIdFromUrl(input: string): string | null {
+  try {
+    const url = new URL(input);
+    const host = url.hostname.toLowerCase();
+    if (!NON_EXTERNAL_X_HOSTS.has(host)) return null;
+    return url.pathname.match(/^\/[^/]+\/status\/(\d+)(?:\/|$)/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function dedupeKeyForXBookmark(bookmark: XBookmarkDedupeInput): string {
   const externalLinks = new Set<string>();
 

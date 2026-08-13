@@ -28,6 +28,8 @@ export interface EnrichThinItemsOptions {
   limit?: number;
   now?: Date;
   onMissingKey?: () => void;
+  /** Let a search-capable engine summarize auth-walled X links from their URL and saved context. */
+  webSearch?: boolean;
   /**
    * Summarize through a local engine CLI (claude, codex, grok, droid, agy)
    * instead of the OpenCode zen/go endpoint. Useful when the default model is
@@ -66,7 +68,7 @@ export interface EnrichBackfillOptions extends EnrichThinItemsOptions {
 
 /** Fetch/cache summaries for otherwise-thin daily items. This function never throws. */
 export async function enrichThinItems(items: CanonicalRecentItem[], options: EnrichThinItemsOptions = {}): Promise<EnrichThinItemsResult> {
-  const eligible = items.filter((item) => isEligible(item));
+  const eligible = items.filter((item) => isEligible(item, canEnrichX(options)));
   if (eligible.length === 0) return { enrichedCount: 0, summaries: new Map() };
   if (!options.llm && !options.engine?.engine && !openCodeApiKey()) {
     options.onMissingKey?.();
@@ -88,9 +90,10 @@ export async function enrichThinItems(items: CanonicalRecentItem[], options: Enr
 /** Enrich every eligible canonical row, while retaining the daily flow's fetch/cache core. */
 export async function enrichBackfill(options: EnrichBackfillOptions = {}): Promise<EnrichmentBackfillResult> {
   const items = await readCanonicalItems();
-  const eligible = items.filter(isEligible);
+  const allowX = canEnrichX(options);
+  const eligible = items.filter((item) => isEligible(item, allowX));
   await ensureEnrichmentSchema();
-  await removeNowIneligibleFailures(items);
+  await removeNowIneligibleFailures(items, allowX);
   const now = options.now ?? new Date();
   const cached = await readCache([...new Set(eligible.map((item) => item.canonicalUrl!))]);
   const pending = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, options.retryFailed));
@@ -124,21 +127,30 @@ export function mergeEnrichmentSummaries(items: CanonicalRecentItem[], summaries
 }
 
 export function isEnrichmentEligible(item: CanonicalRecentItem): boolean {
+  return isEligible(item, false);
+}
+
+function isEligible(item: CanonicalRecentItem, allowX: boolean): boolean {
   if (contentLength(item.searchText) >= THIN_CONTENT_CHARS || !item.canonicalUrl) return false;
   try {
     const url = new URL(item.canonicalUrl);
-    // Exclude auth-walled X/Twitter, video-only YouTube, PDFs, and existing non-web/long-content cases.
-    return (url.protocol === 'http:' || url.protocol === 'https:') && !isExcludedEnrichmentUrl(url);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !isExcludedEnrichmentUrl(url, allowX);
   } catch {
     return false;
   }
 }
 
-const isEligible = isEnrichmentEligible;
+function canEnrichX(options: EnrichThinItemsOptions): boolean {
+  return Boolean(options.webSearch && (options.llm || options.engine?.engine));
+}
 
-function isExcludedEnrichmentUrl(url: URL): boolean {
+function isExcludedEnrichmentUrl(url: URL, allowX: boolean): boolean {
   const host = url.hostname.toLowerCase();
-  return /(^|\.)(x|twitter)\.com$/.test(host) || /(^|\.)(youtube\.com|youtu\.be)$/.test(host) || /\.pdf$/i.test(url.pathname);
+  return (!allowX && isXUrl(url)) || /(^|\.)(youtube\.com|youtu\.be)$/.test(host) || /\.pdf$/i.test(url.pathname);
+}
+
+function isXUrl(url: URL): boolean {
+  return /(^|\.)(x|twitter)\.com$/.test(url.hostname.toLowerCase());
 }
 
 function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date, retryFailed = false): boolean {
@@ -201,13 +213,13 @@ async function readCanonicalItems(): Promise<CanonicalRecentItem[]> {
  * Summarizer used when the caller supplies no llm seam: an engine CLI when one
  * was requested, otherwise the OpenCode zen/go client.
  */
-function engineOrOpenCodeLlm(profile?: EngineRunProfile): (prompt: string) => Promise<string> {
+function engineOrOpenCodeLlm(profile?: EngineRunProfile, webSearch = false): (prompt: string) => Promise<string> {
   if (!profile?.engine) {
     return async (prompt: string) => (await createOpenCodeClient().chat({ prompt, maxTokens: 2000 })).text;
   }
   let resolved: Awaited<ReturnType<typeof resolveEngine>> | undefined;
   return async (prompt: string) => {
-    resolved ??= await resolveEngine(profile);
+    resolved ??= await resolveEngine({ ...profile, webSearch });
     return invokeEngineAsync(resolved, prompt, { timeout: ENGINE_SUMMARY_TIMEOUT_MS });
   };
 }
@@ -224,7 +236,7 @@ async function enrichEligibleItems(
 ): Promise<LinkEnrichmentEntry[]> {
   const misses = eligible.filter((item) => shouldAttempt(item.canonicalUrl!, cached.get(item.canonicalUrl!), now, retryFailed)).slice(0, limit);
   const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
-  const llm = options.llm ?? engineOrOpenCodeLlm(options.engine);
+  const llm = options.llm ?? engineOrOpenCodeLlm(options.engine, options.webSearch);
   let attempted = 0;
   let ok = 0;
   let failed = 0;
@@ -232,10 +244,12 @@ async function enrichEligibleItems(
     const url = item.canonicalUrl!;
     let update: LinkEnrichmentEntry;
     try {
-      const material = await retryTransient('fetch', () => extractPageMaterial(url, fetchFn));
+      const material = isXUrl(new URL(url))
+        ? [`URL: ${url}`, item.displayTitle && `Title: ${item.displayTitle}`, `Saved context: ${item.searchText}`].filter(Boolean).join('\n')
+        : await retryTransient('fetch', () => extractPageMaterial(url, fetchFn));
       await delay(250);
       const summary = await retryTransient('llm', async () => {
-        const value = (await llm(buildEnrichmentPrompt(material))).trim();
+        const value = parseEnrichmentCompletion(await llm(buildEnrichmentPrompt(material)));
         if (!value) throw new Error('empty completion');
         return value;
       });
@@ -308,8 +322,8 @@ async function ensureEnrichmentSchema(): Promise<void> {
   }
 }
 
-async function removeNowIneligibleFailures(items: CanonicalRecentItem[]): Promise<void> {
-  const urls = items.filter((item) => item.canonicalUrl && !isEligible(item)).map((item) => item.canonicalUrl!);
+async function removeNowIneligibleFailures(items: CanonicalRecentItem[], allowX: boolean): Promise<void> {
+  const urls = items.filter((item) => item.canonicalUrl && !isEligible(item, allowX)).map((item) => item.canonicalUrl!);
   if (!urls.length) return;
   const dbPath = twitterBookmarksIndexPath();
   const lock = await acquireDbLock(dbPath);
@@ -391,7 +405,12 @@ async function extractPageMaterial(url: string, fetchFn: FetchFn): Promise<strin
 }
 
 function buildEnrichmentPrompt(material: string): string {
-  return `For a personal knowledge digest, summarize what this page is about in 2-3 plain sentences. No preamble.\n\n${material}`;
+  return `For a personal knowledge digest, summarize what this page is about in 2-3 plain sentences. Return exactly <summary>your summary</summary> with no text outside the tag.\n\n${material}`;
+}
+
+function parseEnrichmentCompletion(value: string): string {
+  const tagged = [...value.matchAll(/<summary>([\s\S]*?)<\/summary>/gi)].at(-1)?.[1];
+  return (tagged ?? value).replace(/\s+/g, ' ').trim();
 }
 
 async function readLimitedBody(response: Response, limit: number): Promise<string> {

@@ -12,7 +12,7 @@ import { collectDailyCoverage } from '../src/daily/coverage.js';
 import { enrichBackfill, enrichThinItems, isEnrichmentEligible, mergeEnrichmentSummaries } from '../src/daily/enrich.js';
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
-import { buildDailyAliases, buildDailyPrompt, contentLength, dailyFallbackChain, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
+import { buildDailyAliases, buildDailyPrompt, contentLength, dailyFallbackChain, dailyItemSummary, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
 import { dailyDigestPath, dailyIndexPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
 import { gradeReviewCard, listDueReviewCards, markReviewCardsShown, queueReviewCards } from '../src/daily/review.js';
 
@@ -77,6 +77,22 @@ function projectRecord(overrides: Partial<ProjectRecord> & { repo: string }): Pr
     ...overrides,
   } as ProjectRecord;
 }
+
+test('daily: item summaries fall back to substantive X text instead of indexing metadata', () => {
+  const summary = dailyItemSummary({
+    id: 'x-mirror',
+    canonicalUrl: 'https://twitter.com/alice/status/2087595542184665495',
+    displayTitle: 'the barrier to entry is low\nthe ceiling to excellence is absurdly high',
+    searchText: 'the barrier to entry is low the ceiling to excellence is absurdly high https://x.com/alice/status/2087595542184665495 alice 2087595542184665495 twitter.com',
+    sources: ['x', 'raindrop'],
+    firstSavedAt: '2026-08-13T00:00:00.000Z',
+    lastSavedAt: '2026-08-13T00:01:00.000Z',
+    primaryCategory: null,
+    primaryDomain: null,
+  });
+
+  assert.equal(summary, 'the barrier to entry is low the ceiling to excellence is absurdly high');
+});
 
 test('daily: collect windows on first_saved_at and gathers project deltas', async () => {
   await withIsolatedDataDir(async (dir) => {
@@ -611,6 +627,7 @@ test('daily: synthesize renders uncited items under Also saved', async () => {
       id: index + 1,
       fullName: `saved/item-${index + 1}`,
       starredAt: '2026-07-06T12:00:00.000Z',
+      description: `Summary for saved item ${index + 1}: practical implementation details, architectural tradeoffs, and concrete reasons to revisit this resource. ${'More useful context. '.repeat(5)}`,
     })));
     await rebuildCanonicalIndex();
 
@@ -635,6 +652,16 @@ test('daily: synthesize renders uncited items under Also saved', async () => {
     assert.ok(alsoSaved);
     for (const item of collection.items.slice(9)) {
       assert.ok(alsoSaved.includes(item.canonicalUrl ?? item.id));
+      const summaryLabel = item.searchText.match(/Summary for saved item \d+/)?.[0];
+      assert.ok(summaryLabel);
+      assert.ok(alsoSaved.includes(summaryLabel));
+    }
+    const page = await readFileText(result.htmlPath!);
+    const alsoSavedStart = page.indexOf('<section class="daygroup" data-group-wrap data-group="also-saved">');
+    const alsoSavedHtml = page.slice(alsoSavedStart, page.indexOf('</section>', alsoSavedStart));
+    for (const item of collection.items.slice(9)) {
+      const summaryLabel = item.searchText.match(/Summary for saved item \d+/)?.[0];
+      assert.ok(summaryLabel && alsoSavedHtml.includes(summaryLabel));
     }
   });
 });
@@ -842,6 +869,38 @@ test('daily: enrichment excludes X articles, YouTube, and PDFs', () => {
   assert.equal(isEnrichmentEligible(item('https://x.com/i/article/123')), false);
   assert.equal(isEnrichmentEligible(item('https://www.youtube.com/watch?v=abc')), false);
   assert.equal(isEnrichmentEligible(item('https://example.com/report.pdf')), false);
+});
+
+test('daily: grounded enrichment summarizes thin X links from saved context without fetching the auth wall', async () => {
+  await withIsolatedDataDir(async () => {
+    const item: CanonicalRecentItem = {
+      id: 'x-article',
+      canonicalUrl: 'https://x.com/i/article/123',
+      displayTitle: 'x.com/i/article/123',
+      searchText: 'x.com/i/article/123 by alice',
+      sources: ['x'],
+      firstSavedAt: '2026-08-13T00:00:00.000Z',
+      lastSavedAt: '2026-08-13T00:00:00.000Z',
+      primaryCategory: null,
+      primaryDomain: null,
+    };
+    let prompt = '';
+    let fetched = false;
+    const result = await enrichThinItems([item], {
+      webSearch: true,
+      fetch: async () => { fetched = true; throw new Error('must not fetch X directly'); },
+      llm: async (value) => {
+        prompt = value;
+        return 'Searching X now.\n<summary>The article explains how production agent evaluations can work without executing tool calls.</summary>';
+      },
+    });
+
+    assert.equal(result.enrichedCount, 1);
+    assert.equal(fetched, false);
+    assert.match(prompt, /https:\/\/x\.com\/i\/article\/123/);
+    assert.match(prompt, /x\.com\/i\/article\/123 by alice/);
+    assert.equal(result.summaries.get(item.canonicalUrl!), 'The article explains how production agent evaluations can work without executing tool calls.');
+  });
 });
 
 test('daily: retries a transient 429 fetch and records failure errors without retrying 404s', async () => {

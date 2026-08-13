@@ -5,7 +5,7 @@ import { acquireDbLock, openDb, releaseDbLock, saveDb } from './db.js';
 import { listFiles, pathExists, readJson, readJsonLines } from './fs.js';
 import { dataDir, twitterBookmarksCachePath, twitterBookmarksIndexPath, xListsDir } from './paths.js';
 import type { BookmarkRecord } from './types.js';
-import { dedupeKeyForUrl, dedupeKeyForXBookmark } from './url-normalize.js';
+import { dedupeKeyForUrl, dedupeKeyForXBookmark, xStatusIdFromUrl } from './url-normalize.js';
 import { sanitizeFtsQuery } from './bookmarks-db.js';
 import { classifyBookmarkInput } from './bookmark-classify.js';
 import {
@@ -749,6 +749,11 @@ function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[])
     sources.find((source) => source.title)?.title ??
     sources.find((source) => source.text)?.text?.slice(0, 120) ??
     canonicalUrl;
+  const nonXTitle = sources.find((source) => source.source !== 'x' && source.title)?.title ?? null;
+  const xSource = sources.find((source) => source.source === 'x');
+  const preferredTitle = nonXTitle && /^\d+$/.test(nonXTitle) && sources.some((source) => source.source === 'x' && source.text)
+    ? xSource?.title ?? xSource?.text?.slice(0, 120) ?? displayTitle
+    : displayTitle;
   const savedDates = sources
     .map((source) => source.savedAt)
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
@@ -759,7 +764,7 @@ function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[])
     id,
     dedupeKey,
     canonicalUrl,
-    displayTitle,
+    displayTitle: preferredTitle,
     searchText: compactText(sources.flatMap((source) => [
       source.title,
       source.text,
@@ -910,14 +915,21 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
 
     const sourceRows: CanonicalSourceInput[] = [];
     const xRecords = await readJsonLines<BookmarkRecord>(twitterBookmarksCachePath());
-    sourceRows.push(...xRecords.map(xSourceFromRecord));
+    const xSources = xRecords.map(xSourceFromRecord);
+    sourceRows.push(...xSources);
+    const xDedupeKeyByTweetId = new Map(xSources.map((source) => [source.sourceItemId, source.dedupeKey]));
 
     // Raindrop sources (replaces browser bookmarks)
     const raindropCachePath = raindropBookmarksCachePath();
     if (await pathExists(raindropCachePath)) {
       const raindropRecords = await readJsonLines<RaindropRecord>(raindropCachePath);
       const normalized = raindropRecords
-        .map(raindropSourceFromRecord)
+        .map((record) => {
+          const source = raindropSourceFromRecord(record);
+          const tweetId = xStatusIdFromUrl(record.url);
+          const xDedupeKey = tweetId ? xDedupeKeyByTweetId.get(tweetId) : undefined;
+          return source && xDedupeKey ? { ...source, dedupeKey: xDedupeKey } : source;
+        })
         .filter((row): row is CanonicalSourceInput => row !== null);
       sourceRows.push(...normalized);
     }
