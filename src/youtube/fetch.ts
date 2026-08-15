@@ -4,6 +4,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { hasCommandOnPath } from '../engine.js';
+import { retryTransient } from '../net-retry.js';
 import { youtubeArtifactsDir } from '../paths.js';
 import { runSummarize, type RunSummarizeOptions, type SummarizeResult, type TranscriptSegment } from './summarize-bridge.js';
 import type { FrameRef } from './slides.js';
@@ -280,10 +281,21 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+/** Per-request ceiling for watch-page/caption fetches. */
+const FETCH_TEXT_TIMEOUT_MS = 30_000;
+
+/**
+ * Watch pages and caption tracks are the flakiest hop in the nightly run:
+ * undici reports a dropped socket as `TypeError: terminated`, which used to
+ * fail the whole video (and then the whole `sync-youtube` step). Retry the
+ * request itself, with a timeout so a stalled socket cannot hang the run.
+ */
 async function fetchText(url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<string> {
-  const res = await fetch(url, init);
-  if (!res.ok) return '';
-  return res.text();
+  return retryTransient(async () => {
+    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TEXT_TIMEOUT_MS) });
+    if (!res.ok) return '';
+    return res.text();
+  });
 }
 
 async function fetchYtDlpTranscript(videoId: string, videoUrl: string, runCommandImpl: (command: string, args: string[]) => Promise<string>, ytDlp?: YtDlpAccessOptions): Promise<string> {

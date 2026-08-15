@@ -24,7 +24,9 @@ export async function fetchFeed(
 ): Promise<FetchFeedResult> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (!fetchImpl) throw new Error('fetch is not available');
-  const timeoutMs = options.timeoutMs ?? 20_000;
+  // 30s: 20s aborted slow-but-healthy feeds (crawshaw, brooker) during the
+  // nightly run when several large feeds fetch concurrently.
+  const timeoutMs = options.timeoutMs ?? 30_000;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

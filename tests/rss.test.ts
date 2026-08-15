@@ -132,6 +132,66 @@ test('syncRss fetches, caches items, and is idempotent', async () => {
   });
 });
 
+test('syncRss retries a feed that aborts once and counts it as fetched', async () => {
+  await withIsolatedDataDir(async () => {
+    await upsertRssFeeds([{ name: 'Example', url: 'https://example.com/feed.rss' }], { replace: true });
+
+    let calls = 0;
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('This operation was aborted');
+      return new Response(SAMPLE_RSS, { status: 200 });
+    };
+
+    const result = await syncRss({
+      fetchImpl,
+      now: () => '2026-08-15T12:00:00.000Z',
+      concurrency: 1,
+      sleep: async () => {},
+    });
+
+    assert.equal(calls, 2);
+    assert.equal(result.feedsFetched, 1);
+    assert.equal(result.feedsFailed, 0);
+    assert.equal(result.itemsAdded, 1);
+  });
+});
+
+test('syncRss stops retrying a feed at the attempt budget', async () => {
+  await withIsolatedDataDir(async () => {
+    await upsertRssFeeds([{ name: 'Example', url: 'https://example.com/feed.rss' }], { replace: true });
+
+    let calls = 0;
+    const result = await syncRss({
+      fetchImpl: async () => { calls += 1; throw new Error('This operation was aborted'); },
+      now: () => '2026-08-15T12:00:00.000Z',
+      concurrency: 1,
+      sleep: async () => {},
+    });
+
+    assert.equal(calls, 3);
+    assert.equal(result.feedsFailed, 1);
+    assert.match(result.failures[0].error, /aborted/);
+  });
+});
+
+test('syncRss does not retry a deterministic HTTP error', async () => {
+  await withIsolatedDataDir(async () => {
+    await upsertRssFeeds([{ name: 'Example', url: 'https://example.com/feed.rss' }], { replace: true });
+
+    let calls = 0;
+    const result = await syncRss({
+      fetchImpl: async () => { calls += 1; return new Response('nope', { status: 404 }); },
+      now: () => '2026-08-15T12:00:00.000Z',
+      concurrency: 1,
+      sleep: async () => {},
+    });
+
+    assert.equal(calls, 1);
+    assert.equal(result.feedsFailed, 1);
+  });
+});
+
 test('syncRss dry-run does not write cache', async () => {
   await withIsolatedDataDir(async (dir) => {
     await upsertRssFeeds([{ name: 'Example', url: 'https://example.com/feed.rss' }], { replace: true });

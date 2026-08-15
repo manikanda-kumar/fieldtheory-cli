@@ -15,7 +15,12 @@ import { writeDailyIndexHtml } from './daily/index-html.js';
 
 const DEFAULT_PROMPT_TWEETS = 80;
 const TWEET_TEXT_CHARS = 400;
-const SUMMARY_INVOKE_TIMEOUT_MS = 300_000;
+/**
+ * 600s: grok-4.6 on ~1000 tweets regularly runs past 5 minutes, and the
+ * 2026-08-14 run fell back to the mechanical summary purely on the timeout.
+ * Override with FT_DAILY_TIMEOUT_MS.
+ */
+const SUMMARY_INVOKE_TIMEOUT_MS = 600_000;
 /**
  * The digest is a rolling "last 24h" fetch, so anything older than this is not
  * today's data. Without the guard a failed `ft x-list` fetch leaves the old

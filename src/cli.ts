@@ -36,6 +36,7 @@ import { getLibraryIndexStats, reindexLibraryDocs } from './library-index-db.js'
 import { formatClassificationSummary } from './bookmark-classify.js';
 import { classifyWithLlm, classifyDomainsWithLlm } from './bookmark-classify-llm.js';
 import { resolveEngine, detectAvailableEngines } from './engine.js';
+import { retryTransient } from './net-retry.js';
 import { loadPreferences, savePreferences } from './preferences.js';
 import { compileMd, regenerateLibraryIndexes } from './md.js';
 import { cleanWikiFences } from './md-fence.js';
@@ -1673,7 +1674,7 @@ export function buildCli() {
     .option('--concurrency <n>', 'Concurrent backfill workers (default: 2)', (v: string) => Number(v), 2)
     .option('--retry-failed', 'Immediately retry cached transient failures', false)
     .addOption(engineOption())
-    .option('--model <model>', 'Model override passed to the engine (e.g. grok-4.5)')
+    .option('--model <model>', 'Model override passed to the engine (e.g. grok-4.6)')
     .option('--effort <effort>', 'Reasoning effort passed to the engine (low | medium | high | xhigh | max)')
     .action(safe(async (options) => {
       ensureDataDir();
@@ -1954,7 +1955,9 @@ export function buildCli() {
       for (let i = 0; i < videos.length; i += 1) {
         const video = videos[i];
         try {
-          const result = await processVideo(video.videoId, {
+          // A dropped socket on one video used to fail the whole step, so
+          // `sync-all` replayed all of them; retry the single video instead.
+          const result = await retryTransient(() => processVideo(video.videoId, {
             overview,
             force: Boolean(options.force || videoIdsFile),
             llm,
@@ -1963,7 +1966,7 @@ export function buildCli() {
             targetMinutes: Number(options.targetMinutes) || 12,
             slideConfidence: Number(options.slideConfidence) || 0.6,
             ytDlp,
-          });
+          }), { attempts: 2, baseDelayMs: 5_000 });
           if (result.processed) processed += 1;
           else skipped += 1;
           if (result.canonicalSource) youtubeSources.push(result.canonicalSource);

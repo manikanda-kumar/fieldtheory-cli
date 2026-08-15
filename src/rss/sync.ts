@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { pathExists, readJsonLines, writeJson, writeJsonLines } from '../fs.js';
+import { retryTransient } from '../net-retry.js';
 import { fetchFeed, type FetchFeedOptions } from './client.js';
 import { readRssFeeds } from './feeds.js';
 import { rssDir, rssItemsCachePath, rssMetaPath } from './paths.js';
@@ -13,6 +14,10 @@ export interface SyncRssOptions extends FetchFeedOptions {
   only?: string;
   /** Per-feed concurrency. Default 4. */
   concurrency?: number;
+  /** Attempts per feed, including the first. Default: 3. */
+  attempts?: number;
+  /** Test seam for the retry backoff. */
+  sleep?: (ms: number) => Promise<void>;
   /** Drop cached items older than this many days. Default: keep all. */
   maxItemAgeDays?: number;
   onFeed?: (event: {
@@ -98,7 +103,12 @@ export async function syncRss(options: SyncRssOptions = {}): Promise<SyncRssResu
   const concurrency = options.concurrency ?? 4;
   const outcomes = await mapPool(feeds, concurrency, async (feed, index) => {
     try {
-      const result = await fetchFeed(feed, options);
+      // 2026-08-14: 5/98 feeds died together on `This operation was aborted`
+      // (fetch timeout) and every one served fine on a manual retry.
+      const result = await retryTransient(() => fetchFeed(feed, options), {
+        attempts: options.attempts ?? 3,
+        sleep: options.sleep,
+      });
       options.onFeed?.({
         index: index + 1,
         total: feeds.length,

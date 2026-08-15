@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { hasCommandOnPath } from '../engine.js';
+import { retryTransient } from '../net-retry.js';
 import { ytDlpAccessArgs, type YtDlpAccessOptions } from './yt-dlp.js';
 
 export interface YoutubePlaylistVideo {
@@ -161,9 +162,11 @@ function dedupeVideos(videos: YoutubePlaylistVideo[]): YoutubePlaylistVideo[] {
 }
 
 async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch playlist page: HTTP ${res.status}`);
-  return res.text();
+  return retryTransient(async () => {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error(`Failed to fetch playlist page: HTTP ${res.status}`);
+    return res.text();
+  });
 }
 
 function runCommand(command: string, args: string[]): Promise<string> {
