@@ -28,11 +28,11 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 
 ### Now
 
-- Daily “Also saved” + X-mirror folding verified (999/999) on `fix/daily-also-saved-summaries-ship`.
+- `fix/sync-all-transient-retries` pushed to origin (d608bdb grok-4.6 default, 369bdc7 transient-network retries). Not merged to main; no PR opened.
 
 ### Next
 
-- None.
+- Merge/PR the branch, then watch the next nightly run for RSS 98/98, zero YouTube `terminated`, and `synthesis: llm` on the x-list summary.
 
 ## Open questions
 
