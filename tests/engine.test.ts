@@ -156,7 +156,7 @@ test('resolveEngine: carries explicit model and effort into engine args', async 
     const model = engineName === 'codex'
       ? 'gpt-5.5'
       : engineName === 'grok'
-        ? 'grok-4.5'
+        ? 'grok-4.6'
         : 'opus';
     const resolved = await resolveEngine({ engine: engineName, model, effort: 'medium' });
 
@@ -175,7 +175,7 @@ test('resolveEngine: carries explicit model and effort into engine args', async 
       assert.ok(args.includes('--output-format'));
       assert.ok(args.includes('plain'));
       assert.ok(args.includes('--model'));
-      assert.ok(args.includes('grok-4.5'));
+      assert.ok(args.includes('grok-4.6'));
       assert.ok(args.includes('--effort'));
       assert.ok(args.includes('medium'));
     } else {
@@ -329,7 +329,7 @@ test('resolveEngine: claude args include --system-prompt when system prompt prov
   }
 });
 
-test('resolveEngine: grok defaults to grok-4.5 model and builds headless args', async () => {
+test('resolveEngine: grok defaults to grok-4.6 model and builds headless args', async () => {
   if (process.platform === 'win32') return;
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-engine-grok-args-'));
@@ -346,9 +346,9 @@ test('resolveEngine: grok defaults to grok-4.5 model and builds headless args', 
     const { resolveEngine } = await import('../src/engine.js');
     const resolved = await resolveEngine({ override: 'grok', effort: 'low' });
     assert.equal(resolved.name, 'grok');
-    assert.equal(resolved.model, 'grok-4.5');
+    assert.equal(resolved.model, 'grok-4.6');
     assert.equal(resolved.effort, 'low');
-    assert.equal(resolved.label, 'grok/grok-4.5/effort=low');
+    assert.equal(resolved.label, 'grok/grok-4.6/effort=low');
 
     const args = resolved.config.args('hello', resolved, 'You are a test engine.');
     assert.equal(args[0], '-p');
@@ -363,7 +363,7 @@ test('resolveEngine: grok defaults to grok-4.5 model and builds headless args', 
     assert.ok(args.includes('--system-prompt-override'));
     assert.ok(args.includes('You are a test engine.'));
     assert.ok(args.includes('--model'));
-    assert.ok(args.includes('grok-4.5'));
+    assert.ok(args.includes('grok-4.6'));
     assert.ok(args.includes('--effort'));
     assert.ok(args.includes('low'));
 
@@ -465,9 +465,9 @@ test('resolveEngine: grok respects explicit --model and FT_GROK_MODEL', async ()
     const fromEnv = await resolveEngine({ override: 'grok' });
     assert.equal(fromEnv.model, 'grok-from-env');
 
-    const fromFlag = await resolveEngine({ override: 'grok', model: 'grok-4.5' });
-    assert.equal(fromFlag.model, 'grok-4.5');
-    assert.ok(fromFlag.config.args('hi', fromFlag).includes('grok-4.5'));
+    const fromFlag = await resolveEngine({ override: 'grok', model: 'grok-4.6' });
+    assert.equal(fromFlag.model, 'grok-4.6');
+    assert.ok(fromFlag.config.args('hi', fromFlag).includes('grok-4.6'));
   } finally {
     process.env.PATH = origPath;
     if (origGrokModel !== undefined) process.env.FT_GROK_MODEL = origGrokModel;

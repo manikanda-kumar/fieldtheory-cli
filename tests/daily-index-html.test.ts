@@ -28,7 +28,7 @@ test('daily archive index scans dated files, extracts themes, groups months, and
       '## Recall first\n\nold recall\n\n## Today’s throughline\n\nbrief\n\n## Agent harnesses\n\nsummary\n\n## Local inference\n\nsummary\n\n## Also saved\n\nlinks',
     ));
     await writeFile(path.join(dir, '2026-08-08.md'), dailyMarkdown(
-      '2026-08-08', 7, 1, 'grok/grok-4.5',
+      '2026-08-08', 7, 1, 'grok/grok-4.6',
       '## Recall first\n\nold recall\n\n## Shipping agents\n\nsummary',
     ));
     await writeFile(path.join(dir, '2025-07-31.md'), dailyMarkdown(

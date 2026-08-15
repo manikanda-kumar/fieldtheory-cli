@@ -240,11 +240,11 @@ export function describeEngine(engine: Pick<ResolvedEngine, 'name' | 'model' | '
 
 /**
  * Default model for the grok engine when neither --model nor FT_GROK_MODEL is set.
- * Grok Build CLI product default is currently `grok-4.5` (see `grok models` /
+ * Grok Build CLI product default is currently `grok-4.6` (see `grok models` /
  * ~/.grok/config.toml). The historical alias `grok-build` is not always a valid
  * model id on every account, so we default to the live default.
  */
-const GROK_DEFAULT_MODEL = 'grok-4.5';
+const GROK_DEFAULT_MODEL = 'grok-4.6';
 
 function resolveGrokModel(profileModel: string | undefined): string | undefined {
   return cleanOptional(profileModel)

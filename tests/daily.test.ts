@@ -363,8 +363,8 @@ test('daily: the fallback chain adds a second engine and never repeats the prima
     [],
   );
   assert.deepEqual(
-    dailyFallbackChain('claude', { FT_DAILY_FALLBACK_ENGINE: 'grok', FT_DAILY_FALLBACK_MODEL: 'grok-4.5', FT_DAILY_FALLBACK_ENGINE_2: 'grok' }),
-    [{ engine: 'grok', model: 'grok-4.5' }],
+    dailyFallbackChain('claude', { FT_DAILY_FALLBACK_ENGINE: 'grok', FT_DAILY_FALLBACK_MODEL: 'grok-4.6', FT_DAILY_FALLBACK_ENGINE_2: 'grok' }),
+    [{ engine: 'grok', model: 'grok-4.6' }],
     'a duplicate second fallback collapses into the first',
   );
   // Live 2026-07-26: overriding only the engine sent droid's default model to
