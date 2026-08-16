@@ -28,11 +28,14 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 
 ### Now
 
-- `fix/sync-all-transient-retries` pushed to origin (d608bdb grok-4.6 default, 369bdc7 transient-network retries). Not merged to main; no PR opened.
+- `fix/sync-all-transient-retries` merged to `main`: grok-4.6 default, transient-network retries, daily EPUB export with Kindle cover.
 
 ### Next
 
+- User tests `~/.fieldtheory/library/daily/2026-08-16.epub` in Apple Books.
+- Kindle review findings applied (see 2026-08-16 entries). Remaining optional: append visible domain to link labels for e-ink orientation (one-line change, not yet decided).
 - Merge/PR the branch, then watch the next nightly run for RSS 98/98, zero YouTube `terminated`, and `synthesis: llm` on the x-list summary.
+- Optional, deferred by decision: emailing the EPUB to a Kindle address (SMTP) — file-only for now.
 
 ## Open questions
 
@@ -43,6 +46,12 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 - `src/{url-normalize,canonical-bookmarks-db,cli}.ts`, `src/daily/{enrich,html,synthesize}.ts`, `tests/{canonical-bookmarks-db,daily}.test.ts`
 
 ## Activity log
+
+- 2026-08-16: applied the Kindle review. `src/epub.ts`: CSS now sets zero `color`/`background` (theme-safe; `.reveal` panel → left rule, `.meta` → italic, grays only on borders), body margin dropped, `<!DOCTYPE html>` on every XHTML doc, `landmarks` nav + legacy `<guide>` with start-reading on chapter 2, optional `cover` (stored uncompressed, `properties="cover-image"` + legacy `<meta name="cover">`), `startChapterId` option. New `src/crc32.ts` (shared by ZIP + PNG), `src/png.ts` (8-bit greyscale PNG encoder, ~55 lines), `src/cover.ts` (5x7 bitmap font, vertically centred block: eyebrow / rule / date / title). Daily converter passes date-forward cover; 1000x1600, ~4.5 KB, epub 30→36 KB. Tests: `tests/cover.test.ts` (4) + 3 in `tests/daily-epub.test.ts`; suite 1021/1021. README corrected — USB EPUB side-load to Kindle is unsupported; Send-to-Kindle is the path. Shipped with the EPUB feature as `6d49cfd`.
+
+- 2026-08-16: Kindle-visibility review of the EPUB writer done (fable subagent; inspected src/epub.ts, src/daily/epub.ts, real 2026-08-15.epub). Key facts: EPUB reaches e-ink Kindle only via Send-to-Kindle conversion (USB EPUB side-load unsupported post-2022); Kindle ignores series metadata (`belongs-to-collection`/`calibre:series`) for personal docs — title-with-date is the grouping. Must-fix: (1) no cover → declare `properties="cover-image"` + legacy `<meta name="cover">`, raster PNG (zero-dep plan: ~80-line PNG encoder reusing node:zlib+CRC32 already in epub.ts + 8x8 bitmap font, ~250-350 lines total; SVG covers unsafe on Kindle); (2) dark-mode CSS: `.reveal` `#f2f2f2` background and `#555` fixed colors unreadable in night themes → border instead of background, drop fixed colors. Worth-doing: remove `body margin 0 5%`, add landmarks nav + `<guide>` (start-reading at Recall first), add `<!DOCTYPE html>`. Fine as-is: dcterms:modified (required, present), nav not in spine (no `hidden` needed), toc.ncx harmless, links stay inline (e-ink links are dead ends; markdown library is the action surface; popup footnotes wrong tool), ZIP layer verified correct.
+
+- 2026-08-15: added Kindle/e-reader EPUB export for the daily digest. New `src/epub.ts` (dependency-free EPUB 3 + ZIP writer over node:zlib, deterministic output, mimetype stored first, nav.xhtml + toc.ncx) and `src/daily/epub.ts` (digest markdown → reading-optimized chapters; drops grade lines/ids/System details, unwraps `<details>` into reveal boxes, degrades non-http links to text). `--epub` on `ft daily`: with `--write` it writes beside the md/html; without `--write` it converts an existing digest (`--date`, else newest) so past days export with no LLM run. Added `writeBinary` to `src/fs.ts`. Tests `tests/daily-epub.test.ts` (7); suite 1014/1014. Live: 2026-08-15 → 12 chapters/30KB, 08-12 and 08-13 → 13 chapters; all XHTML/OPF/NCX parse; chapter render checked in a browser. Shipped as `6d49cfd` (with the 08-16 Kindle fixes folded in).
 
 - 2026-08-15: fixed the 08-14/15 run's failure classes. New `src/net-retry.ts` (`isTransientNetworkError` + `retryTransient`, 3 attempts, 1s→3s backoff) wired into: RSS (`rss/sync.ts` per-feed retry, `rss/client.ts` timeout 20s→30s), YouTube (`youtube/fetch.ts` fetchText + `youtube/playlist.ts` get 30s AbortSignal.timeout + retry), and `cli.ts` sync-youtube (per-video retry, attempts 2, so one dropped socket no longer replays all 8 videos). `x-list-summary` LLM timeout 300s→600s (FT_DAILY_TIMEOUT_MS still overrides). `~/.fieldtheory/sync-all.sh` gained a PID-file single-instance guard (stale-pid safe, trap-cleaned). Tests: `tests/net-retry.test.ts` (5) + 3 RSS retry tests; suite 1007/1007. Live `ft sync-rss` → 98/98 ok. Uncommitted.
 
