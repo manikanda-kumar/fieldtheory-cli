@@ -52,6 +52,11 @@ export function dailyDigestHtmlPath(date: string): string {
   return dailyDigestPath(date).replace(/\.md$/, '.html');
 }
 
+/** Kindle/e-reader companion beside the markdown digest. */
+export function dailyDigestEpubPath(date: string): string {
+  return dailyDigestPath(date).replace(/\.md$/, '.epub');
+}
+
 /** Date-indexed readable archive for all daily digests. */
 export function dailyIndexPath(): string {
   return path.join(dailyLibraryDir(), 'index.html');

@@ -7,7 +7,7 @@
 import path from 'node:path';
 
 import { pathExists, writeJson } from '../fs.js';
-import { writeMd } from '../fs.js';
+import { writeBinary, writeMd } from '../fs.js';
 import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunProfile } from '../engine.js';
 import { extractJsonArray } from '../bookmark-classify-llm.js';
 import { getCanonicalBookmarkById, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
@@ -15,7 +15,8 @@ import { loadYoutubeState } from '../youtube/state.js';
 import { readDailyMeta, type DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
-import { dailyDigestHtmlPath, dailyDigestPath, dailyIndexPath, dailyLibraryDir, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+import { dailyDigestEpubPath, dailyDigestHtmlPath, dailyDigestPath, dailyIndexPath, dailyLibraryDir, dailyMetaPath, ensureDailyDir, ensureDailyLibraryDir } from './paths.js';
+import { digestMarkdownToEpub } from './epub.js';
 import { renderDigestHtml } from './html.js';
 import { writeDailyIndexHtml } from './index-html.js';
 import { listDueReviewCards, markReviewCardsShown, queueReviewCards, type ReviewCard } from './review.js';
@@ -97,12 +98,16 @@ export interface SynthesizeDailyOptions {
   now?: Date;
   /** Write the companion HTML page beside the markdown (default true). */
   html?: boolean;
+  /** Also write a Kindle/e-reader EPUB beside the markdown (default false). */
+  epub?: boolean;
 }
 
 export interface SynthesizeDailyResult {
   digestPath: string;
   /** Companion HTML page, unless writing it was disabled. */
   htmlPath?: string;
+  /** Companion EPUB, when --epub asked for one. */
+  epubPath?: string;
   themes: DailyTheme[];
   usedLlm: boolean;
   /** Engine label that produced the themes (e.g. "grok", "agy (fallback)"). */
@@ -744,10 +749,11 @@ export async function synthesizeDaily(
     : await queueReviewCards(collection.items, now);
   const reviewsQueued = relatedReviewQueue.added + reviewQueue.added;
   const llmMeta = { engine: llmEngine, error: llmError };
-  await writeMd(digestPath, renderDigestMarkdown(
+  const digestMarkdown = renderDigestMarkdown(
     collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
     llmMeta,
-  ));
+  );
+  await writeMd(digestPath, digestMarkdown);
   // The markdown stays the durable artifact; the page is the readable one.
   let htmlPath: string | undefined;
   if (options.html !== false) {
@@ -756,6 +762,13 @@ export async function synthesizeDaily(
       collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
       llmMeta,
     ));
+  }
+  // Built from the markdown that was just written, so `ft daily --epub` on an
+  // older date produces the same book without re-running synthesis.
+  let epubPath: string | undefined;
+  if (options.epub) {
+    epubPath = dailyDigestEpubPath(collection.date);
+    await writeBinary(epubPath, digestMarkdownToEpub(digestMarkdown, { date: collection.date }).epub);
   }
   try {
     await writeDailyIndexHtml(dailyLibraryDir(), {
@@ -792,6 +805,7 @@ export async function synthesizeDaily(
   return {
     digestPath,
     htmlPath,
+    epubPath,
     themes,
     usedLlm,
     llmEngine,

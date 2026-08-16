@@ -66,8 +66,10 @@ import { collectDaily } from './daily/collect.js';
 import { connectDailyItems } from './daily/connect.js';
 import { enrichBackfill, enrichThinItems, mergeEnrichmentSummaries } from './daily/enrich.js';
 import { synthesizeDaily } from './daily/synthesize.js';
+import { digestMarkdownToEpub } from './daily/epub.js';
+import { writeBinary } from './fs.js';
 import { writeInterests } from './daily/interests.js';
-import { dailyDigestPath } from './daily/paths.js';
+import { dailyDigestEpubPath, dailyDigestPath, dailyLibraryDir } from './daily/paths.js';
 import { formatReviewPrompt, getReviewCard, gradeReviewCard, listDueReviewCards, type ReviewRating } from './daily/review.js';
 import { scanProjects } from './projects/scan.js';
 import { collectSessionPrompts } from './projects/sessions.js';
@@ -883,6 +885,17 @@ function printIdeasRunReport(summary: import('./ideas.js').IdeasRunSummary): voi
 /** Per-invocation LLM engine override (bypasses saved default, fails fast). */
 export function engineOption(): Option {
   return new Option('--engine <name>', 'Override the LLM engine for this run (claude, codex, grok, droid, agy)');
+}
+
+/** Newest YYYY-MM-DD.md sitting in the daily library dir, if any. */
+function latestDailyDigestDate(): string | undefined {
+  const dir = dailyLibraryDir();
+  if (!fs.existsSync(dir)) return undefined;
+  return fs.readdirSync(dir)
+    .map((name) => /^(\d{4}-\d{2}-\d{2})\.md$/.exec(name)?.[1])
+    .filter((date): date is string => Boolean(date))
+    .sort()
+    .at(-1);
 }
 
 /** Wrap an async action with graceful error handling. */
@@ -1722,9 +1735,32 @@ export function buildCli() {
     .option('--ground', 'Allow web/X search for additional grounded notes (best with --engine grok)', false)
     .option('--no-ground', 'Disable web/X grounding even if FT_DAILY_GROUND is set')
     .option('--no-html', 'Skip the companion HTML page written beside the digest markdown')
+    .option('--epub', 'Also write a Kindle/e-reader EPUB beside the digest markdown', false)
     .option('--json', 'JSON output')
     .action(safe(async (options, command) => {
       ensureDataDir();
+      // Without --write this converts a digest that already exists, so an older
+      // day can be re-exported for a device without re-running synthesis.
+      if (options.epub && !options.write) {
+        const date = stringOption(options.date) ?? latestDailyDigestDate();
+        if (!date) {
+          console.error('  No digest markdown found. Run `ft daily --write` first, or pass --date.');
+          process.exitCode = 1;
+          return;
+        }
+        const markdownPath = dailyDigestPath(date);
+        if (!fs.existsSync(markdownPath)) {
+          console.error(`  No digest for ${date}: ${markdownPath}`);
+          process.exitCode = 1;
+          return;
+        }
+        const book = digestMarkdownToEpub(fs.readFileSync(markdownPath, 'utf8'), { date });
+        const epubPath = dailyDigestEpubPath(date);
+        await writeBinary(epubPath, book.epub);
+        console.log(`  ✓ EPUB: ${epubPath}`);
+        console.log(`    ${book.chapters.length} chapters · ${(book.epub.length / 1024).toFixed(0)} KB`);
+        return;
+      }
       // FT_DAILY_* env fallbacks let unattended jobs (launchd) pin engine
       // without baking flags into the sync-all step list.
       // An explicit CLI flag wins; omission falls back to FT_DAILY_GROUND.
@@ -1762,6 +1798,7 @@ export function buildCli() {
         }
         const result = await synthesizeDaily(collection, connected, {
           html: options.html !== false,
+          epub: Boolean(options.epub),
           enrichedCount: enrichment.enrichedCount,
           enrichedItemIds: collection.items.filter((item) => item.canonicalUrl && enrichment.summaries.has(item.canonicalUrl)).map((item) => item.id),
           groundExternal,
@@ -1773,6 +1810,7 @@ export function buildCli() {
         }
         console.log(`  ✓ Digest written: ${result.digestPath}`);
         if (result.htmlPath) console.log(`  ✓ Readable page: ${result.htmlPath}`);
+        if (result.epubPath) console.log(`  ✓ EPUB: ${result.epubPath}`);
         console.log(`    themes: ${result.themes.length} (${result.usedLlm ? `llm via ${result.llmEngine ?? 'default'}` : 'mechanical'})${groundExternal ? ' · grounded' : ''}`);
         if (!result.usedLlm && result.llmError) console.log(`    llm failed: ${result.llmError}`);
         console.log(`    reviews: ${result.reviewsDue} due · ${result.reviewsQueued} queued for tomorrow`);

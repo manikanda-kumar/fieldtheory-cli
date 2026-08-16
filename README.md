@@ -82,6 +82,24 @@ ft sync-all --skip youtube --no-synthesis
 ft sync-all --only github-stars,raindrop
 ```
 
+### Daily digest
+
+`ft daily --write` writes `~/.fieldtheory/library/daily/<date>.md` plus a
+readable HTML companion. `--epub` adds a Kindle/e-reader EPUB beside them:
+
+```bash
+ft daily --write --epub          # digest markdown + HTML + EPUB
+ft daily --epub                  # EPUB from the newest digest already on disk
+ft daily --epub --date 2026-08-12  # EPUB for a past digest, no re-synthesis
+```
+
+The EPUB is reading-optimized rather than a mirror: `ft review grade …` lines,
+canonical ids, and the System details block are dropped, `<details>` reveals
+become inline boxes, and links to local library files degrade to plain text.
+Each issue carries a generated cover showing its date, so a run of them stays
+distinguishable in a Kindle library grid. Open it in any e-reader or send it to
+Kindle; no credentials are involved.
+
 ### Following roster and expertise index
 
 `ft sync-following` downloads the accounts you follow on X and stores them locally for search:

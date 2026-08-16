@@ -31,11 +31,12 @@ export async function listFiles(dirPath: string): Promise<string[]> {
  * On power loss, the target file either has the old content or the full new content —
  * never zero-byte or partially-written.
  */
-async function writeFileDurable(filePath: string, content: string, mode: number): Promise<void> {
+async function writeFileDurable(filePath: string, content: string | Uint8Array, mode: number): Promise<void> {
   const tmp = filePath + '.tmp';
   const handle = await open(tmp, 'w', mode);
   try {
-    await handle.writeFile(content, 'utf8');
+    if (typeof content === 'string') await handle.writeFile(content, 'utf8');
+    else await handle.writeFile(content);
     await handle.sync();
   } finally {
     await handle.close();
@@ -88,6 +89,12 @@ export async function readJsonLines<T>(filePath: string): Promise<T[]> {
 export async function writeMd(filePath: string, content: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFileDurable(filePath, content, 0o644);
+}
+
+/** Durable write for generated binaries (EPUB, images). */
+export async function writeBinary(filePath: string, data: Uint8Array, mode = 0o644): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFileDurable(filePath, data, mode);
 }
 
 export async function readMd(filePath: string): Promise<string> {

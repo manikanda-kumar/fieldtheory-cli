@@ -9,6 +9,7 @@ How any coding agent (Claude Code, Codex, Droid, OpenCode, ...) should recall fr
 | Interests profile (≤80 lines) | `~/.fieldtheory/library/interests.md` | `ft daily --write` |
 | Active projects brief (≤120 lines) | `~/.fieldtheory/library/projects-active.md` | `ft sync-projects` |
 | Daily digests (themes + citations) | `~/.fieldtheory/library/daily/YYYY-MM-DD.md` | `ft daily --write` |
+| Daily digest EPUB (e-reader copy) | `~/.fieldtheory/library/daily/YYYY-MM-DD.epub` | `ft daily --epub` |
 | Per-project briefs (Goal/Now/Next + recent agent queries) | `~/.fieldtheory/library/projects/<repo>.md` | `ft sync-projects` |
 | Per-bookmark pages | `~/.fieldtheory/library/bookmarks/*.md` | `ft md --canonical` |
 | YouTube notes | `~/.fieldtheory/library/youtube/<YYYY-MM>/<videoId>.md` | `ft sync-youtube` |
