@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeBookmarkUrl, dedupeKeyForUrl, dedupeKeyForXBookmark } from '../src/url-normalize.js';
+import { cleanDisplayUrl, normalizeBookmarkUrl, dedupeKeyForUrl, dedupeKeyForXBookmark } from '../src/url-normalize.js';
 
 test('normalizeBookmarkUrl lowercases scheme and host, removes fragments and default ports', () => {
   assert.equal(normalizeBookmarkUrl('HTTPS://Example.COM:443/Path?q=1#section'), 'https://example.com/Path?q=1');
@@ -8,6 +8,17 @@ test('normalizeBookmarkUrl lowercases scheme and host, removes fragments and def
 
 test('normalizeBookmarkUrl strips tracking params but preserves meaningful params', () => {
   assert.equal(normalizeBookmarkUrl('https://example.com/a?utm_source=x&gclid=abc&id=42&fbclid=z'), 'https://example.com/a?id=42');
+});
+
+test('cleanDisplayUrl strips tracking params but keeps the fragment', () => {
+  assert.equal(
+    cleanDisplayUrl('https://Example.com/post?utm_source=newsletter&mc_eid=1&page=2#results'),
+    'https://example.com/post?page=2#results',
+  );
+});
+
+test('cleanDisplayUrl passes non-URL input through untouched', () => {
+  assert.equal(cleanDisplayUrl('not a url'), 'not a url');
 });
 
 test('dedupeKeyForUrl prefixes normalized URLs', () => {

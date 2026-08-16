@@ -28,7 +28,7 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 
 ### Now
 
-- `fix/sync-all-transient-retries` merged to `main`: grok-4.6 default, transient-network retries, daily EPUB export with Kindle cover.
+- Tracking params now stripped from `canonical_url` at index time (was dedupe-key-only), plus a defensive strip in the markdown→EPUB link renderer.
 
 ### Next
 
@@ -46,6 +46,8 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 - `src/{url-normalize,canonical-bookmarks-db,cli}.ts`, `src/daily/{enrich,html,synthesize}.ts`, `tests/{canonical-bookmarks-db,daily}.test.ts`
 
 ## Activity log
+
+- 2026-08-16: fixed tracking params leaking into rendered digests. Root cause: `normalizeBookmarkUrl()` only fed `dedupe_key`; `buildCanonicalGroup()` stored the raw `sourceUrl`/`targetUrl` in `canonical_url`, which is what md/html/epub/search render. Added `cleanDisplayUrl()` in src/url-normalize.ts (same casing/default-port/tracking-param rules as the dedupe key, but keeps the fragment — section anchors are meaningful; non-URL input passes through) and applied it in `buildCanonicalGroup`, plus in `src/daily/epub.ts` `inline()` so already-written digests export clean (href arrives XML-escaped, so unescape → clean → re-escape). Tests: +2 url-normalize, +1 canonical-bookmarks-db, +1 daily-epub; suite 1025/1025. Live `ft index` rebuild: dirty `canonical_url` rows 314 → 3 (the 3 left are tracking-redirect wrappers — `tracking.tldrnewsletter.com/CL0/<encoded>` and a Google Calendar event-edit link — where utm lives inside the path, not the query; unwrapping redirect hosts is a separate follow-up). Regenerated 2026-08-16.epub → 0 tracking hits (md still has 21; the md/html on disk are frozen text, so past digests stay dirty until re-run, but their EPUB export is clean). ~10 `link_enrichment` rows keyed by dirty URLs are now orphaned and will re-enrich once.
 
 - 2026-08-16: applied the Kindle review. `src/epub.ts`: CSS now sets zero `color`/`background` (theme-safe; `.reveal` panel → left rule, `.meta` → italic, grays only on borders), body margin dropped, `<!DOCTYPE html>` on every XHTML doc, `landmarks` nav + legacy `<guide>` with start-reading on chapter 2, optional `cover` (stored uncompressed, `properties="cover-image"` + legacy `<meta name="cover">`), `startChapterId` option. New `src/crc32.ts` (shared by ZIP + PNG), `src/png.ts` (8-bit greyscale PNG encoder, ~55 lines), `src/cover.ts` (5x7 bitmap font, vertically centred block: eyebrow / rule / date / title). Daily converter passes date-forward cover; 1000x1600, ~4.5 KB, epub 30→36 KB. Tests: `tests/cover.test.ts` (4) + 3 in `tests/daily-epub.test.ts`; suite 1021/1021. README corrected — USB EPUB side-load to Kindle is unsupported; Send-to-Kindle is the path. Shipped with the EPUB feature as `6d49cfd`.
 

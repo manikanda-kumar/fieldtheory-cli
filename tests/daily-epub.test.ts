@@ -216,6 +216,18 @@ test('digestMarkdownToEpub drops terminal-only machinery', () => {
   assert.doesNotMatch(all, /· notes/);
 });
 
+test('digestMarkdownToEpub strips tracking params from links in older digests', () => {
+  const markdown = SAMPLE.replace(
+    '[Something else](https://example.com/else)',
+    '[Something else](https://example.com/else?utm_source=newsletter&utm_medium=email&id=7#top)',
+  );
+  const entries = readZip(digestMarkdownToEpub(markdown).epub);
+  const alsoSaved = [...entries.entries()].find(([name]) => name.includes('also-saved'))![1].data.toString('utf8');
+
+  assert.match(alsoSaved, /<a href="https:\/\/example\.com\/else\?id=7#top">Something else<\/a>/);
+  assert.doesNotMatch(alsoSaved, /utm_/);
+});
+
 test('digestMarkdownToEpub converts reveals, links, and bullet summaries', () => {
   const entries = readZip(digestMarkdownToEpub(SAMPLE).epub);
   const recall = entries.get('OEBPS/ch-001-recall-first.xhtml')!.data.toString('utf8');

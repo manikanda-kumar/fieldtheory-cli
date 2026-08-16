@@ -12,6 +12,7 @@
 
 import { renderTextCover } from '../cover.js';
 import { buildEpub, xmlEscape, type EpubChapter } from '../epub.js';
+import { cleanDisplayUrl } from '../url-normalize.js';
 
 export interface DigestEpubOptions {
   /** Overrides the date parsed from the markdown front matter. */
@@ -237,7 +238,10 @@ function inline(text: string): string {
     const text = label || href;
     // Only web links survive: relative library paths resolve to nothing here.
     if (!/^https?:\/\//i.test(href)) return text;
-    return `<a href="${href.replace(/&(?!amp;)/g, '&amp;')}">${text}</a>`;
+    // Digests written before canonical URLs were cleaned still carry tracking
+    // params, so strip them here too — the href arrives XML-escaped.
+    const cleaned = cleanDisplayUrl(href.replace(/&amp;/g, '&'));
+    return `<a href="${cleaned.replace(/&/g, '&amp;')}">${text}</a>`;
   });
   value = value.replace(/`([^`]+)`/g, '<code>$1</code>');
   value = value.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');

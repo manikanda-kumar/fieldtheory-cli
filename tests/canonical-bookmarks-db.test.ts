@@ -165,6 +165,25 @@ test('rebuildCanonicalIndex dedupes X external link with raindrop bookmark URL',
   });
 });
 
+test('rebuildCanonicalIndex stores canonical URLs without tracking params', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeRaindropBookmarks(dir, [{
+      id: 11,
+      url: 'https://Example.com/post?utm_source=newsletter&utm_medium=email&page=2#results',
+      title: 'Tracked Post',
+      collectionPath: ['Reading'],
+      createdAt: '2026-05-10T00:00:00.000Z',
+      syncedAt: '2026-05-10T00:00:00.000Z',
+    }]);
+
+    await rebuildCanonicalIndex();
+
+    const listed = await listCanonicalBookmarks({ source: 'raindrop', limit: 10 });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].canonicalUrl, 'https://example.com/post?page=2#results');
+  });
+});
+
 test('rebuildCanonicalIndex folds Raindrop X status mirrors into their rich X bookmarks', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [

@@ -21,11 +21,28 @@ export interface XBookmarkDedupeInput {
 }
 
 export function normalizeBookmarkUrl(input: string): string {
+  const url = cleanUrl(input);
+  url.hash = '';
+  return url.toString();
+}
+
+/**
+ * Display-safe cleanup: same tracking-param and casing rules as the dedupe key,
+ * but fragments survive because they carry meaning for readers (section anchors).
+ */
+export function cleanDisplayUrl(input: string): string {
+  try {
+    return cleanUrl(input).toString();
+  } catch {
+    return input;
+  }
+}
+
+function cleanUrl(input: string): URL {
   const url = new URL(input);
 
   url.protocol = url.protocol.toLowerCase();
   url.hostname = url.hostname.toLowerCase();
-  url.hash = '';
 
   if (
     (url.protocol === 'http:' && url.port === '80')
@@ -43,7 +60,7 @@ export function normalizeBookmarkUrl(input: string): string {
   const normalizedQuery = query.toString();
   url.search = normalizedQuery ? `?${normalizedQuery}` : '';
 
-  return url.toString();
+  return url;
 }
 
 export function dedupeKeyForUrl(input: string): string {

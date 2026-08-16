@@ -5,7 +5,7 @@ import { acquireDbLock, openDb, releaseDbLock, saveDb } from './db.js';
 import { listFiles, pathExists, readJson, readJsonLines } from './fs.js';
 import { dataDir, twitterBookmarksCachePath, twitterBookmarksIndexPath, xListsDir } from './paths.js';
 import type { BookmarkRecord } from './types.js';
-import { dedupeKeyForUrl, dedupeKeyForXBookmark, xStatusIdFromUrl } from './url-normalize.js';
+import { cleanDisplayUrl, dedupeKeyForUrl, dedupeKeyForXBookmark, xStatusIdFromUrl } from './url-normalize.js';
 import { sanitizeFtsQuery } from './bookmarks-db.js';
 import { classifyBookmarkInput } from './bookmark-classify.js';
 import {
@@ -743,7 +743,10 @@ function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[])
   const id = canonicalIdForDedupeKey(dedupeKey);
   const browserSource = sources.find((source) => source.source !== 'x' && source.sourceUrl);
   const linkSource = sources.find((source) => source.targetUrl);
-  const canonicalUrl = browserSource?.sourceUrl ?? linkSource?.targetUrl ?? sources[0]?.sourceUrl ?? null;
+  const rawCanonicalUrl = browserSource?.sourceUrl ?? linkSource?.targetUrl ?? sources[0]?.sourceUrl ?? null;
+  // The stored URL is what digests, EPUBs, and search results render, so it
+  // carries the same tracking-param cleanup the dedupe key already applies.
+  const canonicalUrl = rawCanonicalUrl ? cleanDisplayUrl(rawCanonicalUrl) : null;
   const displayTitle =
     sources.find((source) => source.source !== 'x' && source.title)?.title ??
     sources.find((source) => source.title)?.title ??
