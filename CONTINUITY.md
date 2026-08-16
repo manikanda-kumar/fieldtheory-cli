@@ -28,7 +28,7 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 
 ### Now
 
-- Tracking params now stripped from `canonical_url` at index time (was dedupe-key-only), plus a defensive strip in the markdown→EPUB link renderer.
+- Tracking params now stripped from `canonical_url` at index time (was dedupe-key-only), plus a defensive strip in the markdown→EPUB link renderer. Existing digests swept clean in place (384 urls / 35 files) and their EPUBs regenerated.
 
 ### Next
 
@@ -46,6 +46,8 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 - `src/{url-normalize,canonical-bookmarks-db,cli}.ts`, `src/daily/{enrich,html,synthesize}.ts`, `tests/{canonical-bookmarks-db,daily}.test.ts`
 
 ## Activity log
+
+- 2026-08-16: swept existing digests instead of re-synthesizing them (user choice: `ft daily --write --force --date` uses a UTC-day window, so it would have changed the item set and themes, not just URLs). `~/snippets/fieldtheory-strip-tracking-params-in-digests.mjs` (dry-run default, `--apply`, `--dir`) rewrote 384 urls across 35 files under `~/.fieldtheory/library/daily`; backup at `<scratchpad>/daily-backup-20260816.tgz`. Gotcha found in preview: round-tripping every URL through the WHATWG parser also percent-encodes unicode (`https://youtu.be/…` → `%E2%80%A6`) inside link *labels* and appends a root slash to bare hosts, so the script only touches URLs matching `[?&](utm_*|fbclid|gclid|mc_cid|mc_eid)=`; also strips trailing sentence punctuation before parsing so it is not folded into the query. HTML files decode `&amp;` before cleaning and re-escape after. Re-exported the 4 EPUBs on disk (08-12/13/15/16) → 0 tracking hits, hrefs intact (213/302/295). Library-wide grep for tracking params in daily md/html: 0.
 
 - 2026-08-16: fixed tracking params leaking into rendered digests. Root cause: `normalizeBookmarkUrl()` only fed `dedupe_key`; `buildCanonicalGroup()` stored the raw `sourceUrl`/`targetUrl` in `canonical_url`, which is what md/html/epub/search render. Added `cleanDisplayUrl()` in src/url-normalize.ts (same casing/default-port/tracking-param rules as the dedupe key, but keeps the fragment — section anchors are meaningful; non-URL input passes through) and applied it in `buildCanonicalGroup`, plus in `src/daily/epub.ts` `inline()` so already-written digests export clean (href arrives XML-escaped, so unescape → clean → re-escape). Tests: +2 url-normalize, +1 canonical-bookmarks-db, +1 daily-epub; suite 1025/1025. Live `ft index` rebuild: dirty `canonical_url` rows 314 → 3 (the 3 left are tracking-redirect wrappers — `tracking.tldrnewsletter.com/CL0/<encoded>` and a Google Calendar event-edit link — where utm lives inside the path, not the query; unwrapping redirect hosts is a separate follow-up). Regenerated 2026-08-16.epub → 0 tracking hits (md still has 21; the md/html on disk are frozen text, so past digests stay dirty until re-run, but their EPUB export is clean). ~10 `link_enrichment` rows keyed by dirty URLs are now orphaned and will re-enrich once.
 
