@@ -1754,7 +1754,7 @@ export interface GapFillResult {
   total: number;
 }
 
-type TweetFetcher = (tweetId: string) => Promise<TweetFetchResult>;
+export type TweetFetcher = (tweetId: string) => Promise<TweetFetchResult>;
 
 export interface SyncGapsOptions {
   onProgress?: (progress: GapFillProgress) => void;
@@ -1798,6 +1798,29 @@ function resolveGapFillCookies(options: SyncGapsOptions): { csrfToken?: string; 
   }
 }
 
+/**
+ * Cookie-aware tweet fetcher: authenticated TweetResultByRestId first (the only
+ * backend that exposes note_tweet bodies and X Articles), public syndication as
+ * the fallback so a machine with no browser cookies still gets tweet text.
+ * Shared by gap-fill and Raindrop X hydration.
+ */
+export function createTweetFetcher(options: SyncGapsOptions = {}): TweetFetcher {
+  if (options.tweetFetcher) return options.tweetFetcher;
+  const cookies = resolveGapFillCookies(options);
+  return async (tweetId: string) => {
+    if (cookies.csrfToken) {
+      const graphqlResult = await fetchTweetByIdViaGraphQL(tweetId, cookies.csrfToken, cookies.cookieHeader);
+      // Permanent GraphQL outcomes (ok, not_found, empty) are authoritative.
+      // Transient failures (auth drift, rate limit, network) fall through to
+      // syndication so at least quoted-tweet metadata can be backfilled.
+      if (graphqlResult.status === 'ok' || graphqlResult.status === 'not_found' || graphqlResult.status === 'empty') {
+        return graphqlResult;
+      }
+    }
+    return fetchTweetViaSyndication(tweetId);
+  };
+}
+
 function textWithoutUrls(text: string): string {
   return text.replace(/https?:\/\/\S+/g, '').trim();
 }
@@ -1837,20 +1860,7 @@ export async function syncGaps(options: SyncGapsOptions = {}): Promise<GapFillRe
   const loaded = sanitizeRecords(await readJsonLines<BookmarkRecord>(cachePath));
   const records = loaded.records;
 
-  const cookies = options.tweetFetcher ? {} : resolveGapFillCookies(options);
-  const fetcher: TweetFetcher = options.tweetFetcher
-    ?? (async (tweetId) => {
-      if (cookies.csrfToken) {
-        const graphqlResult = await fetchTweetByIdViaGraphQL(tweetId, cookies.csrfToken, cookies.cookieHeader);
-        // Permanent GraphQL outcomes (ok, not_found, empty) are authoritative.
-        // Transient failures (auth drift, rate limit, network) fall through to
-        // syndication so at least quoted-tweet metadata can be backfilled.
-        if (graphqlResult.status === 'ok' || graphqlResult.status === 'not_found' || graphqlResult.status === 'empty') {
-          return graphqlResult;
-        }
-      }
-      return fetchTweetViaSyndication(tweetId);
-    });
+  const fetcher = createTweetFetcher(options);
   const enrichedIds = await readEnrichedBookmarkIds();
 
   // Gap 1: missing quoted tweets. Skip records where a previous gap-fill run

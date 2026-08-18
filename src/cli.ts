@@ -54,6 +54,7 @@ import {
   type TweetsmashSearchResult,
 } from './tweetsmash-search.js';
 import { syncRaindropBookmarks } from './raindrop/sync.js';
+import { hydrateRaindropXBookmarks } from './raindrop/x-hydrate.js';
 import type { SyncRaindropOptions } from './raindrop/sync.js';
 import { syncGitHubStars } from './github-stars/sync.js';
 import type { SyncGitHubStarsOptions } from './github-stars/sync.js';
@@ -1441,6 +1442,8 @@ export function buildCli() {
     .option('--dry-run', 'Fetch and show counts without writing JSONL')
     .option('--perpage <n>', 'Items per API page', (v: string) => Number(v), 50)
     .option('--limit <n>', 'Max total bookmarks to fetch (useful for testing)')
+    .option('--hydrate-x', 'Fetch tweet text for Raindrop-only X saves before rebuilding the index', false)
+    .option('--hydrate-limit <n>', 'Max tweets to hydrate this run', (v: string) => Number(v), 200)
     .action(safe(async (options) => {
       ensureDataDir();
 
@@ -1481,12 +1484,54 @@ export function buildCli() {
       console.log(`    Modified:        ${result.modifiedCount}`);
       console.log(`    Collections:     ${result.collections}`);
 
+      if (options.hydrateX) {
+        const hydrated = await hydrateRaindropXBookmarks({ limit: Number(options.hydrateLimit) || 200 });
+        console.log(`  ✓ X hydration: ${hydrated.hydrated} fetched, ${hydrated.failed} unavailable, ${hydrated.remaining} queued`);
+      }
+
       await rebuildCanonicalIndex();
       console.log(`  ✓ Canonical index rebuilt`);
 
       if (options.classify) {
         const classifyResult = await classifyCanonicalBookmarks();
         console.log(`  ✓ Classified ${classifyResult.classified}/${classifyResult.total} bookmarks`);
+      }
+    }));
+
+  // ── hydrate-x ──────────────────────────────────────────────────────────
+
+  program
+    .command('hydrate-x')
+    .description('Fetch tweet text for Raindrop-only X saves that Raindrop stored as a bare tweet id')
+    .option('--limit <n>', 'Max tweets to fetch this run', (v: string) => Number(v), 200)
+    .option('--delay <ms>', 'Delay between fetches', (v: string) => Number(v), 300)
+    .option('--dry-run', 'Report how many saves need hydration without fetching', false)
+    .option('--browser <id>', 'Browser to read X session cookies from (default: configured browser)')
+    .action(safe(async (options) => {
+      ensureDataDir();
+      const result = await hydrateRaindropXBookmarks({
+        limit: Number(options.limit) || 200,
+        delayMs: Number(options.delay) || 0,
+        dryRun: Boolean(options.dryRun),
+        ...(options.browser ? { browser: String(options.browser) } : {}),
+        onProgress: ({ done, total }) => {
+          if (done % 25 === 0 || done === total) process.stdout.write(`\r  Hydrating ${done}/${total}…`);
+        },
+      });
+      process.stdout.write('\r');
+
+      if (options.dryRun) {
+        console.log(`  ${result.candidates} Raindrop X save(s) need tweet text.`);
+        return;
+      }
+
+      console.log(`  X hydration complete:`);
+      console.log(`    Fetched:      ${result.hydrated}`);
+      console.log(`    Unavailable:  ${result.failed}`);
+      console.log(`    Still queued: ${result.remaining}`);
+      if (result.attempted > 0) {
+        await rebuildCanonicalIndex();
+        console.log(`  ✓ Canonical index rebuilt`);
       }
     }));
 

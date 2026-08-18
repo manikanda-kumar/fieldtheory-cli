@@ -235,6 +235,44 @@ test('rebuildCanonicalIndex folds Raindrop X status mirrors into their rich X bo
   });
 });
 
+test('rebuildCanonicalIndex keeps X bookmark text as the title and names the author for orphan Raindrop X saves', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [{
+      id: 'x-plain',
+      tweetId: '101',
+      url: 'https://x.com/alice/status/101',
+      text: 'A detailed explanation of deterministic agent evaluation.',
+      links: [],
+      syncedAt: '2026-08-13T00:00:00.000Z',
+    }]);
+    await writeRaindropBookmarks(dir, [
+      // Mirrors the X bookmark: the tweet text must win over anything Raindrop
+      // (or the hydration fallback) can offer.
+      {
+        id: 101,
+        url: 'https://twitter.com/alice/status/101',
+        title: '101',
+        createdAt: '2026-08-13T00:01:00.000Z',
+        syncedAt: '2026-08-13T00:01:00.000Z',
+      },
+      // Raindrop-only save of a tweet that was never hydrated.
+      {
+        id: 202,
+        url: 'https://twitter.com/carol/status/202',
+        title: '202',
+        createdAt: '2026-08-13T00:01:00.000Z',
+        syncedAt: '2026-08-13T00:01:00.000Z',
+      },
+    ]);
+
+    await rebuildCanonicalIndex();
+    const listed = await listCanonicalBookmarks({ source: 'raindrop', limit: 10 });
+    const byUrl = new Map(listed.map((item) => [item.canonicalUrl, item.displayTitle]));
+    assert.equal(byUrl.get('https://twitter.com/alice/status/101'), 'A detailed explanation of deterministic agent evaluation.');
+    assert.equal(byUrl.get('https://twitter.com/carol/status/202'), '@carol on X');
+  });
+});
+
 test('rebuildCanonicalIndex folds cached enrichment summaries into FTS and tolerates an absent cache table', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeGitHubStars(dir, [githubStarRecord({ id: 990, fullName: 'a/summary-index', htmlUrl: 'https://github.com/a/summary-index', description: 'brief' })]);

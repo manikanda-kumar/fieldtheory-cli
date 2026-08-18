@@ -16,6 +16,7 @@ import {
 } from './bookmark-classify-llm.js';
 import { invokeEngineAsync, type ResolvedEngine } from './engine.js';
 import { raindropBookmarksCachePath } from './raindrop/paths.js';
+import { isPlaceholderXTitle, readRaindropXHydration, type RaindropXHydration } from './raindrop/x-hydrate.js';
 import type { RaindropRecord } from './raindrop/types.js';
 import { githubStarsCachePath } from './github-stars/paths.js';
 import type { GitHubStarRecord } from './github-stars/types.js';
@@ -411,7 +412,10 @@ function xSourceFromRecord(record: BookmarkRecord): CanonicalSourceInput {
   };
 }
 
-export function raindropSourceFromRecord(record: RaindropRecord): CanonicalSourceInput | null {
+export function raindropSourceFromRecord(
+  record: RaindropRecord,
+  hydration?: RaindropXHydration,
+): CanonicalSourceInput | null {
   let dedupeKey: string;
   try {
     dedupeKey = dedupeKeyForUrl(record.url);
@@ -436,6 +440,18 @@ export function raindropSourceFromRecord(record: RaindropRecord): CanonicalSourc
     }
   }
 
+  // Raindrop cannot read past x.com's auth wall, so an X save arrives with the
+  // tweet id as its title and no excerpt. Fetched tweet text (see
+  // src/raindrop/x-hydrate.ts) replaces both; without it, at least name the
+  // author so the digest shows a handle instead of a bare number.
+  const tweetId = xStatusIdFromUrl(record.url);
+  const isPlaceholder = tweetId ? isPlaceholderXTitle(record.title, tweetId) : false;
+  const xTitle = tweetId ? raindropXTitle(record, tweetId, hydration) : null;
+  if (hydration?.status === 'ok' && hydration.text) textParts.unshift(hydration.text);
+  // Snapshots carry X's own `Sat Dec 02 19:41:39 +0000 2023` format; every
+  // reader of created_at expects ISO, so only a parseable date is adopted.
+  const postedAt = isoOrNull(hydration?.postedAt);
+
   return {
     id: `raindrop:${record.id}`,
     source: 'raindrop',
@@ -444,17 +460,63 @@ export function raindropSourceFromRecord(record: RaindropRecord): CanonicalSourc
     sourceUrl: record.url,
     targetUrl: null,
     dedupeKey,
-    title: record.title,
+    title: xTitle ?? (isPlaceholder ? null : record.title),
     text: textParts.join('\n\n') || null,
-    authorHandle: record.domain || null,
+    authorHandle: normalizeHandle(hydration?.authorHandle) || xHandleFromStatusUrl(record.url) || record.domain || null,
     savedAt: record.createdAt,
-    createdAt: record.createdAt,
+    createdAt: postedAt ?? record.createdAt,
     modifiedAt: record.updatedAt ?? null,
     folderPath: folderPaths,
     links: record.links ?? [],
     contentPath: null,
     metadata: null,
   };
+}
+
+function xHandleOnlyTitle(canonicalUrl: string, sources: CanonicalSourceInput[]): string | null {
+  if (!xStatusIdFromUrl(canonicalUrl)) return null;
+  const handle = xHandleFromStatusUrl(canonicalUrl)
+    ?? normalizeHandle(sources.find((source) => source.authorHandle?.startsWith('@'))?.authorHandle);
+  return handle ? `${handle} on X` : null;
+}
+
+/** First line of the tweet, trimmed to the length the digest renders. */
+const X_TITLE_MAX = 120;
+
+function raindropXTitle(
+  record: RaindropRecord,
+  tweetId: string,
+  hydration: RaindropXHydration | undefined,
+): string | null {
+  if (!isPlaceholderXTitle(record.title, tweetId)) return null;
+  const handle = normalizeHandle(hydration?.authorHandle) || xHandleFromStatusUrl(record.url);
+  const text = hydration?.status === 'ok' ? hydration.text?.replace(/\s+/g, ' ').trim() : undefined;
+  if (text) {
+    const head = text.length > X_TITLE_MAX ? `${text.slice(0, X_TITLE_MAX).trimEnd()}…` : text;
+    return handle ? `${handle}: ${head}` : head;
+  }
+  // Not fetched (yet) or gone. The title stays empty on purpose: a Raindrop
+  // title outranks the X source in `buildCanonicalGroup`, so inventing one here
+  // would hide the real tweet text whenever the same tweet is also an X
+  // bookmark. The handle-only fallback is applied group-side instead.
+  return null;
+}
+
+function isoOrNull(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function normalizeHandle(handle: string | null | undefined): string | null {
+  const trimmed = handle?.trim();
+  if (!trimmed) return null;
+  return trimmed.startsWith('@') ? trimmed : `@${trimmed}`;
+}
+
+function xHandleFromStatusUrl(url: string): string | null {
+  const handle = url.match(/^https?:\/\/[^/]+\/([^/]+)\/status\/\d+/)?.[1];
+  return handle && handle !== 'i' ? `@${handle}` : null;
 }
 
 export function githubStarsSourceFromRecord(record: GitHubStarRecord): CanonicalSourceInput | null {
@@ -754,9 +816,15 @@ function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[])
     canonicalUrl;
   const nonXTitle = sources.find((source) => source.source !== 'x' && source.title)?.title ?? null;
   const xSource = sources.find((source) => source.source === 'x');
-  const preferredTitle = nonXTitle && /^\d+$/.test(nonXTitle) && sources.some((source) => source.source === 'x' && source.text)
+  const numericTitle = nonXTitle && /^\d+$/.test(nonXTitle) && sources.some((source) => source.source === 'x' && source.text)
     ? xSource?.title ?? xSource?.text?.slice(0, 120) ?? displayTitle
     : displayTitle;
+  // A Raindrop X save whose tweet was never fetched (or was deleted) has no
+  // title and no text, so the URL would be the only thing to show. Naming the
+  // author at least says whose post it is.
+  const preferredTitle = numericTitle === canonicalUrl && canonicalUrl
+    ? xHandleOnlyTitle(canonicalUrl, sources) ?? numericTitle
+    : numericTitle;
   const savedDates = sources
     .map((source) => source.savedAt)
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
@@ -926,10 +994,11 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
     const raindropCachePath = raindropBookmarksCachePath();
     if (await pathExists(raindropCachePath)) {
       const raindropRecords = await readJsonLines<RaindropRecord>(raindropCachePath);
+      const xHydration = await readRaindropXHydration();
       const normalized = raindropRecords
         .map((record) => {
-          const source = raindropSourceFromRecord(record);
           const tweetId = xStatusIdFromUrl(record.url);
+          const source = raindropSourceFromRecord(record, tweetId ? xHydration.get(tweetId) : undefined);
           const xDedupeKey = tweetId ? xDedupeKeyByTweetId.get(tweetId) : undefined;
           return source && xDedupeKey ? { ...source, dedupeKey: xDedupeKey } : source;
         })

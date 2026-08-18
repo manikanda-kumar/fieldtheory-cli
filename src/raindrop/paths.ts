@@ -16,3 +16,12 @@ export function raindropMetaPath(): string {
 export function raindropBackfillStatePath(): string {
   return path.join(raindropBookmarksDir(), 'backfill-state.json');
 }
+
+/**
+ * Tweet text fetched for Raindrop-only X saves. Raindrop stores those with the
+ * tweet id as the title and no excerpt, so the digest would otherwise render a
+ * bare number with no description.
+ */
+export function raindropXHydrationPath(): string {
+  return path.join(raindropBookmarksDir(), 'x-hydrated.jsonl');
+}
