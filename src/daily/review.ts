@@ -6,6 +6,7 @@
 
 import { pathExists, readJson, writeJson } from '../fs.js';
 import { dailyReviewPath, ensureDailyDir } from './paths.js';
+import { summarizeSavedText } from './summary.js';
 
 const MAX_NEW_CARDS_PER_DIGEST = 3;
 const ANSWER_CHARS = 360;
@@ -55,6 +56,15 @@ function cleanText(value: string): string {
 
 function titleFor(item: ReviewableItem): string {
   return (item.displayTitle ?? item.canonicalUrl ?? item.id).replace(/\s+/g, ' ').trim().slice(0, 120);
+}
+
+/**
+ * Reminder text shown when the card is revealed. Uses the same extraction as
+ * the digest's item summaries so the reveal is prose that ends on a boundary,
+ * not indexing metadata cut mid-word.
+ */
+export function buildReviewAnswer(item: ReviewableItem): string {
+  return summarizeSavedText(item, ANSWER_CHARS);
 }
 
 function datePlusDays(now: Date, days: number): string {
@@ -148,7 +158,7 @@ export async function queueReviewCards(
   const createdAt = now.toISOString();
   const additions = candidates.map((item): ReviewCard => {
     const title = titleFor(item);
-    const answer = cleanText(item.searchText).slice(0, ANSWER_CHARS) || title;
+    const answer = buildReviewAnswer(item) || title;
     return {
       id: `review:${item.id}`,
       canonicalId: item.id,

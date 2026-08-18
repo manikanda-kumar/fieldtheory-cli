@@ -20,6 +20,7 @@ import { digestMarkdownToEpub } from './epub.js';
 import { renderDigestHtml } from './html.js';
 import { writeDailyIndexHtml } from './index-html.js';
 import { listDueReviewCards, markReviewCardsShown, queueReviewCards, type ReviewCard } from './review.js';
+import { summarizeSavedText } from './summary.js';
 
 const SNIPPET_CHARS = 240;
 const ITEM_SUMMARY_CHARS = 220;
@@ -36,54 +37,7 @@ export function contentLength(text: string): number {
 
 /** The best concise summary already present in a canonical item's saved text. */
 export function dailyItemSummary(item: CanonicalRecentItem): string {
-  const compact = (value: string): string => value.replace(/\s+/g, ' ').trim();
-  const truncate = (value: string): string => value.length <= ITEM_SUMMARY_CHARS
-    ? value
-    : `${value.slice(0, ITEM_SUMMARY_CHARS - 1).trimEnd()}…`;
-  const explicitSummary = item.searchText.match(/(?:^|\s)summary:\s*(.+)$/is)?.[1];
-  if (explicitSummary) return truncate(compact(explicitSummary));
-
-  const title = compact(item.displayTitle ?? '');
-  // searchText is newline-joined index parts (title, body, topics, language,
-  // owner, folder path, handles, domains). Lines under three words are almost
-  // always that indexing metadata, not prose — drop them so summaries do not
-  // end in keyword soup ("… TypeScript oxlint dmmulroy GitHub Stars").
-  const seenLines = new Set<string>();
-  const substantiveLines = item.searchText
-    .replace(/https?:\/\/\S+/g, ' ')
-    .split('\n')
-    .map(compact)
-    .filter((line) => {
-      const words = line.split(' ').filter((word) => /[\p{L}\p{N}]/u.test(word));
-      if (words.length < 3) return false;
-      const key = line.toLowerCase();
-      if (seenLines.has(key)) return false;
-      seenLines.add(key);
-      return true;
-    });
-  const text = substantiveLines.length > 0
-    ? compact(substantiveLines.join(' '))
-    : compact(item.searchText.replace(/https?:\/\/\S+/g, ' '));
-  // Merged rows can repeat the title at the head of the text (title + source
-  // text both carry it), so strip every leading occurrence, not just one.
-  let withoutTitle = text;
-  while (title && withoutTitle.toLowerCase().startsWith(title.toLowerCase())) {
-    withoutTitle = withoutTitle.slice(title.length);
-    // Titles truncated mid-word at index time leave a dangling fragment
-    // ("…pus" → "h to get…") at the start; drop it at the word boundary.
-    if (/^\S/.test(withoutTitle)) withoutTitle = withoutTitle.replace(/^\S+/, '');
-    withoutTitle = withoutTitle.trim();
-  }
-  // Merged X/Raindrop rows can leave only an author handle, tweet id, and
-  // domain after the post text (which is also the title) is removed. Repeat
-  // the substantive title instead of presenting that indexing metadata as a
-  // summary.
-  const meaningfulRemainder = withoutTitle
-    .replace(/\b\d{8,}\b/g, ' ')
-    .replace(/\b(?:[\w-]+\.)+[a-z]{2,}\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return truncate(meaningfulRemainder.length >= 40 ? withoutTitle : title || text);
+  return summarizeSavedText(item, ITEM_SUMMARY_CHARS);
 }
 
 /**
