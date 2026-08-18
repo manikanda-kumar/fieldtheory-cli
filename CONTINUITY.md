@@ -36,7 +36,7 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 
 ### Now
 
-- Nothing pending. `c15c285` adds `--epub` to the nightly daily step; 2026-08-18 epub + full NotebookLM push done by hand.
+- Nothing pending. Shipped today: `c15c285` (nightly `--epub`), `d8d7c63` (boundary-aware recall reveals). 2026-08-18 digest patched in place + epub re-exported.
 
 ### Next
 
@@ -65,6 +65,8 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
   - `cd /Users/manik/.fieldtheory/library/daily && rg -n -A3 "^Connects to earlier saves:" 2026-08-16.md | head -8 && open 20`
 
 ## Activity log
+
+- 2026-08-18: fixed truncated "Reveal source reminder" text in the digest Recall section. Root cause: `queueReviewCards` stored `cleanText(searchText).slice(0, 360)` — a hard cut that echoed the title back and ended mid-word. Extracted the themed-item summarizer into `src/daily/summary.ts` (`summarizeSavedText(item, maxChars)` + `truncateAtBoundary`: sentence end in the last 40% of the budget wins, else word boundary + `…`); `dailyItemSummary` and new `buildReviewAnswer` both call it. Tests `tests/daily-summary.test.ts` (5); suite 1042/1042. Backfilled the stored cards with `~/snippets/fieldtheory-rebuild-review-answers.mjs --apply` (110/112 rewritten, 2 canonical rows gone; backup `reviews.json.bak-20260818`) and patched the already-written 2026-08-18 md+html reveals, then re-exported the epub. Shipped as `d8d7c63`.
 
 - 2026-08-18: `--epub` is now default in the nightly (`src/sync-all.ts` daily step → `['daily','--write','--epub']`, test updated, suite 1037/1037, `c15c285`). Backfilled 2026-08-18.epub by hand (`ft daily --date 2026-08-18 --epub`, 13 chapters / 38 KB — no LLM re-run, converts the existing md). Re-ran the stalled NotebookLM push with new `~/snippets/fieldtheory-nlm-push-digest.sh` (mirrors the sync-all nlm block, idempotent via the week manifest): 8 remaining YouTube notes pushed, W34 manifest now 11 entries (digest + 10 notes).
 
