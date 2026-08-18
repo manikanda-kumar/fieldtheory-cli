@@ -63,7 +63,7 @@ test('buildSyncAllPlan runs the daily digest step in the synthesis tail', () => 
   const plan = buildSyncAllPlan({});
   const dailyStep = plan.find((step) => step.id === 'daily');
   assert.equal(dailyStep?.enabled, true);
-  assert.deepEqual(dailyStep?.command, ['daily', '--write']);
+  assert.deepEqual(dailyStep?.command, ['daily', '--write', '--epub']);
   const ids = plan.map((step) => step.id);
   assert.ok(ids.indexOf('daily') > ids.indexOf('canonical-md'), 'daily runs after canonical markdown export');
 });

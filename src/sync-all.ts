@@ -190,7 +190,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
     {
       id: 'daily',
       label: 'Write daily digest and interests profile',
-      command: ['daily', '--write'],
+      command: ['daily', '--write', '--epub'],
       enabled: !options.noSynthesis,
       reason: options.noSynthesis ? 'disabled by --no-synthesis' : undefined,
     },
