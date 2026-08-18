@@ -34,9 +34,14 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 
 - 2026-08-17 nightly run completed (exit=0, 09:13:35 → 19:47:20) but digest fell back to **mechanical** themes: all 4 synthesis engines failed (grok 300s timeout, grok retry 300s timeout, agy 300s timeout, droid → China-hosted opt-in error). No epub for 08-17 (sync-all runs `ft daily --write` without `--epub`). NotebookLM push failed (connection reset).
 
+### Now
+
+- Nothing pending. `c15c285` adds `--epub` to the nightly daily step; 2026-08-18 epub + full NotebookLM push done by hand.
+
 ### Next
 
-- Watch the 2026-08-18 nightly: enriched format end to end, llm synthesis (no mechanical fallback), and hydrated Raindrop X titles.
+- Watch the 2026-08-19 nightly: `--epub` produces 2026-08-19.epub, and the nlm loop pushes all referenced notes without dying.
+- Optional: root-cause the nlm push loop dying mid-upload (see 2026-08-18 log entry); it left no FAILED line.
 - Optional: add `--hydrate-x` to the sync-raindrop step in `~/.fieldtheory/sync-all.sh` so new orphan X saves hydrate nightly (not done — needs your call).
 
 ## Open questions
@@ -60,6 +65,10 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
   - `cd /Users/manik/.fieldtheory/library/daily && rg -n -A3 "^Connects to earlier saves:" 2026-08-16.md | head -8 && open 20`
 
 ## Activity log
+
+- 2026-08-18: `--epub` is now default in the nightly (`src/sync-all.ts` daily step → `['daily','--write','--epub']`, test updated, suite 1037/1037, `c15c285`). Backfilled 2026-08-18.epub by hand (`ft daily --date 2026-08-18 --epub`, 13 chapters / 38 KB — no LLM re-run, converts the existing md). Re-ran the stalled NotebookLM push with new `~/snippets/fieldtheory-nlm-push-digest.sh` (mirrors the sync-all nlm block, idempotent via the week manifest): 8 remaining YouTube notes pushed, W34 manifest now 11 entries (digest + 10 notes).
+
+- 2026-08-18: nightly sync-all exit=0 (09:00:04 → 10:02:15, ~62m). All 14 steps ✓. Digest 2026-08-18.{md,html}: **synthesis llm / grok**, 7 themes, 74 collected / 69 themed / 5 also-saved / 5 thin_skipped / 12 enriched / 0 carried_over / 0 citations_dropped / 49 undateable_excluded / 3 reviews due. All three 08-17 watch items resolved: no mechanical fallback, per-item summary lines + domain-suffixed "Connects to earlier saves" render correctly, 0 bare tweet-id titles in the digest. Still no epub (sync-all daily step has no `--epub`). NotebookLM: notebook W34, pushed digest + 2 YouTube notes, then the loop stopped mid-upload of `u_k9cwDNPcM.md` after `ConnectError` retries 1/4 and 2/4 — no FAILED line, no further log output, process gone; last 2 notes unpushed.
 
 - 2026-08-18: fixed Raindrop-only X saves rendering as bare tweet ids with no description in the daily digest. Root cause: Raindrop's scraper cannot pass x.com's auth wall, so it stores `title = <tweet id>` and no excerpt; the existing canonical fold only fixes saves whose tweet is also an X bookmark. New `src/raindrop/x-hydrate.ts` (candidate selection, JSONL cache at `~/.fieldtheory/bookmarks/raindrop/x-hydrated.jsonl`, permanent-vs-transient failure caching, flush every 25) + `createTweetFetcher()` extracted from `syncGaps` in `src/graphql-bookmarks.ts` (authenticated TweetResultByRestId → public syndication). `raindropSourceFromRecord(record, hydration?)` now sets title (`@handle: <tweet head>`, 120 chars), authorHandle, text, and ISO-normalized posted date, with `@handle on X` as the un-hydrated fallback. CLI: `ft hydrate-x [--limit --delay --dry-run --browser]` and `ft sync-raindrop --hydrate-x`. Live backfill: 281 candidates of 3675 raindrop X saves (the rest fold into X bookmarks) → 207 fetched, 74 deleted/not_found. Caught a self-inflicted regression on verification: the first cut set a synthetic `@handle on X` source title, which outranks the X source in `buildCanonicalGroup` and hid real tweet text for 3.2k folded rows. Fixed by leaving the source title null for un-hydrated placeholders and applying the handle-only title group-side (`xHandleOnlyTitle`) only when nothing else exists. After rebuild: 7956 X rows, 0 bare-id titles, 41 handle-only (deleted tweets), 5 whose tweet text is only a t.co link (pre-existing). Tests `tests/raindrop-x-hydrate.test.ts` (11) + a canonical fold/orphan test; suite 1037/1037.
 
