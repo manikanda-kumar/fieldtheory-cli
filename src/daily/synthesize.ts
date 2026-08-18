@@ -615,9 +615,10 @@ export function renderDigestMarkdown(
  * Digest prompts are long and grounded runs also wait on the engine's web/X
  * tools, so the shared 120s engine default kills healthy calls (2026-07-23:
  * primary, retry, and fallback all timed out at 120s and the digest fell back
- * to mechanical). Override with FT_DAILY_TIMEOUT_MS.
+ * to mechanical). Raised to 600s after 2026-08-17, where a 200-item grounded
+ * prompt timed out on every engine at 300s. Override with FT_DAILY_TIMEOUT_MS.
  */
-const DAILY_INVOKE_TIMEOUT_MS = 300_000;
+const DAILY_INVOKE_TIMEOUT_MS = 600_000;
 
 function dailyInvokeTimeoutMs(): number {
   const raw = Number(process.env.FT_DAILY_TIMEOUT_MS);
@@ -637,8 +638,28 @@ interface DailyFallbackSpec {
   model?: string;
 }
 
-/** Fallback engines tried, in order, after the primary and its retry. */
-export function dailyFallbackChain(primaryLabel: string, env: NodeJS.ProcessEnv = process.env): DailyFallbackSpec[] {
+/**
+ * Default model per fallback engine. Only applied when the engine is not
+ * overridden with a model of its own: `grok-4.5` keeps the second fallback a
+ * different attempt from a `grok-4.6` primary, and droid still needs its own
+ * default when explicitly selected.
+ */
+const DEFAULT_FALLBACK_MODELS: Record<string, string | undefined> = {
+  grok: 'grok-4.5',
+  droid: 'deepseek-v4-flash',
+};
+
+/**
+ * Fallback engines tried, in order, after the primary and its retry.
+ * `primaryModel` matters because the default second fallback is the primary
+ * engine on an older model: pinning that same model as the primary would
+ * otherwise re-run an identical attempt (a full timeout) before mechanical.
+ */
+export function dailyFallbackChain(
+  primaryLabel: string,
+  env: NodeJS.ProcessEnv = process.env,
+  primaryModel?: string,
+): DailyFallbackSpec[] {
   const candidates: DailyFallbackSpec[] = [
     {
       engine: (env.FT_DAILY_FALLBACK_ENGINE ?? 'agy').trim(),
@@ -647,20 +668,34 @@ export function dailyFallbackChain(primaryLabel: string, env: NodeJS.ProcessEnv 
     // The default model belongs to the default engine only: pairing
     // deepseek-v4-flash with a user-chosen engine makes it reject the model.
     (() => {
-      const engine = (env.FT_DAILY_FALLBACK_ENGINE_2 ?? 'droid').trim();
+      const engine = (env.FT_DAILY_FALLBACK_ENGINE_2 ?? 'grok').trim();
       const model = env.FT_DAILY_FALLBACK_MODEL_2?.trim()
-        || (engine === 'droid' ? 'deepseek-v4-flash' : undefined);
+        || DEFAULT_FALLBACK_MODELS[engine];
       return { engine, model };
     })(),
   ];
-  const seen = new Set([primaryLabel]);
+  // Dedupe on engine+model, not engine alone: the second fallback is grok on
+  // an older model, which is a genuinely different attempt even when grok is
+  // also the primary (2026-08-17: droid's default model went China-only, so
+  // the last fallback was dead). A bare repeat of the primary engine still
+  // collapses, since its key carries no model.
+  // Both keys: a bare repeat of the primary engine (no model = the engine's own
+  // default, which is what the primary already ran) and the pinned model.
+  const seen = new Set([fallbackKey(primaryLabel, undefined)]);
+  if (primaryModel) seen.add(fallbackKey(primaryLabel, primaryModel));
   const chain: DailyFallbackSpec[] = [];
   for (const candidate of candidates) {
-    if (!candidate.engine || candidate.engine === 'none' || seen.has(candidate.engine)) continue;
-    seen.add(candidate.engine);
+    if (!candidate.engine || candidate.engine === 'none') continue;
+    const key = fallbackKey(candidate.engine, candidate.model);
+    if (seen.has(key)) continue;
+    seen.add(key);
     chain.push(candidate);
   }
   return chain;
+}
+
+function fallbackKey(engine: string, model: string | undefined): string {
+  return `${engine}|${model ?? ''}`;
 }
 
 export async function synthesizeDaily(
@@ -720,8 +755,10 @@ export async function synthesizeDaily(
         : [
             { label: primaryLabel, invoke: (p) => defaultInvoke(profile, p) },
             { label: `${primaryLabel} (retry)`, invoke: (p) => defaultInvoke(profile, p) },
-            ...dailyFallbackChain(primaryLabel).map((spec, index) => ({
-              label: `${spec.engine} (fallback${index === 0 ? '' : ` ${index + 1}`})`,
+            ...dailyFallbackChain(primaryLabel, process.env, profile.model).map((spec, index) => ({
+              // Name the model when the fallback reuses the primary engine,
+              // so the digest's synthesis line stays unambiguous.
+              label: `${spec.engine === primaryLabel && spec.model ? `${spec.engine} ${spec.model}` : spec.engine} (fallback${index === 0 ? '' : ` ${index + 1}`})`,
               // Fresh profile: the primary's model/effort don't transfer across engines.
               invoke: (p: string) => defaultInvoke({
                 engine: spec.engine,

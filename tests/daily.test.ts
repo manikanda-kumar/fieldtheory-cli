@@ -354,18 +354,46 @@ test('daily: synthesize falls back to mechanical themes when the LLM fails', asy
 test('daily: the fallback chain adds a second engine and never repeats the primary', () => {
   assert.deepEqual(dailyFallbackChain('grok', {}), [
     { engine: 'agy', model: undefined },
-    { engine: 'droid', model: 'deepseek-v4-flash' },
+    // Live 2026-08-17: droid's default model went China-only and killed the
+    // last fallback, so the second fallback is grok on the older model — a
+    // different attempt even when grok is also the primary.
+    { engine: 'grok', model: 'grok-4.5' },
   ]);
   // A primary that is already a fallback must not be retried as one.
-  assert.deepEqual(dailyFallbackChain('agy', {}), [{ engine: 'droid', model: 'deepseek-v4-flash' }]);
+  assert.deepEqual(dailyFallbackChain('agy', {}), [{ engine: 'grok', model: 'grok-4.5' }]);
+  // A bare repeat of the primary engine still collapses: no model, no difference.
+  assert.deepEqual(
+    dailyFallbackChain('grok', { FT_DAILY_FALLBACK_ENGINE: 'grok' }),
+    [{ engine: 'grok', model: 'grok-4.5' }],
+  );
   assert.deepEqual(
     dailyFallbackChain('grok', { FT_DAILY_FALLBACK_ENGINE: 'none', FT_DAILY_FALLBACK_ENGINE_2: 'none' }),
     [],
   );
   assert.deepEqual(
     dailyFallbackChain('claude', { FT_DAILY_FALLBACK_ENGINE: 'grok', FT_DAILY_FALLBACK_MODEL: 'grok-4.6', FT_DAILY_FALLBACK_ENGINE_2: 'grok' }),
-    [{ engine: 'grok', model: 'grok-4.6' }],
-    'a duplicate second fallback collapses into the first',
+    [{ engine: 'grok', model: 'grok-4.6' }, { engine: 'grok', model: 'grok-4.5' }],
+    'the same engine twice is kept only when the models differ',
+  );
+  assert.deepEqual(
+    dailyFallbackChain('claude', { FT_DAILY_FALLBACK_ENGINE: 'grok', FT_DAILY_FALLBACK_MODEL: 'grok-4.5', FT_DAILY_FALLBACK_ENGINE_2: 'grok' }),
+    [{ engine: 'grok', model: 'grok-4.5' }],
+    'an identical engine+model second fallback collapses into the first',
+  );
+  assert.deepEqual(
+    dailyFallbackChain('grok', { FT_DAILY_FALLBACK_ENGINE: 'none', FT_DAILY_FALLBACK_ENGINE_2: 'droid' }),
+    [{ engine: 'droid', model: 'deepseek-v4-flash' }],
+    'droid still carries its own default model when explicitly selected',
+  );
+  // Pinning the fallback's model as the primary would otherwise re-run an
+  // identical attempt — a second full timeout — before going mechanical.
+  assert.deepEqual(
+    dailyFallbackChain('grok', {}, 'grok-4.5'),
+    [{ engine: 'agy', model: undefined }],
+  );
+  assert.deepEqual(
+    dailyFallbackChain('grok', {}, 'grok-4.6'),
+    [{ engine: 'agy', model: undefined }, { engine: 'grok', model: 'grok-4.5' }],
   );
   // Live 2026-07-26: overriding only the engine sent droid's default model to
   // agy, which rejected it ("model deepseek-v4-flash is not recognized").
