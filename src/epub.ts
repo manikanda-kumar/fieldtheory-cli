@@ -75,7 +75,7 @@ blockquote { margin: 0.8em 0; padding: 0 0 0 0.9em; border-left: 3px solid #8080
 code { font-family: 'Courier New', monospace; font-size: 0.9em; }
 hr { border: 0; border-top: 1px solid #808080; margin: 1.2em 0; }
 .meta { font-size: 0.85em; font-style: italic; margin: 0 0 0.8em; }
-.summary { margin: 0 0 0.9em; }
+.summary { margin: 0.15em 0 0.9em; font-size: 0.92em; }
 .reveal { margin: 0.6em 0 1.2em; padding: 0.4em 0.8em; border-left: 3px solid #808080; }
 .reveal-label { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 0.3em; }
 `;

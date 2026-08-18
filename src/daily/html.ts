@@ -22,7 +22,7 @@ import type { DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import type { DailyCoverage } from './coverage.js';
 import type { ReviewCard } from './review.js';
-import { dailyItemSummary, extractYoutubeVideoId, type DailyTheme } from './synthesize.js';
+import { dailyItemDisplaySummary, displayDomain, extractYoutubeVideoId, type DailyTheme } from './synthesize.js';
 
 const SNIPPET_CHARS = 220;
 const CHIP_LABEL_CHARS = 26;
@@ -80,7 +80,7 @@ export function renderDigestHtml(
       url: item.canonicalUrl ?? undefined,
       eyebrow: item.sources.join(' · '),
       byline: [savedLabel(item, collection.date), item.primaryCategory ?? undefined].filter(Boolean).join(' · '),
-      body: htmlEscape(dailyItemSummary(item)),
+      body: htmlEscape(dailyItemDisplaySummary(item)),
       extra: notes ? [notes] : undefined,
       media: thumbnail(item.canonicalUrl),
       lead,
@@ -103,13 +103,16 @@ export function renderDigestHtml(
       const ref = relatedById.get(id);
       if (!ref) continue;
       const notes = notesLink(ref.url);
+      const refDomain = displayDomain(ref.url);
       items.push({
         title: truncate(ref.title ?? ref.url ?? id, 140),
         url: ref.url ?? undefined,
         eyebrow: 'connects to an earlier save',
+        byline: refDomain || undefined,
         body: '',
         extra: notes ? [notes] : undefined,
         group,
+        searchText: refDomain || undefined,
       });
     }
     for (const note of theme.externalNotes) {

@@ -44,10 +44,36 @@ export function dailyItemSummary(item: CanonicalRecentItem): string {
   if (explicitSummary) return truncate(compact(explicitSummary));
 
   const title = compact(item.displayTitle ?? '');
-  const text = compact(item.searchText.replace(/https?:\/\/\S+/g, ' '));
-  const withoutTitle = title && text.toLowerCase().startsWith(title.toLowerCase())
-    ? text.slice(title.length).trim()
-    : text;
+  // searchText is newline-joined index parts (title, body, topics, language,
+  // owner, folder path, handles, domains). Lines under three words are almost
+  // always that indexing metadata, not prose — drop them so summaries do not
+  // end in keyword soup ("… TypeScript oxlint dmmulroy GitHub Stars").
+  const seenLines = new Set<string>();
+  const substantiveLines = item.searchText
+    .replace(/https?:\/\/\S+/g, ' ')
+    .split('\n')
+    .map(compact)
+    .filter((line) => {
+      const words = line.split(' ').filter((word) => /[\p{L}\p{N}]/u.test(word));
+      if (words.length < 3) return false;
+      const key = line.toLowerCase();
+      if (seenLines.has(key)) return false;
+      seenLines.add(key);
+      return true;
+    });
+  const text = substantiveLines.length > 0
+    ? compact(substantiveLines.join(' '))
+    : compact(item.searchText.replace(/https?:\/\/\S+/g, ' '));
+  // Merged rows can repeat the title at the head of the text (title + source
+  // text both carry it), so strip every leading occurrence, not just one.
+  let withoutTitle = text;
+  while (title && withoutTitle.toLowerCase().startsWith(title.toLowerCase())) {
+    withoutTitle = withoutTitle.slice(title.length);
+    // Titles truncated mid-word at index time leave a dangling fragment
+    // ("…pus" → "h to get…") at the start; drop it at the word boundary.
+    if (/^\S/.test(withoutTitle)) withoutTitle = withoutTitle.replace(/^\S+/, '');
+    withoutTitle = withoutTitle.trim();
+  }
   // Merged X/Raindrop rows can leave only an author handle, tweet id, and
   // domain after the post text (which is also the title) is removed. Repeat
   // the substantive title instead of presenting that indexing metadata as a
@@ -58,6 +84,31 @@ export function dailyItemSummary(item: CanonicalRecentItem): string {
     .replace(/\s+/g, ' ')
     .trim();
   return truncate(meaningfulRemainder.length >= 40 ? withoutTitle : title || text);
+}
+
+/**
+ * Summary intended to sit beside the item's linked title: suppressed when it
+ * would only repeat the title (common for short X posts, where the post text
+ * is also the display title).
+ */
+export function dailyItemDisplaySummary(item: CanonicalRecentItem): string {
+  const summary = dailyItemSummary(item);
+  if (!summary) return '';
+  const normalize = (value: string): string => value.replace(/\s+/g, ' ').replace(/…$/, '').trim().toLowerCase();
+  const title = normalize(item.displayTitle ?? '');
+  const normalized = normalize(summary);
+  if (title && (normalized === title || title.startsWith(normalized))) return '';
+  return summary;
+}
+
+/** Bare hostname (no www.) that orients a link without opening it. */
+export function displayDomain(url: string | null | undefined): string {
+  if (!url) return '';
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
 }
 
 export interface DailyExternalNote {
@@ -489,6 +540,8 @@ export function renderDigestMarkdown(
       const item = itemById.get(id);
       if (!item) continue;
       lines.push(renderItem(item, id));
+      const summary = dailyItemDisplaySummary(item);
+      if (summary) lines.push(`  ${summary}`);
     }
     if (theme.relatedIds.length > 0) {
       lines.push('');
@@ -497,7 +550,8 @@ export function renderDigestMarkdown(
         const ref = relatedById.get(id);
         if (!ref) continue;
         const label = linkLabel(ref.title ?? ref.url ?? id);
-        lines.push(`- ${ref.url ? `[${label}](${ref.url})` : label}${notesSuffix(ref.url)}`);
+        const domain = displayDomain(ref.url);
+        lines.push(`- ${ref.url ? `[${label}](${ref.url})` : label}${domain ? ` — ${domain}` : ''}${notesSuffix(ref.url)}`);
       }
     }
     if (theme.externalNotes.length > 0) {
@@ -523,7 +577,7 @@ export function renderDigestMarkdown(
       const item = itemById.get(id);
       if (!item) continue;
       lines.push(renderItem(item, id));
-      const summary = dailyItemSummary(item);
+      const summary = dailyItemDisplaySummary(item);
       if (summary) lines.push(`  ${summary}`);
     }
     lines.push('');
