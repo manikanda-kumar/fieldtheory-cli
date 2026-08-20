@@ -11,6 +11,7 @@ npm run build        # Compile TypeScript to dist/
 npm run dev          # Run via tsx directly
 npm run test         # Run tests
 npm run start        # Run compiled dist/cli.js
+node scripts/ensure-ready.mjs  # npm ci + build if mo purge removed node_modules/dist
 ```
 
 ## Architecture

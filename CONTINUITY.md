@@ -2,7 +2,7 @@
 
 ## Goal (incl. success criteria)
 
-Ship the leftover daily “Also saved” summaries + X status-mirror folding onto current main (already has the Tweetsmash overlay).
+Nightly restores `node_modules` + `dist` after `mo purge` (Mole) instead of dying on missing `commander`. Success: `scripts/ensure-ready.mjs` npm-ci + build when those dirs are gone; `~/.fieldtheory/sync-all.sh` calls it before `node dist/cli.js`.
 
 ## Constraints/Assumptions
 
@@ -18,6 +18,8 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 
 ## State
 
+- Catch-up complete (21:52–22:18 IST, fail=0). Cause of miss: missing `node_modules` (`commander`). Regex classify was skipped by `--no-synthesis`; ran `ft classify --regex` after (3806/11206 labeled, fill-only).
+
 ### Done
 
 - 2026-08-13: Tweetsmash semantic overlay shipped to `origin/main` as `b5a1f84`.
@@ -30,27 +32,24 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 
 ### Now
 
-- Shipped to main: 28eee50 (digest format), 8e6fcdc (fallback chain), 5c15aa2 (Raindrop X hydration). Nothing pending.
-
-- 2026-08-17 nightly run completed (exit=0, 09:13:35 → 19:47:20) but digest fell back to **mechanical** themes: all 4 synthesis engines failed (grok 300s timeout, grok retry 300s timeout, agy 300s timeout, droid → China-hosted opt-in error). No epub for 08-17 (sync-all runs `ft daily --write` without `--epub`). NotebookLM push failed (connection reset).
-
-### Now
-
-- Nothing pending. Shipped today: `c15c285` (nightly `--epub`), `d8d7c63` (boundary-aware recall reveals). 2026-08-18 digest patched in place + epub re-exported.
+- Nothing pending. `scripts/ensure-ready.mjs` + nightly wrapper: `npm ci` (fallback `npm install`) then `npm run build` when `mo purge` removed `node_modules`/`dist`. Tests 9/9. Live checkout already ready.
 
 ### Next
 
-- Watch the 2026-08-19 nightly: `--epub` produces 2026-08-19.epub, and the nlm loop pushes all referenced notes without dying.
 - Optional: root-cause the nlm push loop dying mid-upload (see 2026-08-18 log entry); it left no FAILED line.
 - Optional: add `--hydrate-x` to the sync-raindrop step in `~/.fieldtheory/sync-all.sh` so new orphan X saves hydrate nightly (not done — needs your call).
 
 ## Open questions
 
-- None.
+- None. `node_modules`/`dist` vanish because `mo purge` targets both; nightly will rebuild.
 
 ## Working set (files/ids/commands)
 
-- modified: /Users/manik/Github/fieldtheory-cli/src/daily/synthesize.ts
+- added: scripts/ensure-ready.mjs, tests/ensure-ready.test.ts
+- edited: ~/.fieldtheory/sync-all.sh, Claude.md, ~/snippets/fieldtheory-catchup-missed-dailies.sh
+- log: ~/.fieldtheory/sync-all-catchup.log
+- script: ~/snippets/fieldtheory-catchup-missed-dailies.sh
+- modified: CONTINUITY.md (session ledger only)
 - read: /Users/manik/Github/fieldtheory-cli/src/daily/synthesize.ts
 - commands:
   - `date; cd /Users/manik/Github/fieldtheory-cli && node dist/cli.js daily --help 2>&1 | head -40`
@@ -101,6 +100,10 @@ Ship the leftover daily “Also saved” summaries + X status-mirror folding ont
 - [2026-08-16 20:42] let's run for today to check — modified: 1, read: 1, commands: 10, errors: 0
 
 ## Project learnings
+
+- Nightly `sync-all.sh` runs `node $FT_REPO/dist/cli.js` against the git checkout; if `node_modules` is missing the whole run dies with `ERR_MODULE_NOT_FOUND: commander` after the Raindrop tab import. `npm install` in fieldtheory-cli is required.
+- `sync-all --no-synthesis` also sets `classify=false` (`options.classify && !options.noSynthesis`), so a catch-up that skips daily also skips regex classify.
+- `mo purge` (Mole) deletes `node_modules` and `dist`. Nightly must `npm ci` + `npm run build` before `node dist/cli.js`.
 
 - No browser MCP tool loaded in some sessions; drive local pages with `node ~/snippets/browser-cdp-probe.mjs <url> --eval '<js>' --shot out.png` (raw CDP over Node's WebSocket + the playwright cache's chrome-headless-shell).
 - Canonical searchText often begins with the display title TWICE (title field + source text both carry it, e.g. github-stars fullName), so title-prefix stripping must loop; and a summary that startsWith(title) can be legitimate content, not an echo.
