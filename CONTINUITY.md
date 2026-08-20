@@ -32,7 +32,7 @@ Nightly restores `node_modules` + `dist` after `mo purge` (Mole) instead of dyin
 
 ### Now
 
-- Nothing pending. `scripts/ensure-ready.mjs` + nightly wrapper: `npm ci` (fallback `npm install`) then `npm run build` when `mo purge` removed `node_modules`/`dist`. Tests 9/9. Live checkout already ready.
+- Shipped `8d04a1e` to `origin/main`. `scripts/ensure-ready.mjs` + nightly wrapper. Left untracked: `.harness/runs/`, `undefined/`. `~/.fieldtheory/sync-all.sh` is local-only (already updated).
 
 ### Next
 
