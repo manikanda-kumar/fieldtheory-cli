@@ -78,7 +78,7 @@ import { getProjectsStatus, syncProjects } from './projects/sync.js';
 import { projectsActiveMarkdownPath, projectsCachePath } from './projects/paths.js';
 import { createOpenRouterClient } from './llm/openrouter-client.js';
 import { createTtsClient, type TtsEngine } from './llm/tts-client.js';
-import { createAgyVideoNotesClient, videoNotesUnavailableReason } from './youtube/agy-video.js';
+import { createAgyVideoNotesClient, resolveVideoNotesMode, videoNotesUnavailableReason } from './youtube/agy-video.js';
 import { processVideo, type OverviewMode } from './youtube/overview.js';
 import { resolvePlaylist } from './youtube/playlist.js';
 import { writeYoutubeIndexFromState, writeYoutubePlaylistIndex } from './youtube/index-html.js';
@@ -1976,7 +1976,7 @@ export function buildCli() {
     .option('--tts <engine>', 'TTS engine for audio/video overviews: auto, openai, say, or piper', 'auto')
     .option('--slide-confidence <n>', 'Slide gate confidence threshold for video overviews', (v: string) => Number(v), 0.6)
     .option('--request-delay-ms <n>', 'Delay between videos in ms to avoid YouTube rate limits', (v: string) => Number(v), 1500)
-    .option('--video-notes <mode>', 'Let the model watch the video (agy engine + yt-dlp 144p download): auto (on when the engine is agy) or off; the transcript path remains the fallback (env: FT_YOUTUBE_VIDEO_NOTES, FT_YOUTUBE_VIDEO_MAX_MINUTES)', 'auto')
+    .option('--video-notes <mode>', 'Let the model watch the video (agy engine + yt-dlp 144p download): auto, on, or off. auto watches tutorials/talks/benchmarks, captionless videos, and clips under 12 min; on watches every video; off never watches. Transcript remains the fallback (env: FT_YOUTUBE_VIDEO_NOTES, FT_YOUTUBE_VIDEO_MAX_MINUTES)', 'auto')
     .action(safe(async (options) => {
       const overview = String(options.overview ?? 'none') as OverviewMode;
       if (!['none', 'slides', 'audio', 'video'].includes(overview)) {
@@ -1984,12 +1984,13 @@ export function buildCli() {
         process.exitCode = 1;
         return;
       }
-      const videoNotesMode = String(options.videoNotes ?? 'auto');
-      if (!['auto', 'off'].includes(videoNotesMode)) {
-        console.error('  Error: --video-notes must be one of: auto, off.');
+      const videoNotesFlag = String(options.videoNotes ?? 'auto');
+      if (!['auto', 'on', 'off'].includes(videoNotesFlag)) {
+        console.error('  Error: --video-notes must be one of: auto, on, off.');
         process.exitCode = 1;
         return;
       }
+      const videoNotesMode = resolveVideoNotesMode(videoNotesFlag);
       const ytDlp: YtDlpAccessOptions = {
         cookiesFromBrowser: stringOption(options.cookiesFromBrowser) ?? process.env.FT_YOUTUBE_COOKIES_FROM_BROWSER,
         cookiesFile: stringOption(options.cookiesFile) ?? process.env.FT_YOUTUBE_COOKIES_FILE,
@@ -2041,8 +2042,9 @@ export function buildCli() {
       if (tts) tts.resolve?.();
       const videoNotes = videoNotesMode === 'off' || !engine ? null : createAgyVideoNotesClient({ engine, ytDlp });
       const videoNotesOffReason = videoNotesMode === 'off' ? '--video-notes off' : !engine ? 'no local engine; video notes need --engine agy' : videoNotesUnavailableReason({ engine });
+      const videoNotesScope = videoNotesMode === 'on' ? 'every video' : 'tutorials/talks/benchmarks + captionless + <12 min';
       console.log(videoNotes
-        ? `  Video notes: on (${videoNotes.label}; transcript fallback)`
+        ? `  Video notes: ${videoNotesMode} (${videoNotes.label}; ${videoNotesScope}; transcript fallback)`
         : `  Video notes: off (${videoNotesOffReason})`);
       let processed = 0;
       let skipped = 0;
@@ -2064,6 +2066,7 @@ export function buildCli() {
             slideConfidence: Number(options.slideConfidence) || 0.6,
             ytDlp,
             videoNotes,
+            videoNotesMode,
           }), { attempts: 2, baseDelayMs: 5_000 });
           if (result.processed) processed += 1;
           else skipped += 1;

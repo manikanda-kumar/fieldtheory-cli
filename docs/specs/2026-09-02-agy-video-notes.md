@@ -94,10 +94,16 @@ transcript.
 
 ### CLI
 
-`ft sync-youtube --video-notes <auto|off>` (default `auto` = on when the
-resolved engine is `agy`). Prints one status line, e.g.
-`Video notes: on (agy/Gemini 3.7 Flash (High), 144p download, ≤120 min; transcript fallback)`
-or `Video notes: off (engine is claude; video notes need --engine agy)`.
+`ft sync-youtube --video-notes <auto|on|off>` (default `auto`). `auto` watches
+tutorials, talks, and benchmarks — types where the screen carries the note —
+plus captionless videos and short clips under 12 minutes (the classifier dumps
+those into `explainer` even when they are demos). Long interviews, explainers,
+and other talking-heads stay on the transcript. `on` watches every video; `off`
+never watches.
+`FT_YOUTUBE_VIDEO_NOTES` accepts the same values. Prints one status line, e.g.
+`Video notes: auto (agy/Gemini 3.7 Flash (High), 144p download, ≤120 min; tutorials/talks/benchmarks + captionless; transcript fallback)`
+or `Video notes: off (engine is claude; video notes need --engine agy)`. Per
+video: `Video notes: skip (interview; transcript is enough)`.
 
 ## Cost and time (measured)
 

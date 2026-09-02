@@ -18,7 +18,7 @@
 - agy argv: `-p <prompt> --print-timeout 1200s --dangerously-skip-permissions --output-format stream-json --model <model>`, run through `invokeEngineAsync` with custom argv, cwd = artifacts dir, 20 min timeout, 32MB stdout cap.
 - Fabrication guard: reject unless a `view_file` `AbsolutePath` realpath-equals the mp4.
 - Transcript still fetched first (hash/change detection). `NotesSource = 'agy-video' | 'transcript'`; frontmatter `notesSource:`; state artifacts `notesModel`/`notesTokens`.
-- CLI `--video-notes <auto|off>` (auto = on when resolved engine is agy). Removed `--gemini-video`, `src/youtube/gemini-video.ts`, its test.
+- CLI `--video-notes <auto|on|off>`. `auto` watches tutorial/talk/benchmark + captionless + clips under 12 min; long interviews/explainers/other stay on transcript. `on` watches every video.
 - `AGY_DEFAULT_MODEL = 'Gemini 3.7 Flash (High)'`.
 
 ## State
@@ -32,7 +32,7 @@
 
 ### Now
 
-- Idle after commit/push.
+- Type-gated video notes implemented; awaiting commit.
 
 ### Next
 
@@ -40,7 +40,7 @@
 
 ## Open questions (UNCONFIRMED if needed)
 
-- Whether to make video notes default-on for the nightly `sync-all` (quota: ~22k + ~4.4k tokens/min per video). UNCONFIRMED user preference.
+- None. Nightly `sync-all` uses default `agy` + `--video-notes auto`, so only visual types and captionless videos are watched.
 
 ## Working set (files/ids/commands)
 

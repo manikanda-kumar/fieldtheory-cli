@@ -56,6 +56,10 @@ export interface AgyVideoClientOptions {
   artifactsDir?: (videoId: string) => string;
 }
 
+export type VideoNotesMode = 'auto' | 'on' | 'off';
+
+const VISUAL_VIDEO_TYPES = new Set(['tutorial', 'talk', 'benchmark']);
+
 export const DEFAULT_VIDEO_MAX_MINUTES = 120;
 /** ~20 minutes: a 2h video at 144p is a few hundred k tokens and agy streams slowly on those. */
 const DEFAULT_TIMEOUT_MS = 20 * 60_000;
@@ -65,7 +69,24 @@ const AGY_MAX_BUFFER = 32 * 1024 * 1024;
 const YT_DLP_FORMAT = 'bv*[height<=144][ext=mp4]+ba[ext=m4a]/b[height<=240]/b';
 
 export function videoNotesDisabledByEnv(env: NodeJS.ProcessEnv = process.env): boolean {
-  return /^(off|0|false|no)$/i.test(env.FT_YOUTUBE_VIDEO_NOTES?.trim() ?? '');
+  return resolveVideoNotesMode(undefined, env) === 'off';
+}
+
+/** Flag wins when it is `on`/`off`; `auto` (or unset) consults `FT_YOUTUBE_VIDEO_NOTES`. */
+export function resolveVideoNotesMode(flag?: string, env: NodeJS.ProcessEnv = process.env): VideoNotesMode {
+  const fromFlag = parseVideoNotesMode(flag);
+  if (fromFlag === 'on' || fromFlag === 'off') return fromFlag;
+  const fromEnv = parseVideoNotesMode(env.FT_YOUTUBE_VIDEO_NOTES);
+  if (fromEnv === 'on' || fromEnv === 'off') return fromEnv;
+  return 'auto';
+}
+
+function parseVideoNotesMode(value: string | undefined): VideoNotesMode | undefined {
+  const trimmed = value?.trim().toLowerCase();
+  if (trimmed === 'auto' || trimmed === 'on' || trimmed === 'off') return trimmed;
+  if (/^(1|true|yes)$/i.test(trimmed ?? '')) return 'on';
+  if (/^(0|false|no)$/i.test(trimmed ?? '')) return 'off';
+  return undefined;
 }
 
 /**
@@ -114,6 +135,27 @@ export function createAgyVideoNotesClient(options: AgyVideoClientOptions): Video
       }
     },
   };
+}
+
+/**
+ * Per-video gate for `--video-notes auto`. Watch tutorials/talks/benchmarks
+ * (the screen carries the note) and anything without a transcript. Talking-head
+ * interviews/explainers/other stay on the transcript unless mode is `on`.
+ */
+export function videoNotesSkipReason(
+  meta: Pick<VideoMeta, 'title' | 'channel' | 'durationSec'>,
+  options: { mode: VideoNotesMode; hasTranscript: boolean },
+): string | undefined {
+  if (options.mode === 'off') return 'video notes off';
+  if (options.mode === 'on' || !options.hasTranscript) return undefined;
+  const videoType = classifyYoutubeVideoType(meta);
+  if (VISUAL_VIDEO_TYPES.has(videoType)) return undefined;
+  if (videoType === 'interview') return 'interview; transcript is enough';
+  // classifyYoutubeVideoType dumps anything under 12 min into explainer. Short
+  // clips are cheap (~4.4k tokens/min) and often demos with on-screen figures.
+  const durationSec = meta.durationSec ?? 0;
+  if (durationSec > 0 && durationSec < 12 * 60) return undefined;
+  return `${videoType}; transcript is enough`;
 }
 
 /** Human-readable reason the client would be `null`, or `undefined` when it can run. */

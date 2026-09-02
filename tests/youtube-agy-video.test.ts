@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { ResolvedEngine } from '../src/engine.js';
-import { agyArgs, buildAgyVideoPrompt, createAgyVideoNotesClient, parseAgyStream, videoNotesUnavailableReason } from '../src/youtube/agy-video.js';
+import { agyArgs, buildAgyVideoPrompt, createAgyVideoNotesClient, parseAgyStream, resolveVideoNotesMode, videoNotesSkipReason, videoNotesUnavailableReason } from '../src/youtube/agy-video.js';
 
 const agyEngine: ResolvedEngine = { name: 'agy', config: { bin: 'agy', args: () => [] }, model: 'Gemini 3.7 Flash (High)', label: 'agy' };
 const claudeEngine: ResolvedEngine = { name: 'claude', config: { bin: 'claude', args: () => [] }, label: 'claude' };
@@ -50,6 +50,29 @@ test('parseAgyStream extracts view_file paths, response, status, model and usage
   assert.equal(parsed.status, 'SUCCESS');
   assert.equal(parsed.model, 'Gemini 3.7 Flash (High)');
   assert.deepEqual(parsed.usage, { totalTokens: 50410, inputTokens: 45651, outputTokens: 4759 });
+});
+
+test('resolveVideoNotesMode: flag on/off wins, auto consults env', () => {
+  assert.equal(resolveVideoNotesMode(undefined, {}), 'auto');
+  assert.equal(resolveVideoNotesMode('auto', {}), 'auto');
+  assert.equal(resolveVideoNotesMode('on', { FT_YOUTUBE_VIDEO_NOTES: 'off' }), 'on');
+  assert.equal(resolveVideoNotesMode('off', { FT_YOUTUBE_VIDEO_NOTES: 'on' }), 'off');
+  assert.equal(resolveVideoNotesMode('auto', { FT_YOUTUBE_VIDEO_NOTES: 'on' }), 'on');
+  assert.equal(resolveVideoNotesMode('auto', { FT_YOUTUBE_VIDEO_NOTES: 'off' }), 'off');
+  assert.equal(resolveVideoNotesMode(undefined, { FT_YOUTUBE_VIDEO_NOTES: 'false' }), 'off');
+});
+
+test('videoNotesSkipReason watches visual types and captionless, skips talking-heads in auto', () => {
+  assert.equal(videoNotesSkipReason({ title: 'Full Tutorial: Build an App' }, { mode: 'auto', hasTranscript: true }), undefined);
+  assert.equal(videoNotesSkipReason({ title: 'Conference talk', channel: 'Strange Loop' }, { mode: 'auto', hasTranscript: true }), undefined);
+  assert.equal(videoNotesSkipReason({ title: 'Ollama vs MLX benchmark' }, { mode: 'auto', hasTranscript: true }), undefined);
+  assert.equal(videoNotesSkipReason({ title: 'Founder interview', channel: 'No Priors' }, { mode: 'auto', hasTranscript: true }), 'interview; transcript is enough');
+  assert.equal(videoNotesSkipReason({ title: 'What is an RLM? Explained', durationSec: 2800 }, { mode: 'auto', hasTranscript: true }), 'explainer; transcript is enough');
+  assert.equal(videoNotesSkipReason({ title: 'Firecrawl PDF parsing', durationSec: 315 }, { mode: 'auto', hasTranscript: true }), undefined);
+  assert.equal(videoNotesSkipReason({ title: 'Random weekly recap', durationSec: 3600 }, { mode: 'auto', hasTranscript: true }), 'other; transcript is enough');
+  assert.equal(videoNotesSkipReason({ title: 'Founder interview', channel: 'No Priors' }, { mode: 'auto', hasTranscript: false }), undefined);
+  assert.equal(videoNotesSkipReason({ title: 'Founder interview' }, { mode: 'on', hasTranscript: true }), undefined);
+  assert.equal(videoNotesSkipReason({ title: 'Full Tutorial: Build an App' }, { mode: 'off', hasTranscript: true }), 'video notes off');
 });
 
 test('videoNotesUnavailableReason / createAgyVideoNotesClient gate on engine, yt-dlp and env', () => {

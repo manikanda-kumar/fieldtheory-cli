@@ -5,7 +5,7 @@ import { createTtsClient, type TtsClient } from '../llm/tts-client.js';
 import { youtubeArtifactsDir, youtubeNotePath } from '../paths.js';
 import { upsertYoutubeVideosAsSources, type YoutubeSourceVideoInput } from '../canonical-bookmarks-db.js';
 import { fetchSlidesForVideo as fetchSlidesForVideoDefault, fetchVideo as fetchVideoDefault, NoTranscriptError, type VideoFetchResult, type VideoMeta } from './fetch.js';
-import type { VideoNotesClient } from './agy-video.js';
+import { videoNotesSkipReason, type VideoNotesClient, type VideoNotesMode } from './agy-video.js';
 import { classifyYoutubeVideoType, generateNotes, renderNotesMarkdown, type YoutubeNotes } from './notes.js';
 import { buildScript, defaultOverviewMinutes } from './script.js';
 import { detectSlides, filterUsableSlideFrames, hasUsableSlideFrames, planSlideCapture, type FrameRef } from './slides.js';
@@ -34,6 +34,8 @@ export interface ProcessVideoOptions {
    * watching the video, with the transcript path as fallback. `null`/undefined = transcript only.
    */
   videoNotes?: VideoNotesClient | null;
+  /** `auto` (default) watches visual types + captionless; `on` watches every video. */
+  videoNotesMode?: VideoNotesMode;
 }
 
 /** How the notes for a video were produced; recorded in state artifacts and note frontmatter. */
@@ -109,22 +111,30 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
   let notes: YoutubeNotes | undefined;
   let notesSource: NotesSource = 'transcript';
   if (options.videoNotes) {
-    try {
-      const watched = await options.videoNotes.generateNotes(videoId, fetched.meta);
-      notes = watched.notes;
-      notesSource = 'agy-video';
-      artifacts.notesModel = watched.model;
-      if (watched.usage.totalTokens != null) artifacts.notesTokens = String(watched.usage.totalTokens);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!fetched.transcriptText) {
-        // Video-only path (no transcript) and the video client failed: nothing left to summarize.
-        await updateYoutubeState((latest) => {
-          markVideo(latest, videoId, { status: 'skipped-no-transcript', error: `No transcript and video notes failed: ${message}`, artifacts: {} });
-        });
-        return { videoId, status: 'skipped-no-transcript', processed: false };
+    const skipReason = videoNotesSkipReason(fetched.meta, {
+      mode: options.videoNotesMode ?? 'auto',
+      hasTranscript: Boolean(fetched.transcriptText),
+    });
+    if (skipReason) {
+      console.log(`  Video notes: skip (${skipReason})`);
+    } else {
+      try {
+        const watched = await options.videoNotes.generateNotes(videoId, fetched.meta);
+        notes = watched.notes;
+        notesSource = 'agy-video';
+        artifacts.notesModel = watched.model;
+        if (watched.usage.totalTokens != null) artifacts.notesTokens = String(watched.usage.totalTokens);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!fetched.transcriptText) {
+          // Video-only path (no transcript) and the video client failed: nothing left to summarize.
+          await updateYoutubeState((latest) => {
+            markVideo(latest, videoId, { status: 'skipped-no-transcript', error: `No transcript and video notes failed: ${message}`, artifacts: {} });
+          });
+          return { videoId, status: 'skipped-no-transcript', processed: false };
+        }
+        console.warn(`  ! Video notes failed for ${videoId}, falling back to transcript notes: ${message}`);
       }
-      console.warn(`  ! Video notes failed for ${videoId}, falling back to transcript notes: ${message}`);
     }
   }
   if (!notes) notes = await generateNotes({ ...fetched, slides: slideImages }, options.llm);

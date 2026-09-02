@@ -244,6 +244,90 @@ function watchedNotes(overrides: Partial<{ tldr: string }> = {}) {
   };
 }
 
+test('processVideo auto-skips interview video notes and uses the transcript', async () => {
+  await withTempRoots(async ({ dataDir }) => {
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (...args: unknown[]) => { logs.push(args.map(String).join(' ')); };
+    let geminiCalls = 0;
+    try {
+      const result = await processVideo('g-skip', {
+        overview: 'none',
+        fetchVideo: async () => ({
+          meta: { title: 'Founder interview', channel: 'No Priors', durationSec: 180, publishDate: '20260901' },
+          transcriptText: 'welcome back tell me about the company',
+          segments: [{ tSec: 0, durationSec: 180, text: 'welcome back tell me about the company' }],
+          frames: null,
+          contentHash: 'hash-skip',
+        }),
+        llm: { chat: async () => ({ text: '{}', json: { tldr: 'transcript notes', keyPoints: [], chapters: [], actionItems: [], topics: [] } }) },
+        videoNotes: { model: 'Gemini 3.7 Flash (High)', label: 'agy', generateNotes: async () => { geminiCalls += 1; return watchedNotes(); } },
+        videoNotesMode: 'auto',
+      });
+      assert.equal(result.status, 'done');
+      assert.equal(geminiCalls, 0);
+      assert.match(await fs.readFile(result.notesPath!, 'utf8'), /transcript notes/);
+      assert.ok(logs.some((line) => /Video notes: skip \(interview; transcript is enough\)/.test(line)));
+      const state = JSON.parse(await fs.readFile(path.join(dataDir, 'youtube', 'state.json'), 'utf8'));
+      assert.equal(state.videos['g-skip'].artifacts.notesSource, 'transcript');
+    } finally {
+      console.log = originalLog;
+    }
+  });
+});
+
+test('processVideo auto-watches tutorials and captionless interviews; on watches talking-heads', async () => {
+  await withTempRoots(async () => {
+    let tutorialCalls = 0;
+    let captionlessCalls = 0;
+    let interviewOnCalls = 0;
+    const llm = { chat: async () => ({ text: '{}', json: { tldr: 'transcript notes', keyPoints: [], chapters: [], actionItems: [], topics: [] } }) };
+
+    const tutorial = await processVideo('g-tut', {
+      overview: 'none',
+      fetchVideo: async () => ({
+        meta: { title: 'Full Tutorial: Build with Codex', durationSec: 180, publishDate: '20260901' },
+        transcriptText: 'step one',
+        segments: [{ tSec: 0, durationSec: 180, text: 'step one' }],
+        frames: null,
+        contentHash: 'hash-tut',
+      }),
+      llm,
+      videoNotes: { model: 'Gemini 3.7 Flash (High)', label: 'agy', generateNotes: async () => { tutorialCalls += 1; return watchedNotes(); } },
+      videoNotesMode: 'auto',
+    });
+    assert.equal(tutorial.status, 'done');
+    assert.equal(tutorialCalls, 1);
+    assert.match(await fs.readFile(tutorial.notesPath!, 'utf8'), /Gemini watched the video/);
+
+    const captionless = await processVideo('g-cap', {
+      overview: 'none',
+      fetchVideo: async () => { throw new NoTranscriptError('g-cap', { title: 'Founder interview', channel: 'No Priors', durationSec: 300, publishDate: '20260815' }); },
+      llm,
+      videoNotes: { model: 'Gemini 3.7 Flash (High)', label: 'agy', generateNotes: async () => { captionlessCalls += 1; return watchedNotes(); } },
+      videoNotesMode: 'auto',
+    });
+    assert.equal(captionless.status, 'done');
+    assert.equal(captionlessCalls, 1);
+
+    const forced = await processVideo('g-on', {
+      overview: 'none',
+      fetchVideo: async () => ({
+        meta: { title: 'Founder interview', channel: 'No Priors', durationSec: 180, publishDate: '20260901' },
+        transcriptText: 'welcome back',
+        segments: [{ tSec: 0, durationSec: 180, text: 'welcome back' }],
+        frames: null,
+        contentHash: 'hash-on',
+      }),
+      llm,
+      videoNotes: { model: 'Gemini 3.7 Flash (High)', label: 'agy', generateNotes: async () => { interviewOnCalls += 1; return watchedNotes(); } },
+      videoNotesMode: 'on',
+    });
+    assert.equal(forced.status, 'done');
+    assert.equal(interviewOnCalls, 1);
+  });
+});
+
 test('processVideo prefers video notes (agy) over the transcript LLM and records the source', async () => {
   await withTempRoots(async ({ dataDir }) => {
     let transcriptLlmCalls = 0;
