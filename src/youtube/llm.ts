@@ -50,6 +50,14 @@ function renderMessageContent(content: ChatOptions['messages'][number]['content'
   return content.map((part) => part.type === 'text' ? part.text : '[image omitted: local engine adapter is text-only]').join('\n');
 }
 
+/**
+ * Extract JSON from a model reply that may wrap it in prose or a code fence.
+ * Shared by the engine adapter and the Gemini video client.
+ */
+export function parseLooseJson<T>(text: string): T {
+  return parseJson<T>(text);
+}
+
 function parseJson<T>(text: string): T {
   const direct = tryParseJson<T>(text.trim());
   if (direct.ok) return direct.value;

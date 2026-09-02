@@ -1,9 +1,11 @@
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createTtsClient, type TtsClient } from '../llm/tts-client.js';
 import { youtubeArtifactsDir, youtubeNotePath } from '../paths.js';
 import { upsertYoutubeVideosAsSources, type YoutubeSourceVideoInput } from '../canonical-bookmarks-db.js';
-import { fetchSlidesForVideo as fetchSlidesForVideoDefault, fetchVideo as fetchVideoDefault, NoTranscriptError, type VideoFetchResult } from './fetch.js';
+import { fetchSlidesForVideo as fetchSlidesForVideoDefault, fetchVideo as fetchVideoDefault, NoTranscriptError, type VideoFetchResult, type VideoMeta } from './fetch.js';
+import type { VideoNotesClient } from './agy-video.js';
 import { classifyYoutubeVideoType, generateNotes, renderNotesMarkdown, type YoutubeNotes } from './notes.js';
 import { buildScript, defaultOverviewMinutes } from './script.js';
 import { detectSlides, filterUsableSlideFrames, hasUsableSlideFrames, planSlideCapture, type FrameRef } from './slides.js';
@@ -27,7 +29,15 @@ export interface ProcessVideoOptions {
   assembleVideo?: (input: AssembleVideoInput) => Promise<{ outPath: string; durationSec: number }>;
   fetchVideo?: (videoId: string, options: { wantFrames?: boolean; ytDlp?: YtDlpAccessOptions }) => Promise<VideoFetchResult>;
   fetchSlides?: (videoId: string, options: { outDir: string; slidesMax: number; slidesSceneThreshold: number; ytDlp?: YtDlpAccessOptions }) => Promise<FrameRef[]>;
+  /**
+   * Video-watching notes client (agy + Gemini). When set, notes come from the model
+   * watching the video, with the transcript path as fallback. `null`/undefined = transcript only.
+   */
+  videoNotes?: VideoNotesClient | null;
 }
+
+/** How the notes for a video were produced; recorded in state artifacts and note frontmatter. */
+export type NotesSource = 'agy-video' | 'transcript';
 
 export interface ProcessVideoResult {
   videoId: string;
@@ -49,12 +59,19 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
     fetched = await fetchVideo(videoId, { wantFrames: options.overview === 'video', slidesDir, ytDlp: options.ytDlp });
   } catch (error) {
     if (error instanceof NoTranscriptError) {
-      await updateYoutubeState((latest) => {
-        markVideo(latest, videoId, { status: 'skipped-no-transcript', error: error.message, artifacts: {} });
-      });
-      return { videoId, status: 'skipped-no-transcript', processed: false };
+      // The video client watches the actual video, so a missing transcript is no
+      // longer fatal when it is available and the ladder at least fetched the metadata.
+      if (options.videoNotes && error.meta) {
+        fetched = videoOnlyFetchResult(videoId, error.meta);
+      } else {
+        await updateYoutubeState((latest) => {
+          markVideo(latest, videoId, { status: 'skipped-no-transcript', error: error.message, artifacts: {} });
+        });
+        return { videoId, status: 'skipped-no-transcript', processed: false };
+      }
+    } else {
+      throw error;
     }
-    throw error;
   }
   if (!shouldProcess(state, videoId, fetched.contentHash, Boolean(options.force))) {
     return { videoId, status: 'skipped-unchanged', processed: false, notesPath: state.videos[videoId]?.artifacts.notesPath };
@@ -89,11 +106,32 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
     }
   }
 
-  const notes = await generateNotes({ ...fetched, slides: slideImages }, options.llm);
+  let notes: YoutubeNotes | undefined;
+  let notesSource: NotesSource = 'transcript';
+  if (options.videoNotes) {
+    try {
+      const watched = await options.videoNotes.generateNotes(videoId, fetched.meta);
+      notes = watched.notes;
+      notesSource = 'agy-video';
+      artifacts.notesModel = watched.model;
+      if (watched.usage.totalTokens != null) artifacts.notesTokens = String(watched.usage.totalTokens);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!fetched.transcriptText) {
+        // Video-only path (no transcript) and the video client failed: nothing left to summarize.
+        await updateYoutubeState((latest) => {
+          markVideo(latest, videoId, { status: 'skipped-no-transcript', error: `No transcript and video notes failed: ${message}`, artifacts: {} });
+        });
+        return { videoId, status: 'skipped-no-transcript', processed: false };
+      }
+      console.warn(`  ! Video notes failed for ${videoId}, falling back to transcript notes: ${message}`);
+    }
+  }
+  if (!notes) notes = await generateNotes({ ...fetched, slides: slideImages }, options.llm);
   let notesForMarkdown = withApproximateChapters(notes, fetched.meta.durationSec);
   // Slides are embedded inline within the chapter timeline for visual continuity,
   // not appended as a detached link list.
-  let notesMarkdown = renderNotesMarkdown(videoId, fetched.meta, notesForMarkdown, slideImages);
+  let notesMarkdown = renderNotesMarkdown(videoId, fetched.meta, notesForMarkdown, slideImages, undefined, { notesSource });
 
   if (options.overview === 'audio') {
     try {
@@ -169,7 +207,7 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
     }
   }
 
-  const qualityWarnings = validateNoteQuality(fetched, notesForMarkdown, slideImages.length > 0);
+  const qualityWarnings = validateNoteQuality(fetched, notesForMarkdown, slideImages.length > 0, notesSource);
   if (qualityWarnings.length) {
     artifacts.validationWarnings = qualityWarnings.map((warning) => warning.message).join('; ');
     // Only serious warnings (insufficient source material) downgrade a note to
@@ -209,6 +247,9 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
     slideCount: artifacts.slideCount,
     slidesDir: artifacts.slidesDir,
     validationWarnings: artifacts.validationWarnings,
+    notesSource,
+    notesModel: artifacts.notesModel,
+    notesTokens: artifacts.notesTokens,
   };
   await updateYoutubeState((latest) => {
     markVideo(latest, videoId, {
@@ -229,6 +270,20 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
   return { videoId, status, processed: true, notesPath, audioPath: artifacts.audioPath, videoPath: artifacts.videoPath, canonicalSource };
 }
 
+/**
+ * Stand-in fetch result for a video with no transcript that Gemini will read by URL.
+ * The hash covers id + title + duration so change detection still works.
+ */
+function videoOnlyFetchResult(videoId: string, meta: VideoMeta): VideoFetchResult {
+  return {
+    meta,
+    transcriptText: '',
+    segments: [],
+    frames: null,
+    contentHash: crypto.createHash('sha256').update(`video-only\n${videoId}\n${meta.title}\n${meta.durationSec ?? ''}`).digest('hex'),
+  };
+}
+
 function withApproximateChapters(notes: YoutubeNotes, durationSec: number | undefined): YoutubeNotes {
   if (notes.chapters.length > 1 || notes.keyPoints.length < 2 || durationSec == null || durationSec < 10 * 60) return notes;
   const chapterCount = Math.min(6, notes.keyPoints.length);
@@ -245,17 +300,20 @@ function withApproximateChapters(notes: YoutubeNotes, durationSec: number | unde
 
 type QualityWarning = { message: string; severity: 'serious' | 'minor' };
 
-function validateNoteQuality(fetched: VideoFetchResult, notes: YoutubeNotes, hasSlidesSection: boolean): QualityWarning[] {
+function validateNoteQuality(fetched: VideoFetchResult, notes: YoutubeNotes, hasSlidesSection: boolean, notesSource: NotesSource = 'transcript'): QualityWarning[] {
   const warnings: QualityWarning[] = [];
   const duration = fetched.meta.durationSec ?? 0;
+  // Transcript-coverage checks only make sense when the transcript was the evidence.
+  // Gemini video notes come from the model watching the video, not from our scrape.
+  const fromTranscript = notesSource === 'transcript';
   // Serious: not enough source text for the video length. The summary is built
   // from insufficient material, so the note cannot be trusted as complete.
-  if (duration >= 10 * 60 && fetched.transcriptText.length < 2_000) {
+  if (fromTranscript && duration >= 10 * 60 && fetched.transcriptText.length < 2_000) {
     warnings.push({ message: 'Transcript coverage is thin for this video length; summaries may miss later details.', severity: 'serious' });
   }
   // Minor: the transcript is complete enough but lacks timestamp granularity, so
   // chapters are approximate. The note is still navigable and trustworthy.
-  if (duration >= 10 * 60 && fetched.segments.length <= 1) {
+  if (fromTranscript && duration >= 10 * 60 && fetched.segments.length <= 1) {
     warnings.push({ message: 'Only one source transcript segment was available; chapter timestamps are approximate.', severity: 'minor' });
   }
   if (duration >= 10 * 60 && notes.chapters.length < 3) {

@@ -47,9 +47,16 @@ export interface FetchVideoOptions {
 }
 
 export class NoTranscriptError extends Error {
-  constructor(videoId: string) {
+  /**
+   * Metadata fetched before the transcript ladder gave up. Lets a video-capable
+   * notes model (Gemini agentic video) still process the video by URL.
+   */
+  readonly meta?: VideoMeta;
+
+  constructor(videoId: string, meta?: VideoMeta) {
     super(`No transcript available for YouTube video ${videoId}`);
     this.name = 'NoTranscriptError';
+    this.meta = meta;
   }
 }
 
@@ -103,17 +110,17 @@ export async function fetchVideo(videoId: string, options: FetchVideoOptions = {
       }
       if (options.wantFrames) frames = summarized.slides.map((slide) => ({ tSec: slide.tSec, imagePath: slide.imagePath, ...(slide.ocrText ? { ocrText: slide.ocrText } : {}) }));
     } catch {
-      if (!segments.length) throw new NoTranscriptError(videoId);
+      if (!segments.length) throw new NoTranscriptError(videoId, meta);
       if (options.wantFrames) frames = null;
     }
   }
 
-  if (!segments.length) throw new NoTranscriptError(videoId);
+  if (!segments.length) throw new NoTranscriptError(videoId, meta);
   const transcriptText = segments.map((segment) => segment.text).join(' ').trim();
   // When yt-dlp metadata/captions fail, the HTML/oEmbed fallback can leak YouTube's
   // generic page boilerplate as the "transcript". Treat that as no transcript so a
   // --force rerun under a transient block never overwrites a good note with a stub.
-  if (isYoutubeBoilerplate(transcriptText)) throw new NoTranscriptError(videoId);
+  if (isYoutubeBoilerplate(transcriptText)) throw new NoTranscriptError(videoId, meta);
   return {
     meta,
     transcriptText,

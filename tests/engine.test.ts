@@ -379,7 +379,7 @@ test('resolveEngine: grok defaults to grok-4.6 model and builds headless args', 
   }
 });
 
-test('resolveEngine: agy defaults to Gemini 3.5 Flash (High) model and builds headless args', async () => {
+test('resolveEngine: agy defaults to Gemini 3.7 Flash (High) model and builds headless args', async () => {
   if (process.platform === 'win32') return;
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-engine-agy-args-'));
@@ -396,8 +396,8 @@ test('resolveEngine: agy defaults to Gemini 3.5 Flash (High) model and builds he
     const { resolveEngine } = await import('../src/engine.js');
     const resolved = await resolveEngine({ override: 'agy' });
     assert.equal(resolved.name, 'agy');
-    assert.equal(resolved.model, 'Gemini 3.5 Flash (High)');
-    assert.equal(resolved.label, 'agy/Gemini 3.5 Flash (High)');
+    assert.equal(resolved.model, 'Gemini 3.7 Flash (High)');
+    assert.equal(resolved.label, 'agy/Gemini 3.7 Flash (High)');
 
     const args = resolved.config.args('hello', resolved, 'You are a test engine.');
     assert.equal(args[0], '-p');
@@ -408,7 +408,7 @@ test('resolveEngine: agy defaults to Gemini 3.5 Flash (High) model and builds he
     assert.ok(args.includes('--print-timeout'));
     assert.ok(args.includes('600s'));
     assert.ok(args.includes('--model'));
-    assert.ok(args.includes('Gemini 3.5 Flash (High)'));
+    assert.ok(args.includes('Gemini 3.7 Flash (High)'));
   } finally {
     process.env.PATH = origPath;
     if (origAgyModel !== undefined) process.env.FT_AGY_MODEL = origAgyModel;

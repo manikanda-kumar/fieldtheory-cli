@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { processVideo } from '../src/youtube/overview.js';
+import { NoTranscriptError } from '../src/youtube/fetch.js';
 
 async function withTempRoots<T>(fn: (roots: { dataDir: string; libraryDir: string }) => Promise<T>): Promise<T> {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'ft-youtube-overview-'));
@@ -225,5 +226,125 @@ test('processVideo ships single-segment notes as done when transcript coverage i
     assert.match(md, /## Quality warnings/);
     assert.match(md, /Only one source transcript segment was available/);
     assert.doesNotMatch(md, /Transcript coverage is thin/);
+  });
+});
+
+function watchedNotes(overrides: Partial<{ tldr: string }> = {}) {
+  return {
+    notes: {
+      videoType: 'talk' as const,
+      tldr: overrides.tldr ?? 'Gemini watched the video',
+      keyPoints: ['Slide showed a 3x speedup table.'],
+      chapters: [{ tSec: 0, label: 'Intro', summary: 'Opens with the problem.' }],
+      actionItems: [],
+      topics: ['gemini'],
+    },
+    model: 'Gemini 3.7 Flash (High)',
+    usage: { totalTokens: 4200 },
+  };
+}
+
+test('processVideo prefers video notes (agy) over the transcript LLM and records the source', async () => {
+  await withTempRoots(async ({ dataDir }) => {
+    let transcriptLlmCalls = 0;
+    let geminiCalls = 0;
+    const result = await processVideo('g1', {
+      overview: 'none',
+      force: false,
+      fetchVideo: async () => ({
+        meta: { title: 'Gemini talk', durationSec: 1800, publishDate: '20260901' },
+        transcriptText: 'short',
+        segments: [{ tSec: 0, durationSec: 1800, text: 'short' }],
+        frames: null,
+        contentHash: 'hash-g1',
+      }),
+      llm: { chat: async () => { transcriptLlmCalls += 1; return { text: '{}', json: { tldr: 'transcript notes', keyPoints: [], chapters: [], actionItems: [], topics: [] } }; } },
+      videoNotes: { model: 'Gemini 3.7 Flash (High)', label: 'agy', generateNotes: async () => { geminiCalls += 1; return watchedNotes(); } },
+    });
+
+    assert.equal(geminiCalls, 1);
+    assert.equal(transcriptLlmCalls, 0);
+    const markdown = await fs.readFile(result.notesPath!, 'utf8');
+    assert.match(markdown, /^notesSource: "?agy-video"?$/m);
+    assert.match(markdown, /Gemini watched the video/);
+    // Thin-transcript warnings do not apply when the model read the video itself.
+    assert.doesNotMatch(markdown, /Transcript coverage is thin/);
+    assert.doesNotMatch(markdown, /Only one source transcript segment/);
+    const state = JSON.parse(await fs.readFile(path.join(dataDir, 'youtube', 'state.json'), 'utf8'));
+    assert.equal(state.videos.g1.artifacts.notesSource, 'agy-video');
+    assert.equal(state.videos.g1.artifacts.notesModel, 'Gemini 3.7 Flash (High)');
+    assert.equal(state.videos.g1.artifacts.notesTokens, '4200');
+  });
+});
+
+test('processVideo falls back to transcript notes when video notes fail', async () => {
+  await withTempRoots(async ({ dataDir }) => {
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+    try {
+      const result = await processVideo('g2', {
+        overview: 'none',
+        force: false,
+        fetchVideo: async () => ({
+          meta: { title: 'Fallback talk', durationSec: 60 },
+          transcriptText: 'hello transcript',
+          segments: [{ tSec: 0, durationSec: 60, text: 'hello transcript' }],
+          frames: null,
+          contentHash: 'hash-g2',
+        }),
+        llm: { chat: async () => ({ text: '{}', json: { tldr: 'transcript notes', keyPoints: [], chapters: [], actionItems: [], topics: [] } }) },
+        videoNotes: { model: 'Gemini 3.7 Flash (High)', label: 'agy', generateNotes: async () => { throw new Error('quota exceeded'); } },
+      });
+      assert.equal(result.status, 'done');
+      assert.match(await fs.readFile(result.notesPath!, 'utf8'), /transcript notes/);
+      assert.ok(warnings.some((line) => /falling back to transcript notes: quota exceeded/.test(line)));
+      const state = JSON.parse(await fs.readFile(path.join(dataDir, 'youtube', 'state.json'), 'utf8'));
+      assert.equal(state.videos.g2.artifacts.notesSource, 'transcript');
+      assert.equal(state.videos.g2.artifacts.notesModel, undefined);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+});
+
+test('processVideo rescues a video with no transcript when video notes are available', async () => {
+  await withTempRoots(async ({ dataDir, libraryDir }) => {
+    // Under 10 minutes so the length-based "notes too thin" check does not downgrade the fixture.
+    const meta = { title: 'No captions here', durationSec: 300, publishDate: '20260815' };
+    const fetchVideo = async () => { throw new NoTranscriptError('g3', meta); };
+    let transcriptLlmCalls = 0;
+    const llm = { chat: async () => { transcriptLlmCalls += 1; return { text: '{}', json: {} }; } };
+
+    const withoutGemini = await processVideo('g3', { overview: 'none', fetchVideo, llm });
+    assert.equal(withoutGemini.status, 'skipped-no-transcript');
+
+    const withGemini = await processVideo('g3', {
+      overview: 'none',
+      fetchVideo,
+      llm,
+      videoNotes: { model: 'Gemini 3.7 Flash (High)', label: 'agy', generateNotes: async (videoId, gotMeta) => { assert.equal(videoId, 'g3'); assert.equal(gotMeta.title, 'No captions here'); return watchedNotes(); } },
+    });
+    assert.equal(withGemini.status, 'done');
+    assert.equal(transcriptLlmCalls, 0);
+    assert.equal(withGemini.notesPath, path.join(libraryDir, 'youtube', '2026-08', 'g3.md'));
+    const state = JSON.parse(await fs.readFile(path.join(dataDir, 'youtube', 'state.json'), 'utf8'));
+    assert.equal(state.videos.g3.status, 'done');
+    assert.equal(state.videos.g3.artifacts.notesSource, 'agy-video');
+
+    // Same video, same metadata: change detection still works without a transcript.
+    const again = await processVideo('g3', { overview: 'none', fetchVideo, llm, videoNotes: { model: 'Gemini 3.7 Flash (High)', label: 'agy', generateNotes: async () => watchedNotes() } });
+    assert.equal(again.status, 'skipped-unchanged');
+
+    // No transcript and the video client fails: nothing to summarize.
+    const failed = await processVideo('g4', {
+      overview: 'none',
+      fetchVideo: async () => { throw new NoTranscriptError('g4', meta); },
+      llm,
+      videoNotes: { model: 'Gemini 3.7 Flash (High)', label: 'agy', generateNotes: async () => { throw new Error('private video'); } },
+    });
+    assert.equal(failed.status, 'skipped-no-transcript');
+    const state2 = JSON.parse(await fs.readFile(path.join(dataDir, 'youtube', 'state.json'), 'utf8'));
+    assert.match(state2.videos.g4.error, /video notes failed: private video/);
   });
 });
