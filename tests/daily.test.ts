@@ -429,7 +429,7 @@ test('daily: synthesis writes a readable HTML page beside the markdown, or skips
     assert.match(page, /Daily Learning Review — 2026-07-06/);
     assert.match(page, /Tooling theme/);
     assert.match(page, /a\/page-tool/);
-    assert.match(page, /data-filterable/, 'rows opt into chip + search filtering');
+    assert.match(page, /<nav class="contents"/, 'static contents survives EPUB conversion');
     assert.match(page, /Recall first/);
     assert.match(page, /Coverage and source freshness/);
     assert.doesNotMatch(page, /<script src=|<link rel="stylesheet"/, 'the page must stay self-contained');
@@ -685,7 +685,7 @@ test('daily: synthesize renders uncited items under Also saved', async () => {
       assert.ok(alsoSaved.includes(summaryLabel));
     }
     const page = await readFileText(result.htmlPath!);
-    const alsoSavedStart = page.indexOf('<section class="daygroup" data-group-wrap data-group="also-saved">');
+    const alsoSavedStart = page.indexOf('<section class="daygroup" id="also-saved">');
     const alsoSavedHtml = page.slice(alsoSavedStart, page.indexOf('</section>', alsoSavedStart));
     for (const item of collection.items.slice(9)) {
       const summaryLabel = item.searchText.match(/Summary for saved item \d+/)?.[0];

@@ -2,21 +2,18 @@
  * HTML rendering for the daily digest.
  *
  * Same inputs as `renderDigestMarkdown`, different surface: the markdown file
- * stays the durable, greppable artifact, while this page is the readable one —
- * recall cards first, then themes as an editorial reading list with filter
- * chips and search over every row.
+ * stays the durable artifact. This static reading surface uses full headings,
+ * paragraph summaries and descriptive links for HTML-to-EPUB conversion.
  */
 
+import { htmlEscape, htmlLink, type HtmlItem } from '../html-kit.js';
 import {
-  htmlEscape,
-  htmlLink,
-  renderHtmlGroup,
-  renderHtmlItem,
-  renderHtmlPage,
-  renderHtmlPanel,
-  type HtmlChip,
-  type HtmlItem,
-} from '../html-kit.js';
+  renderReadingGroup as renderHtmlGroup,
+  renderReadingItem as renderHtmlItem,
+  renderReadingPage,
+  renderReadingPanel as renderHtmlPanel,
+} from './reading-html.js';
+import { summarizeSavedText, truncateAtBoundary } from './summary.js';
 import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import type { DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
@@ -25,7 +22,7 @@ import type { ReviewCard } from './review.js';
 import { dailyItemDisplaySummary, displayDomain, extractYoutubeVideoId, type DailyTheme } from './synthesize.js';
 
 const SNIPPET_CHARS = 220;
-const CHIP_LABEL_CHARS = 26;
+
 
 function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -40,12 +37,6 @@ function savedLabel(item: CanonicalRecentItem, fallbackDate: string): string {
   const ms = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
   const date = Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : fallbackDate;
   return `saved ${date}`;
-}
-
-/** YouTube is the only source with a stable, cheap thumbnail URL. */
-function thumbnail(url: string | null | undefined): { url: string; label?: string } | undefined {
-  const videoId = extractYoutubeVideoId(url);
-  return videoId ? { url: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, label: 'video' } : undefined;
 }
 
 export function renderDigestHtml(
@@ -76,13 +67,12 @@ export function renderDigestHtml(
   const toItem = (item: CanonicalRecentItem, group: string, lead = false): HtmlItem => {
     const notes = notesLink(item.canonicalUrl);
     return {
-      title: truncate(item.displayTitle ?? item.canonicalUrl ?? item.id, 140),
+      title: oneLine(item.displayTitle ?? item.canonicalUrl ?? item.id),
       url: item.canonicalUrl ?? undefined,
-      eyebrow: item.sources.join(' · '),
+      eyebrow: displayDomain(item.canonicalUrl) || item.sources.join(' · '),
       byline: [savedLabel(item, collection.date), item.primaryCategory ?? undefined].filter(Boolean).join(' · '),
-      body: htmlEscape(dailyItemDisplaySummary(item)),
+      body: htmlEscape(dailyItemDisplaySummary(item) ? summarizeSavedText(item, 700) : ''),
       extra: notes ? [notes] : undefined,
-      media: thumbnail(item.canonicalUrl),
       lead,
       group,
       searchText: item.primaryDomain ?? undefined,
@@ -90,7 +80,7 @@ export function renderDigestHtml(
   };
 
   const sections: string[] = [];
-  const chips: HtmlChip[] = [{ label: 'Everything' }];
+  const contents: Array<{ title: string; id: string }> = [];
 
   themes.forEach((theme, index) => {
     const group = themeGroupValue(index);
@@ -99,13 +89,15 @@ export function renderDigestHtml(
       .filter((item): item is CanonicalRecentItem => Boolean(item))
       .map((item, itemIndex) => toItem(item, group, index === 0 && itemIndex === 0));
 
+    const relatedItems: HtmlItem[] = [];
+    const contextItems: HtmlItem[] = [];
     for (const id of theme.relatedIds) {
       const ref = relatedById.get(id);
       if (!ref) continue;
       const notes = notesLink(ref.url);
       const refDomain = displayDomain(ref.url);
-      items.push({
-        title: truncate(ref.title ?? ref.url ?? id, 140),
+      relatedItems.push({
+        title: oneLine(ref.title ?? ref.url ?? id),
         url: ref.url ?? undefined,
         eyebrow: 'connects to an earlier save',
         byline: refDomain || undefined,
@@ -116,8 +108,8 @@ export function renderDigestHtml(
       });
     }
     for (const note of theme.externalNotes) {
-      items.push({
-        title: truncate(note.claim, 160),
+      contextItems.push({
+        title: oneLine(note.claim),
         url: note.sourceUrl ?? undefined,
         eyebrow: 'web/X context',
         byline: note.sourceLabel ? truncate(note.sourceLabel, 60) : undefined,
@@ -126,14 +118,16 @@ export function renderDigestHtml(
       });
     }
 
-    if (items.length === 0) return;
-    chips.push({ label: truncate(theme.title, CHIP_LABEL_CHARS), value: group, count: theme.itemIds.length });
+    if (items.length + relatedItems.length + contextItems.length === 0) return;
+    contents.push({ title: theme.title, id: group });
     sections.push(renderHtmlGroup({
-      label: truncate(theme.title, 60),
+      label: theme.title,
       sublabel: `Theme ${index + 1}`,
       count: `${theme.itemIds.length} item${theme.itemIds.length === 1 ? '' : 's'}`,
-      intro: htmlEscape(theme.summary),
+      intro: htmlEscape(oneLine(theme.summary)),
       items,
+      relatedItems,
+      contextItems,
       group,
     }));
   });
@@ -143,7 +137,7 @@ export function renderDigestHtml(
     .filter((item): item is CanonicalRecentItem => Boolean(item))
     .map((item) => toItem(item, 'also-saved'));
   if (alsoSaved.length > 0) {
-    chips.push({ label: 'Also saved', value: 'also-saved', count: alsoSaved.length });
+    contents.push({ title: 'Also saved', id: 'also-saved' });
     sections.push(renderHtmlGroup({
       label: 'Also saved',
       sublabel: 'Unthemed',
@@ -162,7 +156,7 @@ export function renderDigestHtml(
       body: htmlEscape(truncate(delta.prompts[0]?.text ?? delta.commits[0]?.subject ?? '', SNIPPET_CHARS)),
       group: 'projects',
     }));
-    chips.push({ label: 'Projects', value: 'projects', count: items.length });
+    contents.push({ title: 'Project activity', id: 'projects' });
     sections.push(renderHtmlGroup({
       label: 'Project activity',
       sublabel: 'Your work',
@@ -177,18 +171,21 @@ export function renderDigestHtml(
     ? '<p class="panel-body">No reviews are due today. New cards are introduced tomorrow so recall stays spaced.</p>'
     : dueReviews.map((card) => [
         '<div class="card">',
-        `<h3>${card.url ? htmlLink(card.url, truncate(card.title, 120)) : htmlEscape(truncate(card.title, 120))}</h3>`,
+        `<h3>${card.url ? htmlLink(card.url, oneLine(card.title)) : htmlEscape(oneLine(card.title))}</h3>`,
         `<span class="byline">saved ${htmlEscape(card.savedAt?.slice(0, 10) ?? 'unknown')} · ${htmlEscape(card.sources.join(', ') || 'unknown source')}</span>`,
         `<p class="quote">${htmlEscape(card.prompt)}</p>`,
-        '<details class="reveal"><summary>Reveal source reminder</summary>',
-        `<div class="reveal-body">${htmlEscape(card.answer)}</div></details>`,
-        `<p class="footnote">Grade after recalling: <code>ft review grade ${htmlEscape(card.id)} again|fuzzy|got-it</code></p>`,
+        '<h4>Source reminder</h4>',
+        `<p class="reveal-body">${htmlEscape(card.answer)}</p>`,
         '</div>',
       ].join('')).join('');
 
-  const throughline = usedLlm && themes.length > 0
-    ? `<ul>${themes.slice(0, 3).map((theme) => `<li><b>${htmlEscape(theme.title)}</b> — ${htmlEscape(theme.summary)}</li>`).join('')}</ul>`
-    : `<p>Synthesis was unavailable, so this is a structured inbox rather than a thematic briefing${llmMeta.error ? ` (${htmlEscape(truncate(llmMeta.error, 180))})` : ''}. The material below is still complete.</p>`;
+  const overview = usedLlm && themes.length > 0
+    ? themes.slice(0, 3).map((theme) => {
+        const summary = oneLine(theme.summary);
+        const sentence = summary.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? summary;
+        return truncateAtBoundary(sentence, 300);
+      }).filter(Boolean).join(' ')
+    : 'Synthesis was unavailable, so today’s saves are organized by source. The reading list below includes all collected material.';
 
   const reflection = themes[0]?.title ?? collection.items[0]?.displayTitle ?? 'today’s material';
   const project = collection.projectDeltas[0]?.repo;
@@ -196,9 +193,8 @@ export function renderDigestHtml(
     ? `What assumption in ${htmlEscape(project)} might “${htmlEscape(truncate(reflection, 80))}” change? Name the smallest experiment that would test it.`
     : `Which item in “${htmlEscape(truncate(reflection, 80))}” deserves 20 focused minutes, and what question will you try to answer before opening it?`;
 
-  const lede = [
+  const reflectionPanels = [
     renderHtmlPanel(`Recall first${dueReviews.length ? ` · ${dueReviews.length} due` : ''}`, recall),
-    renderHtmlPanel('Today’s throughline', throughline),
     renderHtmlPanel('Ponder', `<p class="quote">${ponder}</p><p class="footnote">Answer this before opening more links — the point is to connect the material to your own work.</p>`),
   ].join('');
 
@@ -222,27 +218,18 @@ export function renderDigestHtml(
     `<p class="footnote">${htmlEscape(counts)}</p>`,
   ].join(''), { collapsed: true }));
 
-  const sourceList = [...new Set(collection.items.flatMap((item) => item.sources))].sort();
-  const synthesisLabel = usedLlm ? `llm via ${llmMeta.engine ?? 'default'}` : 'mechanical';
+  contents.push({ title: 'Recall first', id: 'recall' }, { title: 'Ponder', id: 'ponder' });
+  // Keep source diagnostics at the end, after all reading and reflection.
+  const diagnostics = sections.pop() ?? '';
+  sections.push(reflectionPanels, diagnostics);
 
-  return renderHtmlPage({
+  return renderReadingPage({
     title: `Daily Learning Review — ${collection.date}`,
-    subtitle: sourceList.length ? `Field Theory · ${sourceList.join(' · ')}` : 'Field Theory',
-    stats: [
-      { label: 'New saves', value: collection.items.length },
-      { label: 'Themes', value: themes.length },
-      { label: 'Reviews due', value: dueReviews.length },
-      { label: 'Projects', value: collection.projectDeltas.length },
-    ],
-    metaLine: `Window <b>${htmlEscape(collection.sinceIso)}</b> → <b>${htmlEscape(collection.untilIso)}</b> · synthesis <b>${htmlEscape(synthesisLabel)}</b> · ${reviewsQueued} card${reviewsQueued === 1 ? '' : 's'} queued for tomorrow`,
-    chips,
-    searchPlaceholder: 'Search today’s material',
-    lede,
+    subtitle: `${collection.items.length} new saves · ${themes.length} themes · ${dueReviews.length} reviews due`,
+    overview,
+    contents,
     body: sections.join(''),
-    footer: [
-      `Generated by <code>ft daily</code> on ${htmlEscape(new Date().toISOString().slice(0, 16).replace('T', ' '))} UTC.`,
-      `Markdown source: <code>${htmlEscape(collection.date)}.md</code> in the same folder.`,
-    ].join(' '),
+    footer: `Field Theory · ${htmlEscape(collection.date)}`,
   });
 }
 
