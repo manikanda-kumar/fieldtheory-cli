@@ -24,6 +24,7 @@ export interface DailyProjectDelta {
   repo: string;
   commits: { date: string; subject: string }[];
   prompts: { timestamp: string; text: string }[];
+  ampThreads: { threadId: string; title: string; sourceUrl: string; updatedAt: string; threadState?: string }[];
 }
 
 export interface DailyCollection {
@@ -113,12 +114,23 @@ async function collectProjectDeltas(sinceIso: string, untilIso: string): Promise
     const prompts = (record.recentPrompts ?? [])
       .filter((prompt) => withinWindow(prompt.timestamp, sinceIso, untilIso))
       .map((prompt) => ({ timestamp: prompt.timestamp, text: prompt.text }));
-    if (commits.length > 0 || prompts.length > 0) {
-      deltas.push({ repo: record.repo, commits, prompts });
+    const ampThreads = (record.recentAgentActivity ?? [])
+      .filter((activity) => withinWindow(activity.updatedAt, sinceIso, untilIso))
+      .map((activity) => ({
+        threadId: activity.threadId,
+        title: activity.title,
+        sourceUrl: activity.sourceUrl,
+        updatedAt: activity.updatedAt,
+        ...(activity.threadState ? { threadState: activity.threadState } : {}),
+      }));
+    if (commits.length > 0 || prompts.length > 0 || ampThreads.length > 0) {
+      deltas.push({ repo: record.repo, commits, prompts, ampThreads });
     }
   }
 
-  return deltas.sort((a, b) => (b.commits.length + b.prompts.length) - (a.commits.length + a.prompts.length));
+  return deltas.sort((a, b) =>
+    (b.commits.length + b.prompts.length + b.ampThreads.length)
+    - (a.commits.length + a.prompts.length + a.ampThreads.length));
 }
 
 export async function collectDaily(options: CollectDailyOptions = {}): Promise<DailyCollection> {

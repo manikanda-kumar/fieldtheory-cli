@@ -152,8 +152,8 @@ export function renderDigestHtml(
     const items: HtmlItem[] = collection.projectDeltas.map((delta) => ({
       title: delta.repo,
       eyebrow: 'local project',
-      byline: `${delta.commits.length} commit${delta.commits.length === 1 ? '' : 's'} · ${delta.prompts.length} agent prompt${delta.prompts.length === 1 ? '' : 's'}`,
-      body: htmlEscape(truncate(delta.prompts[0]?.text ?? delta.commits[0]?.subject ?? '', SNIPPET_CHARS)),
+      byline: `${delta.commits.length} commit${delta.commits.length === 1 ? '' : 's'} · ${delta.prompts.length} agent prompt${delta.prompts.length === 1 ? '' : 's'} · ${delta.ampThreads.length} Amp thread${delta.ampThreads.length === 1 ? '' : 's'}`,
+      body: htmlEscape(truncate(delta.ampThreads[0]?.title ?? delta.prompts[0]?.text ?? delta.commits[0]?.subject ?? '', SNIPPET_CHARS)),
       group: 'projects',
     }));
     contents.push({ title: 'Project activity', id: 'projects' });

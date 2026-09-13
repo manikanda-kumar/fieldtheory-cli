@@ -63,6 +63,7 @@ On first run, `ft sync` extracts your X session from your browser and downloads 
 | `ft sync-raindrop` | Sync browser bookmarks from Raindrop.io into the unified index |
 | `ft sync-github-stars` | Sync GitHub starred repositories into the unified index |
 | `ft sync-github-stars --limit 200 --classify` | Partial GitHub stars sync, then regex-classify canonical rows |
+| `ft sync-projects` | Refresh local Git state, local agent prompts, and mapped Amp cloud thread activity |
 | `ft sync-youtube --playlist <url-or-id>` | Sync a public YouTube playlist into local markdown notes and the unified index |
 | `ft sync-following` | Sync the accounts you follow on X into a local searchable roster |
 | `ft sync-following --classify` | Sync following list then classify domains/expertise with LLM |
@@ -81,6 +82,28 @@ ft sync-all --x-list <id> --playlist <url-or-id> --youtube-limit 8
 ft sync-all --skip youtube --no-synthesis
 ft sync-all --only github-stars,raindrop
 ```
+
+### Project and Amp cloud activity
+
+`ft sync-projects` can include work performed in Amp cloud or orbs even when no
+local Amp thread file exists. Install the `agent-sessions` repo helper and sign
+in to Amp first:
+
+```bash
+ln -sf "/path/to/agent-sessions/tools/agent-sessions" ~/.local/bin/agent-sessions
+amp threads list --json --limit 1
+ft sync-projects --root ~/Github
+```
+
+Field Theory invokes `agent-sessions amp-cloud sync --json`, then stores only a
+bounded title/status/timestamp/source-link summary in project JSONL and
+markdown. Raw conversations remain in the private Agent Sessions cache outside
+Git. Mapping requires an exact, unique Git remote URL match between the Amp
+thread export and a scanned checkout; cwd or basename guesses remain unmatched.
+Reported Amp thread state is conversation activity, not proof that code is
+available locally, pushed, or merged. `--no-sessions` skips both local session
+prompts and Amp cloud activity. Set `AGENT_SESSIONS_CLI` to an explicit helper
+path when it is not on `PATH`.
 
 ### Daily digest
 
@@ -387,10 +410,15 @@ Data is stored locally under `~/.fieldtheory/`:
   github-stars/
     stars.jsonl           # raw GitHub starred repository cache
     meta.json             # GitHub stars incremental sync metadata
+  projects/
+    projects.jsonl        # local Git state plus bounded mapped agent activity
+    meta.json             # scan and Amp cloud sync/mapping status
 
 ~/.fieldtheory/library/
   index.md                # markdown knowledge base (ft wiki / ft md)
   youtube/<videoId>.md    # YouTube transcript notes
+  projects/<repo>.md      # per-project Git, prompt, and source-linked Amp activity
+  projects-active.md      # bounded active-project overview
 
 ~/.fieldtheory/commands/
   *.md                    # portable commands used by Field Theory and agents

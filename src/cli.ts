@@ -1905,7 +1905,7 @@ export function buildCli() {
     .description('Scan local git repositories into project markdown and the canonical bookmark index')
     .option('--root <path>', 'Root containing depth-1 project directories', '~/Github')
     .option('--max-age-days <n>', 'Skip repos untouched for more than this many days', (v: string) => Number(v), 90)
-    .option('--no-sessions', 'Skip Claude Code session prompt extraction')
+    .option('--no-sessions', 'Skip local session prompts and Amp cloud activity')
     .option('--dry-run', 'Scan and report counts without writing cache files or rebuilding the canonical index')
     .action(safe(async (options) => {
       ensureDataDir();
@@ -1938,6 +1938,10 @@ export function buildCli() {
       console.log(`    repos scanned: ${result.records.length}`);
       console.log(`    with ledgers: ${result.records.filter((record) => record.goalNowNext).length}`);
       console.log(`    with prompts: ${result.records.filter((record) => (record.recentPrompts?.length ?? 0) > 0).length}`);
+      if (result.ampCloud) {
+        if (result.ampCloud.error) console.log(`    Amp cloud: ${result.ampCloud.error}`);
+        else console.log(`    Amp cloud: ${result.ampCloud.matched} matched, ${result.ampCloud.unmatched} unmatched (${result.ampCloud.fetched} refreshed, ${result.ampCloud.deferred} deferred)`);
+      }
       console.log(`    errors: ${result.errors.length}`);
       console.log(`    cache: ${result.cachePath}`);
       console.log(`    active: ${result.activePath}`);
@@ -3212,6 +3216,7 @@ export function buildCli() {
         console.log('Projects');
         console.log(`  projects: ${projectsStatus.count}`);
         console.log(`  with prompts: ${projectsStatus.withPrompts}`);
+        console.log(`  with Amp activity: ${projectsStatus.withAgentActivity}`);
         console.log(`  last synced: ${projectsStatus.lastSyncedAt ?? 'never'}`);
         console.log(`  cache: ${projectsStatus.cachePath}`);
       }

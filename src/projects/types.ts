@@ -25,6 +25,20 @@ export interface SessionPrompt {
   text: string;
 }
 
+export interface AmpThreadActivity {
+  source: 'amp';
+  threadId: string;
+  title: string;
+  sourceUrl: string;
+  createdAt?: string;
+  updatedAt: string;
+  observedAt?: string;
+  threadState?: string;
+  threadStateObservedAt?: string;
+  repositoryUrl?: string;
+  messageCount: number;
+}
+
 export interface ProjectRecord {
   repo: string;
   path: string;
@@ -36,6 +50,7 @@ export interface ProjectRecord {
   unpushedCommits: number;
   recentCommits: ProjectCommit[];
   recentPrompts?: { timestamp: string; text: string }[];
+  recentAgentActivity?: AmpThreadActivity[];
   scannedAt: string;
 }
 
@@ -70,12 +85,24 @@ export interface ProjectsMeta {
   repoCount: number;
   errors: ProjectScanError[];
   sessionFiles?: Record<string, ProjectSessionFileState>;
+  ampCloud?: {
+    available: boolean;
+    attemptedAt: string;
+    listed: number;
+    fetched: number;
+    unchanged: number;
+    deferred: number;
+    exportErrors: number;
+    matched: number;
+    unmatched: number;
+    error?: string;
+  };
 }
 
 export interface ProjectSyncOptions extends ProjectScanOptions {
   /** Stable clock injection for tests and deterministic exports. */
   now?: Date;
-  /** Skip Claude Code session prompt extraction. */
+  /** Skip local session prompt extraction and Amp cloud activity. */
   noSessions?: boolean;
   /** Root containing Claude Code project JSONL directories. Defaults to ~/.claude/projects. */
   claudeProjectsRoot?: string;
@@ -89,6 +116,8 @@ export interface ProjectSyncOptions extends ProjectScanOptions {
   droidRoot?: string;
   /** Keep session prompts newer than this many days. Default: 14. */
   sessionRetentionDays?: number;
+  /** agent-sessions executable path, false to disable, or PATH lookup by default. */
+  agentSessionsCli?: string | false;
 }
 
 export interface ProjectSyncResult {
@@ -98,6 +127,7 @@ export interface ProjectSyncResult {
   metaPath: string;
   libraryDir: string;
   activePath: string;
+  ampCloud?: ProjectsMeta['ampCloud'];
 }
 
 export interface ProjectSessionFileState {

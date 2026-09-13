@@ -608,6 +608,8 @@ export function projectSourceFromRecord(record: ProjectRecord): CanonicalSourceI
   // newly saved, or every daily collection window fills with stale projects.
   const savedAt = record.lastCommitAt ?? null;
   const promptText = capCompactText((record.recentPrompts ?? []).map((prompt) => prompt.text), 4000);
+  const ampActivityText = capCompactText((record.recentAgentActivity ?? []).map((activity) => activity.title), 2000);
+  const ampThreadLinks = (record.recentAgentActivity ?? []).map((activity) => activity.sourceUrl);
   const dedupeKey = isNormalizedGithubRepoUrl(record.remoteUrl)
     ? dedupeKeyForUrl(record.remoteUrl)
     : `project:${record.repo}`;
@@ -629,13 +631,14 @@ export function projectSourceFromRecord(record: ProjectRecord): CanonicalSourceI
       record.goalNowNext?.next,
       record.recentCommits.map((commit) => commit.subject),
       promptText,
+      ampActivityText,
     ]),
     authorHandle: null,
     savedAt,
     createdAt: savedAt,
     modifiedAt: record.scannedAt,
     folderPath: ['Projects'],
-    links: record.remoteUrl ? [record.remoteUrl] : [],
+    links: [...new Set([...(record.remoteUrl ? [record.remoteUrl] : []), ...ampThreadLinks])],
     contentPath: null,
     metadata: {
       repo: record.repo,
@@ -644,6 +647,7 @@ export function projectSourceFromRecord(record: ProjectRecord): CanonicalSourceI
       pendingFiles: record.pendingFiles,
       unpushedCommits: record.unpushedCommits,
       promptCount: record.recentPrompts?.length ?? 0,
+      ampThreadCount: record.recentAgentActivity?.length ?? 0,
     },
   };
 }

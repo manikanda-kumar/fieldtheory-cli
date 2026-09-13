@@ -1,6 +1,6 @@
 import { writeMd } from '../fs.js';
 import { projectMarkdownPath, projectsActiveMarkdownPath, projectsLibraryDir } from './paths.js';
-import type { ProjectCommit, ProjectRecord } from './types.js';
+import type { AmpThreadActivity, ProjectCommit, ProjectRecord } from './types.js';
 
 function escapeYaml(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ');
@@ -36,6 +36,15 @@ function commitSubjectLine(commit: ProjectCommit): string {
 
 function promptLine(prompt: { timestamp: string; text: string }): string {
   return `- ${dateOnly(prompt.timestamp)} ${truncate(prompt.text, 200)}`;
+}
+
+function linkText(value: string): string {
+  return value.replace(/([\\\[\]])/g, '\\$1');
+}
+
+function activityLine(activity: AmpThreadActivity): string {
+  const state = activity.threadState ? ` — thread state: ${truncate(activity.threadState, 40)}` : '';
+  return `- ${dateOnly(activity.updatedAt)} [${linkText(truncate(activity.title, 200))}](${activity.sourceUrl})${state}`;
 }
 
 export function buildProjectMarkdown(record: ProjectRecord): string {
@@ -89,6 +98,13 @@ export function buildProjectMarkdown(record: ProjectRecord): string {
     lines.push('');
   }
 
+  if (record.recentAgentActivity && record.recentAgentActivity.length > 0) {
+    lines.push('## Recent Amp thread activity');
+    lines.push('Thread state is conversation activity only; it does not establish local code, pushed commits, or merged work.');
+    for (const activity of record.recentAgentActivity) lines.push(activityLine(activity));
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 
@@ -110,6 +126,13 @@ function activityScore(record: ProjectRecord, now: Date): number {
     score += 0.5 * Math.exp(-ageDays / 7);
   }
 
+  for (const activity of record.recentAgentActivity ?? []) {
+    const activityMs = Date.parse(activity.updatedAt);
+    if (!Number.isFinite(activityMs)) continue;
+    const ageDays = Math.max(0, (nowMs - activityMs) / (24 * 60 * 60 * 1000));
+    score += 0.5 * Math.exp(-ageDays / 7);
+  }
+
   score += Math.min(record.pendingFiles, 20) * 0.05;
   score += Math.min(record.unpushedCommits, 20) * 0.1;
   return score;
@@ -119,6 +142,7 @@ function lastTouchedMs(record: ProjectRecord): number {
   const candidates = [
     record.lastCommitAt,
     ...record.recentCommits.map((commit) => commit.date),
+    ...(record.recentAgentActivity ?? []).map((activity) => activity.updatedAt),
   ].map((value) => Date.parse(value ?? '') || 0);
   return Math.max(0, ...candidates);
 }
@@ -142,6 +166,11 @@ function blockForProject(record: ProjectRecord): string[] {
   if (now) lines.push(`- Now: ${now}`);
   if (next) lines.push(`- Next: ${next}`);
   if (record.recentPrompts?.[0]) lines.push(`- Recent focus: ${truncate(record.recentPrompts[0].text, 120)}`);
+  if (record.recentAgentActivity?.[0]) {
+    const activity = record.recentAgentActivity[0];
+    const state = activity.threadState ? ` (${truncate(activity.threadState, 40)} thread)` : '';
+    lines.push(`- Amp activity: [${linkText(truncate(activity.title, 100))}](${activity.sourceUrl})${state}`);
+  }
   lines.push(`- Last touched: ${dateOnly(record.lastCommitAt)}`);
   lines.push('');
   return lines;

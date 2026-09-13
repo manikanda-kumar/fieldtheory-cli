@@ -186,7 +186,7 @@ export function buildDailyPrompt(
   for (const delta of collection.projectDeltas) {
     const subjects = delta.commits.slice(0, 5).map((commit) => commit.subject).join('; ');
     const questions = delta.prompts.slice(0, 3).map((prompt) => prompt.text.slice(0, 120)).join(' | ');
-    lines.push(`- repo=${delta.repo} commits=[${subjects}] questions=[${questions}]`);
+    lines.push(`- repo=${delta.repo} commits=[${subjects}] questions=[${questions}] ampThreadCount=${delta.ampThreads.length}`);
   }
   lines.push('');
   lines.push(`TASK: Group the new items into 3-${MAX_THEMES} themes. Respond with ONLY a JSON array:`);
@@ -541,7 +541,7 @@ export function renderDigestMarkdown(
     lines.push('## Project activity');
     lines.push('');
     for (const delta of collection.projectDeltas) {
-      lines.push(`- [[project:${delta.repo}]] — ${delta.commits.length} commit(s), ${delta.prompts.length} agent prompt(s)`);
+      lines.push(`- [[project:${delta.repo}]] — ${delta.commits.length} commit(s), ${delta.prompts.length} agent prompt(s), ${delta.ampThreads.length} Amp thread(s)`);
     }
     lines.push('');
   }

@@ -7,10 +7,10 @@ How any coding agent (Claude Code, Codex, Droid, OpenCode, ...) should recall fr
 | Artifact | Path | Refreshed by |
 |----------|------|--------------|
 | Interests profile (≤80 lines) | `~/.fieldtheory/library/interests.md` | `ft daily --write` |
-| Active projects brief (≤120 lines) | `~/.fieldtheory/library/projects-active.md` | `ft sync-projects` |
+| Active projects brief (≤120 lines, including source-linked Amp activity) | `~/.fieldtheory/library/projects-active.md` | `ft sync-projects` |
 | Daily digests (themes + citations) | `~/.fieldtheory/library/daily/YYYY-MM-DD.md` | `ft daily --write` |
 | Daily digest EPUB (e-reader copy) | `~/.fieldtheory/library/daily/YYYY-MM-DD.epub` | `ft daily --epub` |
-| Per-project briefs (Goal/Now/Next + recent agent queries) | `~/.fieldtheory/library/projects/<repo>.md` | `ft sync-projects` |
+| Per-project briefs (Goal/Now/Next + recent agent queries + Amp activity) | `~/.fieldtheory/library/projects/<repo>.md` | `ft sync-projects` |
 | Per-bookmark pages | `~/.fieldtheory/library/bookmarks/*.md` | `ft md --canonical` |
 | YouTube notes | `~/.fieldtheory/library/youtube/<YYYY-MM>/<videoId>.md` | `ft sync-youtube` |
 | Canonical SQLite (FTS5, all sources) | `~/.fieldtheory/bookmarks/bookmarks.db` | `ft index` / any sync |
@@ -36,6 +36,7 @@ Sources in the canonical index: `x`, `raindrop`, `github-stars`, `youtube`, `pro
 - Cite dates and sources verbatim from the files; never invent items.
 - Timestamps in the db are mixed-format (ISO with offsets, Twitter-style `Wed Sep 30 ... 2020`) — compare parsed dates, not strings.
 - `search_text` includes project Goal/Now/Next and recent agent prompts — treat it as private context, do not echo wholesale into public outputs (PRs, issues).
+- Amp thread links/titles are bounded metadata. A thread state such as `idle` describes only the conversation; check the project page's local/pushed Git fields separately and never infer merge state.
 - Nothing found = say so and move on; do not pad.
 
 The Claude Code global skill `second-brain` (`~/.claude/skills/second-brain/SKILL.md`) implements this contract.

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, readFile, writeFile, mkdir, utimes, stat } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, readFile, writeFile, mkdir, utimes, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,8 +20,9 @@ import {
   repoForCwd,
 } from '../src/projects/sessions.js';
 import { buildProjectMarkdown, buildProjectsActiveMarkdown, rankActiveProjects } from '../src/projects/markdown.js';
+import { mapAmpActivityToProjects } from '../src/projects/amp-cloud.js';
 import { syncProjects } from '../src/projects/sync.js';
-import type { ProjectRecord } from '../src/projects/types.js';
+import type { AmpThreadActivity, ProjectRecord } from '../src/projects/types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -68,6 +69,22 @@ function makeRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
       { hash: 'abc123', date: '2026-07-06T12:00:00.000Z', subject: 'add scanner' },
     ],
     scannedAt: '2026-07-07T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function makeAmpActivity(overrides: Partial<AmpThreadActivity> = {}): AmpThreadActivity {
+  return {
+    source: 'amp',
+    threadId: 'T-fixture',
+    title: 'Implement cloud ingestion',
+    sourceUrl: 'https://ampcode.com/threads/T-fixture',
+    updatedAt: '2026-09-12T12:00:00.000Z',
+    observedAt: '2026-09-13T00:00:00.000Z',
+    threadState: 'idle',
+    threadStateObservedAt: '2026-09-12T12:00:00.000Z',
+    repositoryUrl: 'https://github.com/acme/alpha',
+    messageCount: 8,
     ...overrides,
   };
 }
@@ -363,6 +380,87 @@ test('projects: normalizes GitHub remote URLs and preserves non-GitHub remotes',
     assert.equal(byRepo.get('https-github')?.remoteUrl, 'https://github.com/owner/https-github');
     assert.equal(byRepo.get('elsewhere')?.remoteUrl, 'ssh://git@example.com/owner/elsewhere.git');
     assert.equal(byRepo.get('missing')?.remoteUrl, undefined);
+  });
+});
+
+test('projects: Amp activity maps only exact unique remotes and leaves basename guesses unmatched', () => {
+  const records = [
+    makeRecord({ repo: 'alpha', remoteUrl: 'git@github.com:acme/alpha.git' }),
+    makeRecord({ repo: 'duplicate-a', remoteUrl: 'https://github.com/acme/shared' }),
+    makeRecord({ repo: 'duplicate-b', remoteUrl: 'https://github.com/acme/shared.git' }),
+  ];
+  const mapped = mapAmpActivityToProjects(records, [
+    makeAmpActivity(),
+    makeAmpActivity({ threadId: 'T-basename', repositoryUrl: 'https://github.com/other/alpha' }),
+    makeAmpActivity({ threadId: 'T-ambiguous', repositoryUrl: 'https://github.com/acme/shared' }),
+    makeAmpActivity({ threadId: 'T-missing', repositoryUrl: undefined }),
+  ]);
+
+  assert.deepEqual(mapped.byRepo.get('alpha')?.map((item) => item.threadId), ['T-fixture']);
+  assert.equal(mapped.matched, 1);
+  assert.equal(mapped.unmatched, 3);
+});
+
+test('projects: sync consumes bounded agent-sessions Amp activity and deduplicates repeated runs', async (t) => {
+  if (!(await gitAvailable())) {
+    t.skip('git is unavailable');
+    return;
+  }
+
+  await withTempDir('ft-projects-amp-cloud-', async (scanRoot) => {
+    await withIsolatedDataDir(async (dataDir) => {
+      const repoDir = path.join(scanRoot, 'alpha');
+      await createCommittedRepo(repoDir, 'https://github.com/acme/alpha.git');
+      const fakeCli = path.join(scanRoot, 'agent-sessions-fixture');
+      const argsLog = path.join(scanRoot, 'agent-sessions-args.log');
+      const payload = {
+        sync: { listed: 10, fetched: 1, unchanged: 2, deferred: 7, errors: [], observedAt: '2026-09-13T00:00:00.000Z' },
+        activity: [
+          {
+            id: 'T-alpha', title: 'Older duplicate', sourceUrl: 'https://evil.invalid',
+            updatedAt: '2026-09-11T00:00:00.000Z', repositoryUrl: 'https://github.com/acme/alpha', messageCount: 100,
+          },
+          {
+            id: 'T-alpha', title: 'Fresh cloud work', sourceUrl: 'https://evil.invalid',
+            createdAt: '2026-09-10T00:00:00.000Z', updatedAt: '2026-09-12T12:00:00.000Z',
+            observedAt: '2026-09-13T00:00:00.000Z', threadState: 'idle',
+            threadStateObservedAt: '2026-09-12T12:00:00.000Z',
+            repositoryUrl: 'https://github.com/acme/alpha.git', messageCount: 4,
+          },
+          {
+            id: 'T-unknown', title: 'Do not guess from basename', updatedAt: '2026-09-12T13:00:00.000Z',
+            repositoryUrl: 'https://github.com/other/alpha', messageCount: 2,
+          },
+        ],
+      };
+      await writeFile(fakeCli, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(argsLog)}\ncat <<'JSON'\n${JSON.stringify(payload)}\nJSON\n`, 'utf8');
+      await chmod(fakeCli, 0o700);
+
+      const options = {
+        scanRoot,
+        now: new Date('2026-09-13T14:00:00.000Z'),
+        claudeProjectsRoot: path.join(scanRoot, 'no-claude'),
+        ...hermeticSessionRoots(scanRoot),
+        agentSessionsCli: fakeCli,
+      };
+      const first = await syncProjects(options);
+      const second = await syncProjects(options);
+
+      assert.equal(first.records[0].recentAgentActivity?.length, 1);
+      assert.equal(first.records[0].recentAgentActivity?.[0].title, 'Fresh cloud work');
+      assert.equal(first.records[0].recentAgentActivity?.[0].sourceUrl, 'https://ampcode.com/threads/T-alpha');
+      assert.equal(second.records[0].recentAgentActivity?.length, 1);
+      assert.equal(second.ampCloud?.matched, 1);
+      assert.equal(second.ampCloud?.unmatched, 1);
+      assert.equal(second.ampCloud?.deferred, 7);
+      const invocations = (await readFile(argsLog, 'utf8')).trim().split('\n');
+      assert.equal(invocations.length, 2);
+      assert.ok(invocations.every((line) => line.includes('amp-cloud sync --json --since 14d --limit 200 --max-exports 200')));
+      const markdown = await readFile(path.join(dataDir, 'md', 'projects', 'alpha.md'), 'utf8');
+      assert.match(markdown, /\[Fresh cloud work\]\(https:\/\/ampcode\.com\/threads\/T-alpha\) — thread state: idle/);
+      assert.match(markdown, /does not establish local code, pushed commits, or merged work/);
+      assert.doesNotMatch(markdown, /Older duplicate|evil\.invalid|Do not guess/);
+    });
   });
 });
 

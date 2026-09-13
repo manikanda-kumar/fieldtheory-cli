@@ -112,6 +112,14 @@ test('daily: collect windows on first_saved_at and gathers project deltas', asyn
         recentPrompts: [
           { timestamp: '2026-07-06T11:00:00.000Z', text: 'how do I wire the daily digest?' },
         ],
+        recentAgentActivity: [{
+          source: 'amp',
+          threadId: 'T-daily',
+          title: 'Wire cloud activity',
+          sourceUrl: 'https://ampcode.com/threads/T-daily',
+          updatedAt: '2026-07-06T12:00:00.000Z',
+          messageCount: 3,
+        }],
       }),
       projectRecord({ repo: 'idle-repo' }),
     ]);
@@ -125,6 +133,7 @@ test('daily: collect windows on first_saved_at and gathers project deltas', asyn
     assert.equal(collection.projectDeltas[0].repo, 'active-repo');
     assert.equal(collection.projectDeltas[0].commits.length, 1);
     assert.equal(collection.projectDeltas[0].prompts.length, 1);
+    assert.equal(collection.projectDeltas[0].ampThreads.length, 1);
   });
 });
 

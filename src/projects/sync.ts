@@ -6,13 +6,15 @@
 import { pathExists, readJson, readJsonLines, writeJson, writeJsonLines } from '../fs.js';
 import { scanProjects } from './scan.js';
 import { collectSessionPrompts } from './sessions.js';
+import { collectAmpCloudActivity, mapAmpActivityToProjects } from './amp-cloud.js';
 import { emitProjectsMarkdown } from './markdown.js';
 import { ensureProjectsDir, ensureProjectsLibraryDir, projectsCachePath, projectsMetaPath, projectsLibraryDir } from './paths.js';
-import type { ProjectRecord, ProjectSyncOptions, ProjectSyncResult, ProjectsMeta, SessionPrompt } from './types.js';
+import type { AmpThreadActivity, ProjectRecord, ProjectSyncOptions, ProjectSyncResult, ProjectsMeta, SessionPrompt } from './types.js';
 
 export interface ProjectsStatusView {
   count: number;
   withPrompts: number;
+  withAgentActivity: number;
   lastSyncedAt: string | null;
   cachePath: string;
 }
@@ -57,6 +59,23 @@ function recentPromptsForRepo(
   return sorted.length ? sorted : undefined;
 }
 
+function recentActivityForRepo(
+  current: AmpThreadActivity[],
+  previous: ProjectRecord | undefined,
+  cutoffMs: number,
+): AmpThreadActivity[] | undefined {
+  const byId = new Map<string, AmpThreadActivity>();
+  for (const item of [...(previous?.recentAgentActivity ?? []), ...current]) {
+    if ((Date.parse(item.updatedAt) || 0) < cutoffMs) continue;
+    const existing = byId.get(item.threadId);
+    if (!existing || Date.parse(item.updatedAt) > Date.parse(existing.updatedAt)) byId.set(item.threadId, item);
+  }
+  const sorted = [...byId.values()]
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .slice(0, 10);
+  return sorted.length ? sorted : undefined;
+}
+
 async function readPreviousMeta(metaPath: string): Promise<ProjectsMeta | undefined> {
   if (!(await pathExists(metaPath))) return undefined;
   try {
@@ -96,11 +115,24 @@ export async function syncProjects(options: ProjectSyncOptions = {}): Promise<Pr
       now,
       previousFileStates: previousMeta?.sessionFiles,
     });
+  const ampCloudCollection = options.noSessions
+    ? null
+    : await collectAmpCloudActivity({
+      command: options.agentSessionsCli,
+      retentionDays: sessionRetentionDays,
+      now,
+    });
+  const mappedAmp = ampCloudCollection
+    ? mapAmpActivityToProjects(scanResult.records, ampCloudCollection.activity)
+    : { byRepo: new Map<string, AmpThreadActivity[]>(), matched: 0, unmatched: 0 };
   const records = sortedForCache(scanResult.records.map((record) => ({
     ...record,
     recentPrompts: options.noSessions
       ? undefined
       : recentPromptsForRepo(record.repo, sessionResult.prompts, previousRecords.get(record.repo), sessionCutoffMs),
+    recentAgentActivity: options.noSessions
+      ? undefined
+      : recentActivityForRepo(mappedAmp.byRepo.get(record.repo) ?? [], previousRecords.get(record.repo), sessionCutoffMs),
   })));
 
   await writeJsonLines(cachePath, records);
@@ -111,6 +143,20 @@ export async function syncProjects(options: ProjectSyncOptions = {}): Promise<Pr
     repoCount: records.length,
     errors: scanResult.errors,
     ...(sessionResult.fileStates ? { sessionFiles: sessionResult.fileStates } : {}),
+    ...(ampCloudCollection ? {
+      ampCloud: {
+        available: ampCloudCollection.available,
+        attemptedAt: ampCloudCollection.attemptedAt,
+        listed: ampCloudCollection.listed,
+        fetched: ampCloudCollection.fetched,
+        unchanged: ampCloudCollection.unchanged,
+        deferred: ampCloudCollection.deferred,
+        exportErrors: ampCloudCollection.exportErrors,
+        matched: mappedAmp.matched,
+        unmatched: mappedAmp.unmatched,
+        ...(ampCloudCollection.error ? { error: ampCloudCollection.error } : {}),
+      },
+    } : {}),
   };
   await writeJson(metaPath, meta);
 
@@ -123,6 +169,7 @@ export async function syncProjects(options: ProjectSyncOptions = {}): Promise<Pr
     metaPath,
     libraryDir: projectsLibraryDir(),
     activePath: mdResult.activePath,
+    ampCloud: meta.ampCloud,
   };
 }
 
@@ -144,5 +191,6 @@ export async function getProjectsStatus(): Promise<ProjectsStatusView | null> {
   const records = await readJsonLines<ProjectRecord>(cachePath);
   if (records.length > 0) count = records.length;
   const withPrompts = records.filter((record) => (record.recentPrompts?.length ?? 0) > 0).length;
-  return { count, withPrompts, lastSyncedAt, cachePath };
+  const withAgentActivity = records.filter((record) => (record.recentAgentActivity?.length ?? 0) > 0).length;
+  return { count, withPrompts, withAgentActivity, lastSyncedAt, cachePath };
 }
