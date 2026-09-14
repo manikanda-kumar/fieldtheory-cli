@@ -21,6 +21,7 @@ import { renderDigestHtml } from './html.js';
 import { writeDailyIndexHtml } from './index-html.js';
 import { listDueReviewCards, markReviewCardsShown, queueReviewCards, type ReviewCard } from './review.js';
 import { summarizeSavedText } from './summary.js';
+import { readingSourceLabel, separateReadingLinks } from './reading-text.js';
 
 const SNIPPET_CHARS = 240;
 const ITEM_SUMMARY_CHARS = 220;
@@ -388,18 +389,28 @@ export function renderDigestMarkdown(
     const link = videoId ? youtubeNotes.get(videoId) : undefined;
     return link ? ` · [notes](${link})` : '';
   };
-  const linkLabel = (value: string): string => value.replace(/\s+/g, ' ').replace(/[[\]]/g, '').trim().slice(0, 120);
+  const linkLabel = (value: string): string => value.replace(/\s+/g, ' ').replace(/[[\]]/g, '').trim();
   const itemById = new Map(collection.items.map((item) => [item.id, item]));
   const relatedById = new Map<string, RelatedRef>();
   for (const { related } of connected) {
     for (const ref of related) relatedById.set(ref.id, ref);
   }
   const sources = [...new Set(collection.items.flatMap((item) => item.sources))].sort();
+  const sourceLine = (url: string | null | undefined, embedded: string[] = []): string => {
+    const urls = [...new Set([url, ...embedded].filter((value): value is string => Boolean(value)))];
+    return urls.map((href) => `[${readingSourceLabel(href)}](${href})`).join(' · ');
+  };
   const renderItem = (item: CanonicalRecentItem, id: string): string => {
-    const label = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
+    const title = separateReadingLinks(item.displayTitle ?? item.canonicalUrl ?? id);
+    const summary = separateReadingLinks(dailyItemDisplaySummary(item) ? summarizeSavedText(item, 700) : '');
     const savedMs = item.firstSavedAt ? Date.parse(item.firstSavedAt) : NaN;
     const saved = Number.isFinite(savedMs) ? new Date(savedMs).toISOString().slice(0, 10) : collection.date;
-    return `- ${item.canonicalUrl ? `[${label}](${item.canonicalUrl})` : label} — ${item.sources.join(', ')}, saved ${saved}${notesSuffix(item.canonicalUrl)}`;
+    return [
+      `### ${linkLabel(title.text || 'Saved page')}`, '',
+      `${item.sources.map((source) => source.startsWith('rss:') ? 'RSS' : source).join(', ')}, saved ${saved}`, '',
+      ...(summary.text ? [summary.text, ''] : []),
+      `${sourceLine(item.canonicalUrl, [...title.urls, ...summary.urls])}${notesSuffix(item.canonicalUrl)}`, '',
+    ].join('\n');
   };
   const reflectionPrompt = (): string => {
     const focus = themes[0]?.title ?? collection.items[0]?.displayTitle ?? 'today\'s material';
@@ -448,19 +459,24 @@ export function renderDigestMarkdown(
     lines.push('No reviews are due today. New learning cards are introduced tomorrow so recall stays spaced.');
   } else {
     for (const card of dueReviews) {
-      lines.push(`### ${card.title}`);
+      const title = separateReadingLinks(card.title);
+      const prompt = separateReadingLinks(card.prompt);
+      const answer = separateReadingLinks(card.answer);
+      lines.push(`### ${title.text || 'Saved page'}`);
       lines.push('');
-      lines.push(`Saved ${card.savedAt?.slice(0, 10) ?? 'on an unknown date'} · ${card.sources.join(', ') || 'unknown source'}`);
+      lines.push(`Saved ${card.savedAt?.slice(0, 10) ?? 'on an unknown date'} · ${card.sources.map((source) => source.startsWith('rss:') ? 'RSS' : source).join(', ') || 'unknown source'}`);
       lines.push('');
-      lines.push(`> ${card.prompt}`);
+      lines.push(`> ${prompt.text}`);
       lines.push('');
       lines.push('<details>');
       lines.push('<summary>Reveal source reminder</summary>');
       lines.push('');
-      lines.push(card.answer);
+      lines.push(answer.text);
       lines.push('');
       lines.push('</details>');
       lines.push('');
+      const links = sourceLine(card.url, [...title.urls, ...prompt.urls, ...answer.urls]);
+      if (links) lines.push(links, '');
       lines.push(`Grade after recalling: \`ft review grade ${card.id} again|fuzzy|got-it\``);
       lines.push('');
     }
@@ -494,8 +510,7 @@ export function renderDigestMarkdown(
       const item = itemById.get(id);
       if (!item) continue;
       lines.push(renderItem(item, id));
-      const summary = dailyItemDisplaySummary(item);
-      if (summary) lines.push(`  ${summary}`);
+
     }
     if (theme.relatedIds.length > 0) {
       lines.push('');
@@ -503,18 +518,20 @@ export function renderDigestMarkdown(
       for (const id of theme.relatedIds) {
         const ref = relatedById.get(id);
         if (!ref) continue;
-        const label = linkLabel(ref.title ?? ref.url ?? id);
-        const domain = displayDomain(ref.url);
-        lines.push(`- ${ref.url ? `[${label}](${ref.url})` : label}${domain ? ` — ${domain}` : ''}${notesSuffix(ref.url)}`);
+        const title = separateReadingLinks(ref.title ?? ref.url ?? id);
+        lines.push(`- ${linkLabel(title.text || 'Saved page')}`);
+        const links = sourceLine(ref.url, title.urls);
+        if (links) lines.push(`  ${links}${notesSuffix(ref.url)}`);
       }
     }
     if (theme.externalNotes.length > 0) {
       lines.push('');
       lines.push('Additional context (web/X):');
       for (const note of theme.externalNotes) {
-        const label = linkLabel(note.sourceLabel || note.sourceUrl || 'source');
-        const link = note.sourceUrl ? `[${label}](${note.sourceUrl})` : label;
-        lines.push(`- ${note.claim} — ${link}`);
+        const claim = separateReadingLinks(note.claim);
+        lines.push(`- ${claim.text}`);
+        const links = sourceLine(note.sourceUrl, claim.urls);
+        if (links) lines.push(`  ${links}`);
       }
     }
     if (theme.projects.length > 0) {
@@ -531,8 +548,7 @@ export function renderDigestMarkdown(
       const item = itemById.get(id);
       if (!item) continue;
       lines.push(renderItem(item, id));
-      const summary = dailyItemDisplaySummary(item);
-      if (summary) lines.push(`  ${summary}`);
+
     }
     lines.push('');
   }

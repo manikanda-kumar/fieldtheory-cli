@@ -1,5 +1,6 @@
 /** Static, semantic reading surface shared by daily output and design previews. */
 import { htmlEscape, htmlLink, type HtmlGroup, type HtmlItem } from '../html-kit.js';
+import { decodeReadingText, readingSourceLabel, separateReadingLinks } from './reading-text.js';
 
 export const DAILY_READING_CSS = `
 :root{color-scheme:light;--ink:#242721;--muted:#555b51;--line:#d9dccf;--accent:#315941;--paper:#fbfaf5}
@@ -30,6 +31,7 @@ a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-of
 .item:first-of-type{border-top:0;padding-top:0}
 .item p:last-child{margin-bottom:0}
 .byline{margin:0 0 .65em;overflow-wrap:anywhere}
+.source-links{display:block;margin:.45em 0 0}
 .related-list{padding-left:1.2em}
 .related-list li{margin:.75em 0}
 .related-list .byline{display:block;margin:.2em 0 0}
@@ -48,29 +50,44 @@ export interface ReadingGroup extends HtmlGroup {
 }
 
 export function renderReadingItem(item: HtmlItem): string {
-  const meta = [item.eyebrow, item.byline].filter(Boolean).join(' · ');
+  const title = separateReadingLinks(item.title);
+  const body = separateReadingLinks(decodeReadingText(item.body ?? ''));
+  const meta = [item.eyebrow === readingSourceLabel(item.url ?? '') ? undefined : item.eyebrow, item.byline].filter(Boolean).join(' · ');
   return [
     '<article class="item">',
-    `<h3>${item.url ? htmlLink(item.url, item.title) : htmlEscape(item.title)}</h3>`,
+    `<h3>${htmlEscape(title.text || 'Saved page')}</h3>`,
     meta ? `<p class="byline">${htmlEscape(meta)}</p>` : '',
-    item.body ? `<p class="summary">${item.body}</p>` : '',
+    body.text ? `<p class="summary">${htmlEscape(body.text)}</p>` : '',
+    renderReadingSourceLinks(item, [...title.urls, ...body.urls]),
     item.extra?.length ? `<p class="footnote">${item.extra.join(' · ')}</p>` : '',
     item.footnote ? `<p class="footnote">${htmlEscape(item.footnote)}</p>` : '',
     '</article>',
   ].join('');
 }
 
+export function renderReadingSourceLinks(item: HtmlItem, embeddedUrls: string[], label?: string): string {
+  const urls = [...new Set([item.url, ...embeddedUrls].filter((url): url is string => Boolean(url)))];
+  const links = urls.map((url) => htmlLink(url, url === item.url && label ? label : readingSourceLabel(url)));
+  return links.length ? `<span class="byline source-links">${links.join(' · ')}</span>` : '';
+}
+
 function references(label: string, items: HtmlItem[] = []): string {
   if (!items.length) return '';
-  return `<h3>${htmlEscape(label)}</h3><ul class="related-list">${items.map((item) => `<li>${item.url ? htmlLink(item.url, item.title) : htmlEscape(item.title)}${item.byline ? `<span class="byline">${htmlEscape(item.byline)}</span>` : ''}</li>`).join('')}</ul>`;
+  return `<h3>${htmlEscape(label)}</h3><ul class="related-list">${items.map((item) => {
+    const title = separateReadingLinks(item.title);
+    return `<li>${htmlEscape(title.text || 'Saved page')}${renderReadingSourceLinks(item, title.urls, item.byline)}${!item.url && !title.urls.length && item.byline ? `<span class="byline">${htmlEscape(item.byline)}</span>` : ''}</li>`;
+  }).join('')}</ul>`;
 }
 
 export function renderReadingGroup(group: ReadingGroup): string {
+  const title = separateReadingLinks(group.label);
+  const intro = separateReadingLinks(decodeReadingText(group.intro ?? ''));
   return [
     `<section class="daygroup" id="${htmlEscape(group.group ?? '')}">`,
-    `<h2>${htmlEscape(group.label)}</h2>`,
+    `<h2>${htmlEscape(title.text)}</h2>`,
     group.count ? `<p class="section-meta">${htmlEscape(group.count)}</p>` : '',
-    group.intro ? `<p class="group-intro">${group.intro}</p>` : '',
+    intro.text ? `<p class="group-intro">${htmlEscape(intro.text)}</p>` : '',
+    renderReadingSourceLinks({ title: title.text }, [...title.urls, ...intro.urls]),
     group.items.map(renderReadingItem).join(''),
     references('From earlier saves', group.relatedItems),
     references('Additional context', group.contextItems),
@@ -87,6 +104,7 @@ export function renderReadingPage(options: {
   title: string; subtitle: string; overview: string;
   contents: Array<{ title: string; id: string }>; body: string; footer: string;
 }): string {
+  const overview = separateReadingLinks(options.overview);
   return [
     '<!doctype html>', '<html lang="en">', '<head>', '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
@@ -94,8 +112,8 @@ export function renderReadingPage(options: {
     '</head>', '<body>', '<main class="digest">', '<header class="masthead">',
     '<p class="eyebrow">Field Theory · Daily reading</p>', `<h1>${htmlEscape(options.title)}</h1>`,
     `<p class="subtitle">${htmlEscape(options.subtitle)}</p>`, '</header>',
-    `<section class="overview" id="overview"><h2>Today at a glance</h2><p>${htmlEscape(options.overview)}</p></section>`,
-    `<nav class="contents" aria-label="Contents"><h2>Contents</h2><ol>${options.contents.map((entry) => `<li><a href="#${htmlEscape(entry.id)}">${htmlEscape(entry.title)}</a></li>`).join('')}</ol></nav>`,
+    `<section class="overview" id="overview"><h2>Today at a glance</h2><p>${htmlEscape(overview.text)}</p>${renderReadingSourceLinks({ title: '' }, overview.urls)}</section>`,
+    `<nav class="contents" aria-label="Contents"><h2>Contents</h2><ol>${options.contents.map((entry) => `<li><a href="#${htmlEscape(entry.id)}">${htmlEscape(separateReadingLinks(entry.title).text)}</a></li>`).join('')}</ol></nav>`,
     options.body, `<footer>${options.footer}</footer>`, '</main>', '</body>', '</html>', '',
   ].join('\n');
 }

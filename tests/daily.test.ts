@@ -654,7 +654,8 @@ test('daily: synthesize suppresses duplicate valid citations without counting th
     assert.equal(result.themedCount, 1);
     assert.equal(result.alsoSavedCount, 0);
     const digest = await readFileText(result.digestPath);
-    assert.equal(digest.match(/^- \[/gm)?.length, 1);
+    assert.equal(digest.match(/^### duplicate\/item$/gm)?.length, 1);
+    assert.equal(digest.match(/\[github.com\]\(https:\/\/github.com\/duplicate\/item\)/g)?.length, 1);
   });
 });
 

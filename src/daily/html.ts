@@ -12,7 +12,9 @@ import {
   renderReadingItem as renderHtmlItem,
   renderReadingPage,
   renderReadingPanel as renderHtmlPanel,
+  renderReadingSourceLinks,
 } from './reading-html.js';
+import { separateReadingLinks } from './reading-text.js';
 import { summarizeSavedText, truncateAtBoundary } from './summary.js';
 import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import type { DailyCollection } from './collect.js';
@@ -169,15 +171,21 @@ export function renderDigestHtml(
   // ── lede: recall cards, throughline, reflection ────────────────────────────
   const recall = dueReviews.length === 0
     ? '<p class="panel-body">No reviews are due today. New cards are introduced tomorrow so recall stays spaced.</p>'
-    : dueReviews.map((card) => [
+    : dueReviews.map((card) => {
+      const title = separateReadingLinks(card.title);
+      const prompt = separateReadingLinks(card.prompt);
+      const answer = separateReadingLinks(card.answer);
+      return [
         '<div class="card">',
-        `<h3>${card.url ? htmlLink(card.url, oneLine(card.title)) : htmlEscape(oneLine(card.title))}</h3>`,
-        `<span class="byline">saved ${htmlEscape(card.savedAt?.slice(0, 10) ?? 'unknown')} · ${htmlEscape(card.sources.join(', ') || 'unknown source')}</span>`,
-        `<p class="quote">${htmlEscape(card.prompt)}</p>`,
+        `<h3>${htmlEscape(title.text || 'Saved page')}</h3>`,
+        `<span class="byline">saved ${htmlEscape(card.savedAt?.slice(0, 10) ?? 'unknown')} · ${htmlEscape(card.sources.map((source) => source.startsWith('rss:') ? 'RSS' : source).join(', ') || 'unknown source')}</span>`,
+        `<p class="quote">${htmlEscape(prompt.text)}</p>`,
         '<h4>Source reminder</h4>',
-        `<p class="reveal-body">${htmlEscape(card.answer)}</p>`,
+        `<p class="reveal-body">${htmlEscape(answer.text)}</p>`,
+        renderReadingSourceLinks({ title: title.text, url: card.url ?? undefined }, [...title.urls, ...prompt.urls, ...answer.urls]),
         '</div>',
-      ].join('')).join('');
+      ].join('');
+    }).join('');
 
   const overview = usedLlm && themes.length > 0
     ? themes.slice(0, 3).map((theme) => {
