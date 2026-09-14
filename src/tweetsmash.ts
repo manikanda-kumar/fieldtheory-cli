@@ -19,7 +19,7 @@ import { ensureDir, pathExists, readJson, readJsonLines, writeJson, writeJsonLin
 import { dataDir, twitterBookmarksCachePath } from './paths.js';
 import type { BookmarkRecord } from './types.js';
 
-const BASE_URL = 'https://api.tweetsmash.com/v1';
+export const TWEETSMASH_BASE_URL = 'https://api.tweetsmash.com/v1';
 const PAGE_LIMIT = 100;
 /**
  * Records imported within this window of the account's earliest import are
@@ -64,10 +64,10 @@ export class TweetsmashRateLimitError extends Error {
 }
 
 /** Fallback wait when a 429 carries no Retry-After; the limit is 100 requests/hour. */
-const DEFAULT_RATE_LIMIT_WAIT_MS = 10 * 60 * 1000;
-const MAX_RATE_LIMIT_WAITS = 12;
+export const DEFAULT_RATE_LIMIT_WAIT_MS = 10 * 60 * 1000;
+export const MAX_RATE_LIMIT_WAITS = 12;
 
-function parseRetryAfter(value: string | null): number | undefined {
+export function parseRetryAfter(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number(value);
   if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
@@ -92,18 +92,18 @@ export function tweetsmashRebuildSeenPath(): string {
   return path.join(tweetsmashDir(), 'rebuild-seen.json');
 }
 
-function apiKey(): string {
+export function tweetsmashApiKey(): string {
   const key = process.env.TWEETSMASH_API_KEY?.trim();
   if (!key) throw new Error('TWEETSMASH_API_KEY environment variable is not set.');
   return key;
 }
 
 async function fetchPage(cursor: string | undefined, fetchImpl: typeof fetch): Promise<TweetsmashPageResponse> {
-  const url = new URL(`${BASE_URL}/bookmarks`);
+  const url = new URL(`${TWEETSMASH_BASE_URL}/bookmarks`);
   url.searchParams.set('limit', String(PAGE_LIMIT));
   if (cursor) url.searchParams.set('cursor', cursor);
   const response = await fetchImpl(url, {
-    headers: { Authorization: `Bearer ${apiKey()}` },
+    headers: { Authorization: `Bearer ${tweetsmashApiKey()}` },
   });
   if (response.status === 429) throw new TweetsmashRateLimitError(parseRetryAfter(response.headers.get('retry-after')));
   if (response.status === 401) throw new Error('Tweetsmash API returned 401: invalid TWEETSMASH_API_KEY.');

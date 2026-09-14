@@ -45,6 +45,7 @@ import { lintMd, fixLintIssues } from './md-lint.js';
 import { exportBookmarks, exportCanonicalBookmarks } from './md-export.js';
 import { renderViz } from './bookmarks-viz.js';
 import { applyTweetsmashEnrichment, formatTweetsmashResult, syncTweetsmash } from './tweetsmash.js';
+import { seedTweetsmashLabelsFromRaindrop } from './tweetsmash-seed.js';
 import {
   mergeLocalAndTweetsmashHits,
   searchTweetsmashBookmarks,
@@ -1410,10 +1411,54 @@ export function buildCli() {
     .option('--max-pages <n>', 'Max API pages this run (100 posts/page, 100 req/hour limit)', (v: string) => Number(v))
     .option('--rebuild', 'Refetch the full Tweetsmash archive (resumes across runs; keeps cache until done)')
     .option('--wait', 'On rate limit (429), wait and continue instead of stopping with a saved cursor')
+    .option('--seed-from-raindrop', 'Write Raindrop topic tags as Tweetsmash labels on matching posts (instead of syncing)')
+    .option('--min-count <n>', 'With --seed-from-raindrop: only tags on at least N Tweetsmash posts (default 100)', (v: string) => Number(v))
+    .option('--max-requests <n>', 'With --seed-from-raindrop: cap label API requests this run', (v: string) => Number(v))
+    .option('--dry-run', 'With --seed-from-raindrop: show the label plan without writing')
     .option('--no-index', 'Skip search index rebuild after enrichment')
     .option('--json', 'JSON output')
     .action(safe(async (options) => {
       ensureDataDir();
+      if (options.seedFromRaindrop) {
+        const seed = await seedTweetsmashLabelsFromRaindrop({
+          minCount: Number.isFinite(options.minCount) ? Number(options.minCount) : undefined,
+          maxRequests: Number.isFinite(options.maxRequests) ? Number(options.maxRequests) : undefined,
+          dryRun: Boolean(options.dryRun),
+          waitOnRateLimit: Boolean(options.wait),
+          onProgress: ({ label, added, pending }) => {
+            if (!options.json) process.stderr.write(`  ${label}: ${added}/${pending}\n`);
+          },
+          onRateLimitWait: ({ waitMs, attempt }) => {
+            if (!options.json) process.stderr.write(`  Rate limited; waiting ${Math.ceil(waitMs / 60_000)} min (wait ${attempt})…\n`);
+          },
+        });
+        let apply = null;
+        let indexed = false;
+        if (!options.dryRun && seed.assigned > 0) {
+          apply = await applyTweetsmashEnrichment();
+          if (options.index !== false && apply.tagsUpdated > 0) {
+            await buildIndex({ force: true });
+            await rebuildCanonicalIndex();
+            indexed = true;
+          }
+        }
+        if (options.json) {
+          printJson({ schemaVersion: 1, seed, apply, indexed });
+          return;
+        }
+        const pending = seed.plan.reduce((sum, item) => sum + item.pending, 0);
+        console.log(`  Raindrop → Tweetsmash labels: ${seed.plan.length} label(s), ${pending} pending assignment(s)`);
+        for (const item of seed.plan) console.log(`    ${String(item.pending).padStart(5)} / ${String(item.total).padStart(5)}  ${item.label}`);
+        if (options.dryRun) {
+          console.log(`  Dry run: ~${seed.plan.reduce((sum, item) => sum + Math.ceil(item.pending / 250), 0)} request(s) needed; nothing written.`);
+          return;
+        }
+        console.log(`  ✓ ${seed.assigned} label assignment(s) written in ${seed.requests} request(s)${seed.complete ? '' : ' — incomplete, rerun to continue'}`);
+        if (seed.rateLimited) console.log('  Rate limited — rerun later (finished chunks are skipped) or use --wait.');
+        if (apply) console.log(`    enriched: ${apply.tagsUpdated} X bookmark tag update(s)`);
+        if (indexed) console.log('  ✓ Search + canonical indexes rebuilt');
+        return;
+      }
       const sync = await syncTweetsmash({
         maxPages: Number.isFinite(options.maxPages) ? Number(options.maxPages) : undefined,
         rebuild: Boolean(options.rebuild),
