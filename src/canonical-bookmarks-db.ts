@@ -381,6 +381,13 @@ function parseJsonObject(value: unknown): Record<string, unknown> | null {
   }
 }
 
+function metadataTags(metadata: Record<string, unknown> | null): string[] {
+  const tags = metadata?.tags;
+  return Array.isArray(tags)
+    ? tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+    : [];
+}
+
 function hostnameForUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
@@ -391,6 +398,7 @@ function hostnameForUrl(value: string | null | undefined): string | null {
 }
 
 function xSourceFromRecord(record: BookmarkRecord): CanonicalSourceInput {
+  const tags = record.tags?.filter((tag) => tag.trim()) ?? [];
   return {
     id: `x:${record.id}`,
     source: 'x',
@@ -408,7 +416,7 @@ function xSourceFromRecord(record: BookmarkRecord): CanonicalSourceInput {
     folderPath: record.folderNames ?? [],
     links: record.links ?? [],
     contentPath: null,
-    metadata: null,
+    metadata: tags.length ? { tags } : null,
   };
 }
 
@@ -452,6 +460,7 @@ export function raindropSourceFromRecord(
   // reader of created_at expects ISO, so only a parseable date is adopted.
   const postedAt = isoOrNull(hydration?.postedAt);
 
+  const tags = record.tags?.filter((tag) => tag.trim()) ?? [];
   return {
     id: `raindrop:${record.id}`,
     source: 'raindrop',
@@ -469,7 +478,7 @@ export function raindropSourceFromRecord(
     folderPath: folderPaths,
     links: record.links ?? [],
     contentPath: null,
-    metadata: null,
+    metadata: tags.length ? { tags } : null,
   };
 }
 
@@ -848,6 +857,7 @@ function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[])
       source.folderPath,
       source.links,
       source.authorHandle,
+      metadataTags(source.metadata),
     ])),
     sourceCount: sources.length,
     firstSavedAt: savedDates[0] ?? null,

@@ -1408,7 +1408,8 @@ export function buildCli() {
     .command('sync-tweetsmash')
     .description('Enrich X bookmarks with Tweetsmash data: bookmark dates, labels, read state (needs TWEETSMASH_API_KEY)')
     .option('--max-pages <n>', 'Max API pages this run (100 posts/page, 100 req/hour limit)', (v: string) => Number(v))
-    .option('--rebuild', 'Refetch the full Tweetsmash archive instead of stopping at known posts')
+    .option('--rebuild', 'Refetch the full Tweetsmash archive (resumes across runs; keeps cache until done)')
+    .option('--wait', 'On rate limit (429), wait and continue instead of stopping with a saved cursor')
     .option('--no-index', 'Skip search index rebuild after enrichment')
     .option('--json', 'JSON output')
     .action(safe(async (options) => {
@@ -1416,10 +1417,15 @@ export function buildCli() {
       const sync = await syncTweetsmash({
         maxPages: Number.isFinite(options.maxPages) ? Number(options.maxPages) : undefined,
         rebuild: Boolean(options.rebuild),
+        waitOnRateLimit: Boolean(options.wait),
+        onRateLimitWait: ({ waitMs, pages, attempt }) => {
+          if (options.json) return;
+          process.stderr.write(`  Rate limited after ${pages} page(s); waiting ${Math.ceil(waitMs / 60_000)} min (wait ${attempt})…\n`);
+        },
       });
       const apply = await applyTweetsmashEnrichment();
       let indexed = false;
-      if (options.index !== false && (apply.datesSet > 0 || apply.tagsMerged > 0 || apply.flagged > 0)) {
+      if (options.index !== false && (apply.datesSet > 0 || apply.tagsUpdated > 0 || apply.flagged > 0)) {
         await buildIndex({ force: true });
         await rebuildCanonicalIndex();
         indexed = true;
@@ -1429,7 +1435,11 @@ export function buildCli() {
         return;
       }
       console.log(formatTweetsmashResult(sync, apply));
-      if (!sync.complete) console.log('  Rate limited mid-crawl — rerun later to resume (cursor saved).');
+      if (sync.rebuildPending) {
+        console.log(`  Rebuild pending${sync.rateLimited ? ' (rate limited)' : ''} — rerun later to continue (cursor saved; use --wait to sleep through limits).`);
+      } else if (sync.rateLimited) {
+        console.log('  Rate limited mid-crawl — rerun later to resume (cursor saved).');
+      }
       if (indexed) console.log('  ✓ Search + canonical indexes rebuilt');
     }));
 

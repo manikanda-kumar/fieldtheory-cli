@@ -94,6 +94,7 @@ function buildBookmarkMd(b: BookmarkTimelineItem): string {
   if (b.primaryDomain) lines.push(`domain: ${b.primaryDomain}`);
   if (b.categories.length > 0) lines.push(`categories: [${b.categories.join(', ')}]`);
   if (b.domains.length > 0) lines.push(`domains: [${b.domains.join(', ')}]`);
+  if (b.tags.length > 0) lines.push(`tags: [${b.tags.map((tag) => yamlQuoted(tag)).join(', ')}]`);
   lines.push(`source_url: ${b.url}`);
   lines.push(`tweet_id: "${b.tweetId}"`);
   if (b.likeCount) lines.push(`likes: ${b.likeCount}`);
@@ -270,6 +271,16 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US').format(value);
 }
 
+function sourceTags(sources: CanonicalSourceRow[]): string[] {
+  const tags = sources.flatMap((source) => {
+    const value = source.metadata?.tags;
+    return Array.isArray(value)
+      ? value.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+      : [];
+  });
+  return [...new Set(tags)];
+}
+
 function buildCanonicalBookmarkMd(
   canonical: CanonicalBookmarkListResult,
   sources: CanonicalSourceRow[],
@@ -282,6 +293,7 @@ function buildCanonicalBookmarkMd(
   const categories = canonical.categories ? canonical.categories.split(',').map((s) => s.trim()).filter(Boolean) : [];
   const domains = canonical.domains ? canonical.domains.split(',').map((s) => s.trim()).filter(Boolean) : [];
   const sourceLabels = [...new Set(sources.map((source) => source.source))];
+  const tags = sourceTags(sources);
 
   // ── Frontmatter ─────────────────────────────────────────────────────
   lines.push('---');
@@ -291,6 +303,7 @@ function buildCanonicalBookmarkMd(
   if (canonical.primaryCategory) lines.push(`category: ${canonical.primaryCategory}`);
   if (categories.length > 0) lines.push(`categories: [${categories.join(', ')}]`);
   if (domains.length > 0) lines.push(`domains: [${domains.join(', ')}]`);
+  if (tags.length > 0) lines.push(`tags: [${tags.map((tag) => yamlQuoted(tag)).join(', ')}]`);
 
   const raindropSource = sources.find((s) => s.source === 'raindrop');
   const xSource = sources.find((s) => s.source === 'x');
@@ -332,9 +345,6 @@ function buildCanonicalBookmarkMd(
       lines.push(`raindrop_id: ${raindropRecord.id}`);
       if (raindropRecord.collectionPath?.length) {
         lines.push(`collection: "${escapeYaml(raindropRecord.collectionPath.join(' / '))}"`);
-      }
-      if (raindropRecord.tags?.length) {
-        lines.push(`tags: [${raindropRecord.tags.map((t) => `"${escapeYaml(t)}"`).join(', ')}]`);
       }
       if (raindropRecord.important === true) {
         lines.push(`starred: true`);

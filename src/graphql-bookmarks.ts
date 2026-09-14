@@ -538,6 +538,11 @@ export function mergeBookmarkRecord(existing: BookmarkRecord | undefined, incomi
   if ((existing.media?.length ?? 0) > 0 && (incoming.media?.length ?? 0) === 0) {
     merged.media = existing.media;
   }
+  // X never supplies tags. Keep labels added by enrichment or other local
+  // importers when a fresh GraphQL snapshot carries its default empty array.
+  if ((existing.tags?.length ?? 0) > 0 && (incoming.tags?.length ?? 0) === 0) {
+    merged.tags = existing.tags;
+  }
 
   return merged;
 }

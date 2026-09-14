@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { buildIndex, searchBookmarks, getStats, formatSearchResults, getBookmarkById, listBookmarks, sanitizeFtsQuery, getCategoryCounts, sampleByCategory, getClassificationProgress } from '../src/bookmarks-db.js';
+import { buildIndex, searchBookmarks, getStats, formatSearchResults, getBookmarkById, listBookmarks, sanitizeFtsQuery, getCategoryCounts, sampleByCategory, getClassificationProgress, exportBookmarksForSyncSeed } from '../src/bookmarks-db.js';
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
 
@@ -116,6 +116,18 @@ test('searchBookmarks: full-text search returns matching results', async () => {
     assert.ok(results.some((r) => r.id === '1'));
     assert.ok(results.some((r) => r.id === '3'));
   });
+});
+
+test('searchBookmarks indexes tags that are absent from bookmark text', async () => {
+  await withIsolatedDataDir(async () => {
+    await buildIndex();
+    const results = await searchBookmarks({ query: 'healthcare', limit: 10 });
+    assert.deepEqual(results.map((result) => result.id), ['2']);
+    assert.deepEqual((await getBookmarkById('2'))?.tags, ['healthcare']);
+    const seed = await exportBookmarksForSyncSeed();
+    assert.deepEqual(seed[0]?.tags, ['healthcare']);
+    assert.deepEqual(seed[0]?.tweetsmashTags, ['healthcare']);
+  }, [{ ...FIXTURES[1], tags: ['healthcare'], tweetsmashTags: ['healthcare'] }]);
 });
 
 test('searchBookmarks: author filter works', async () => {

@@ -7,7 +7,7 @@ import type { BookmarkRecord, QuotedTweetSnapshot } from './types.js';
 import { classifyCorpus, formatClassificationSummary } from './bookmark-classify.js';
 import type { ClassificationSummary } from './bookmark-classify.js';
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 export interface SearchResult {
   id: string;
@@ -61,6 +61,7 @@ export interface BookmarkTimelineItem {
   viewCount?: number | null;
   folderIds: string[];
   folderNames: string[];
+  tags: string[];
 }
 
 export interface BookmarkTimelineFilters {
@@ -171,6 +172,7 @@ function mapTimelineRow(row: unknown[]): BookmarkTimelineItem {
     enrichedAt: (row[29] as string) ?? null,
     quotedStatusId: (row[30] as string) ?? null,
     quotedTweet: parseQuotedTweet(row[31]),
+    tags: parseJsonArray(row[32]),
   };
 }
 
@@ -271,7 +273,8 @@ function initSchema(db: Database): void {
     article_site TEXT,
     enriched_at TEXT,
     folder_ids TEXT,
-    folder_names TEXT
+    folder_names TEXT,
+    tweetsmash_tags_json TEXT
   )`);
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_bookmarks_author ON bookmarks(author_handle)`);
@@ -285,6 +288,7 @@ function initSchema(db: Database): void {
     author_handle,
     author_name,
     article_text,
+    tags_json,
     content=bookmarks,
     content_rowid=rowid,
     tokenize='porter unicode61'
@@ -345,13 +349,14 @@ function ensureMigrations(db: Database): void {
 
     ensureColumn(db, 'bookmarks', 'folder_ids', 'TEXT');
     ensureColumn(db, 'bookmarks', 'folder_names', 'TEXT');
+    ensureColumn(db, 'bookmarks', 'tweetsmash_tags_json', 'TEXT');
 
-    // FTS rebuild: only if the FTS table is missing the article_text column.
-    // Check via a zero-row SELECT so we don't rebuild unnecessarily.
-    if (!ftsHasColumn(db, 'article_text')) {
+    // FTS rebuild: only if the FTS table is missing a searchable source field.
+    // Check via zero-row SELECTs so we don't rebuild unnecessarily.
+    if (!ftsHasColumn(db, 'article_text') || !ftsHasColumn(db, 'tags_json')) {
       db.run('DROP TABLE IF EXISTS bookmarks_fts');
       db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS bookmarks_fts USING fts5(
-        text, author_handle, author_name, article_text,
+        text, author_handle, author_name, article_text, tags_json,
         content=bookmarks, content_rowid=rowid,
         tokenize='porter unicode61'
       )`);
@@ -390,7 +395,7 @@ function insertRecord(db: Database, r: BookmarkRecord, preserved?: PreservedBook
   const githubUrls = [...new Set([...githubMatches.map((m) => `https://${m}`), ...githubFromLinks])];
 
   db.run(
-    `INSERT OR REPLACE INTO bookmarks VALUES (${Array(37).fill('?').join(',')})`,
+    `INSERT OR REPLACE INTO bookmarks VALUES (${Array(38).fill('?').join(',')})`,
     [
       r.id,
       r.tweetId,
@@ -429,6 +434,7 @@ function insertRecord(db: Database, r: BookmarkRecord, preserved?: PreservedBook
       preserved?.enrichedAt ?? null,
       serializeJsonArray(r.folderIds) ?? preserved?.folderIds ?? null,
       serializeJsonArray(r.folderNames) ?? preserved?.folderNames ?? null,
+      r.tweetsmashTags?.length ? JSON.stringify(r.tweetsmashTags) : null,
     ]
   );
 }
@@ -569,7 +575,7 @@ export async function searchBookmarks(options: SearchOptions): Promise<SearchRes
 
     // If we have an FTS query, use bm25 for ranking; otherwise sort by posted_at
     const orderBy = options.query
-      ? `ORDER BY bm25(bookmarks_fts, 5.0, 1.0, 1.0, 3.0) ASC`
+      ? `ORDER BY bm25(bookmarks_fts, 5.0, 1.0, 1.0, 3.0, 4.0) ASC`
       : `ORDER BY b.posted_at DESC`;
 
     // For FTS ranking we need to join with the FTS table for bm25
@@ -577,7 +583,7 @@ export async function searchBookmarks(options: SearchOptions): Promise<SearchRes
     if (options.query) {
       sql = `
         SELECT b.id, b.url, b.text, b.author_handle, b.author_name, b.posted_at,
-               bm25(bookmarks_fts, 5.0, 1.0, 1.0, 3.0) as score
+               bm25(bookmarks_fts, 5.0, 1.0, 1.0, 3.0, 4.0) as score
         FROM bookmarks b
         JOIN bookmarks_fts ON bookmarks_fts.rowid = b.rowid
         ${where}
@@ -666,7 +672,8 @@ export async function listBookmarks(
         b.synced_at,
         b.enriched_at,
         b.quoted_status_id,
-        b.quoted_tweet_json
+        b.quoted_tweet_json,
+        b.tags_json
       FROM bookmarks b
       ${where}
       ${bookmarkSortClause(filters.sort)}
@@ -734,7 +741,9 @@ export async function exportBookmarksForSyncSeed(): Promise<BookmarkRecord[]> {
         b.view_count,
         b.links_json,
         b.folder_ids,
-        b.folder_names
+        b.folder_names,
+        b.tags_json,
+        b.tweetsmash_tags_json
       FROM bookmarks b
       ${bookmarkSortClause('desc')}
     `;
@@ -767,7 +776,8 @@ export async function exportBookmarksForSyncSeed(): Promise<BookmarkRecord[]> {
       links: parseJsonArray(row[20]),
       folderIds: parseJsonArray(row[21]),
       folderNames: parseJsonArray(row[22]),
-      tags: [],
+      tags: parseJsonArray(row[23]),
+      tweetsmashTags: parseJsonArray(row[24]),
       ingestedVia: 'graphql',
     }));
   } finally {
@@ -814,7 +824,8 @@ export async function getBookmarkById(id: string): Promise<BookmarkTimelineItem 
         b.synced_at,
         b.enriched_at,
         b.quoted_status_id,
-        b.quoted_tweet_json
+        b.quoted_tweet_json,
+        b.tags_json
       FROM bookmarks b
       WHERE b.id = ?
       LIMIT 1`,

@@ -223,3 +223,33 @@ test('exportCanonicalBookmarks: writes GitHub repository metadata markdown', asy
     assert.match(content, /\[\[domains\/github-com\]\]/);
   }, []);
 });
+
+test('bookmark exports preserve ingested Tweetsmash labels', async () => {
+  const fixtures = [{
+    id: 'tagged',
+    tweetId: 'tagged',
+    url: 'https://x.com/alice/status/tagged',
+    text: 'A bookmark whose text does not contain its topic.',
+    authorHandle: 'alice',
+    syncedAt: '2026-09-14T00:00:00.000Z',
+    tags: ['agent-memory'],
+    tweetsmashTags: ['agent-memory'],
+    ingestedVia: 'graphql',
+  }];
+
+  await withIsolatedDataDir(async (dir) => {
+    await buildIndex();
+    await rebuildCanonicalIndex();
+
+    await exportBookmarks({ force: true });
+    const localFiles = await readdir(path.join(dir, 'md', 'bookmarks'));
+    const local = await readFile(path.join(dir, 'md', 'bookmarks', localFiles[0]), 'utf8');
+    assert.match(local, /^tags: \["agent-memory"\]$/m);
+
+    const out = path.join(dir, 'canonical-out');
+    await exportCanonicalBookmarks({ outputDir: out, source: 'x', onProgress: () => {} });
+    const canonicalFiles = await readdir(out);
+    const canonical = await readFile(path.join(out, canonicalFiles[0]), 'utf8');
+    assert.match(canonical, /^tags: \["agent-memory"\]$/m);
+  }, fixtures);
+});

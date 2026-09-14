@@ -85,6 +85,8 @@ export interface BookmarkRecord {
   mediaObjects?: BookmarkMediaObject[];
   links?: string[];
   tags?: string[];
+  /** Labels last observed from Tweetsmash; tracked separately so removals can be mirrored. */
+  tweetsmashTags?: string[];
   ingestedVia?: 'api' | 'browser' | 'graphql';
   /** Parallel arrays of folder IDs and display names this bookmark is in on X. */
   folderIds?: string[];

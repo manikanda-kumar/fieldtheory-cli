@@ -1438,6 +1438,21 @@ test('mergeRecords: merges overlapping records without double-counting', () => {
   assert.equal(merged[0].text, 'Updated');
 });
 
+test('mergeRecords preserves Tweetsmash labels across X refreshes', () => {
+  const existing = [makeRecord({
+    id: '1',
+    tweetId: '1',
+    tags: ['agent-memory'],
+    tweetsmashTags: ['agent-memory'],
+  })];
+  const incoming = [makeRecord({ id: '1', tweetId: '1', text: 'Updated', tags: [] })];
+
+  const { merged } = mergeRecords(existing, incoming);
+
+  assert.deepEqual(merged[0].tags, ['agent-memory']);
+  assert.deepEqual(merged[0].tweetsmashTags, ['agent-memory']);
+});
+
 test('mergeRecords: sorts by postedAt descending', () => {
   const existing: BookmarkRecord[] = [];
   const incoming = [

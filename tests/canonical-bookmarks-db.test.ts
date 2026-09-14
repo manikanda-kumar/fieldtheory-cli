@@ -184,6 +184,36 @@ test('rebuildCanonicalIndex stores canonical URLs without tracking params', asyn
   });
 });
 
+test('rebuildCanonicalIndex makes X and Raindrop source tags searchable', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [{
+      id: 'x-tagged',
+      tweetId: '101',
+      url: 'https://x.com/alice/status/101',
+      text: 'A saved post whose prose does not name its subject.',
+      tags: ['agent-memory'],
+      syncedAt: '2026-08-13T00:00:00.000Z',
+    }]);
+    await writeRaindropBookmarks(dir, [{
+      id: 102,
+      url: 'https://example.com/operations',
+      title: 'Production handbook',
+      tags: ['devops'],
+      createdAt: '2026-08-13T00:00:00.000Z',
+      syncedAt: '2026-08-13T00:00:00.000Z',
+    }]);
+
+    await rebuildCanonicalIndex();
+
+    assert.equal((await searchCanonicalBookmarks({ query: 'agent-memory', limit: 10 })).length, 1);
+    assert.equal((await searchCanonicalBookmarks({ query: 'devops', limit: 10 })).length, 1);
+    const sources = await getAllCanonicalBookmarkSources();
+    const metadata = [...sources.values()].flat().map((source) => source.metadata);
+    assert.ok(metadata.some((item) => JSON.stringify(item) === JSON.stringify({ tags: ['agent-memory'] })));
+    assert.ok(metadata.some((item) => JSON.stringify(item) === JSON.stringify({ tags: ['devops'] })));
+  });
+});
+
 test('rebuildCanonicalIndex folds Raindrop X status mirrors into their rich X bookmarks', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [
