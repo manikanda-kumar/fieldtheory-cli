@@ -254,10 +254,9 @@ function resolveGrokModel(profileModel: string | undefined): string | undefined 
 
 /**
  * Default model for the agy engine when neither --model nor FT_AGY_MODEL is
- * set. agy 1.1.24 (`agy models`) ships `Gemini 3.7 Flash (High)` and no longer
- * recognises the 3.5 label; cheap, fast, and well-suited to batch wiki synthesis.
+ * set. Verified against `agy models` on 2026-09-18.
  */
-const AGY_DEFAULT_MODEL = 'Gemini 3.7 Flash (High)';
+const AGY_DEFAULT_MODEL = 'Gemini 3.8 Flash (High)';
 
 function resolveAgyModel(profileModel: string | undefined): string | undefined {
   return cleanOptional(profileModel)
