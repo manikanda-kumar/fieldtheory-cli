@@ -190,6 +190,14 @@ What it does:
 - Stores state and heavy artifacts under `~/.fieldtheory/bookmarks/youtube/`.
 - Indexes each video into the unified canonical SQLite index so `ft search --unified` can find it.
 
+YouTube classification shadow mode:
+
+- With `jev-axi` on PATH and `TYPESAFE_API_KEY` in the sync environment, newly seen video IDs are classified by `jev-1.13.0` using metadata and beginning/middle/end transcript excerpts. Existing IDs are excluded, even with forced reprocessing. No library backfill is performed.
+- This is observation only: Jev never changes the summary prompt, production type, or slide selection. Missing captions/credentials skip the call; errors and a 10-second timeout leave normal processing intact.
+- Successful results are stored in YouTube state with confidence, the original rule label, evidence hash, model, rubric version and classification time. Subsequent syncs reuse that persisted observation by leaving it unchanged.
+- Daily Markdown, HTML and EPUB reports highlight disagreements with either the rules or final summary type during the report's activity window. `unknown` is an abstention, not a disagreement. Confidence is not a calibrated accuracy estimate.
+- For scheduled runs, provide the key in the environment file sourced by your scheduler (the local installer uses `~/.fieldtheory/.env`, mode `0600`). Unset the key to disable future observations. Never commit credentials or personal library data.
+
 LLM and TTS configuration:
 
 - Notes and overview scripts use the same engine design as the rest of Field Theory: `ft model` / autodetect picks `claude`, `codex`, `grok`, or `droid` (OpenCode Go cloud models), with OpenRouter as the fallback when the primary engine fails.

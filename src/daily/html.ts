@@ -21,6 +21,7 @@ import type { DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import type { DailyCoverage } from './coverage.js';
 import type { ReviewCard } from './review.js';
+import type { YoutubeShadowReview } from '../youtube/shadow.js';
 import { dailyItemDisplaySummary, displayDomain, extractYoutubeVideoId, type DailyTheme } from './synthesize.js';
 
 const SNIPPET_CHARS = 220;
@@ -52,6 +53,7 @@ export function renderDigestHtml(
   dueReviews: ReviewCard[] = [],
   reviewsQueued = 0,
   llmMeta: { engine?: string; error?: string } = {},
+  shadowReviews: YoutubeShadowReview[] = [],
 ): string {
   const itemById = new Map(collection.items.map((item) => [item.id, item]));
   const relatedById = new Map<string, RelatedRef>();
@@ -209,6 +211,12 @@ export function renderDigestHtml(
   const freshness = (['x', 'raindrop', 'github-stars', 'rss', 'youtube', 'projects'] as const)
     .map((source) => `<li>${htmlEscape(source)}: ${htmlEscape(coverage.freshness[source])}</li>`)
     .join('');
+  if (shadowReviews.length) {
+    sections.unshift(renderHtmlPanel('YouTube classification disagreements — review',
+      '<p>Shadow mode only: summaries are unchanged. Confidence is not calibrated accuracy.</p><ul>'
+      + shadowReviews.map((review) => `<li>${htmlLink(`https://www.youtube.com/watch?v=${encodeURIComponent(review.videoId)}`, review.title)}<p>Rules: <strong>${htmlEscape(review.ruleLabel)}</strong> · Summary: <strong>${htmlEscape(review.summaryLabel ?? 'unavailable')}</strong> · Jev: <strong>${htmlEscape(review.label)}</strong> (${Math.round(review.confidence * 100)}% confidence)</p></li>`).join('')
+      + '</ul>'));
+  }
   const counts = [
     `collected ${coverage.counts.collected}`,
     `themed ${coverage.counts.themed}`,

@@ -14,6 +14,7 @@ import { loadYoutubeState, markVideo, shouldProcess, updateYoutubeState } from '
 import { writeYoutubeIndexFromState } from './index-html.js';
 import type { YoutubeLlmClient } from './llm.js';
 import type { YtDlpAccessOptions } from './yt-dlp.js';
+import { classifyYoutubeShadow, type YoutubeShadow } from './shadow.js';
 
 export type OverviewMode = 'none' | 'slides' | 'audio' | 'video';
 
@@ -36,6 +37,7 @@ export interface ProcessVideoOptions {
   videoNotes?: VideoNotesClient | null;
   /** `auto` (default) watches visual types + captionless; `on` watches every video. */
   videoNotesMode?: VideoNotesMode;
+  classifyShadow?: typeof classifyYoutubeShadow;
 }
 
 /** How the notes for a video were produced; recorded in state artifacts and note frontmatter. */
@@ -81,6 +83,15 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
 
   const existingNotesPath = state.videos[videoId]?.artifacts.notesPath;
   const notesPath = youtubeNotePath(videoId, fetched.meta.publishDate, existingNotesPath);
+  let shadow: YoutubeShadow | undefined;
+  // Existing IDs, including forced reprocessing and old failures, are never backfilled.
+  if (!state.videos[videoId] && fetched.transcriptText.trim()) {
+    try {
+      shadow = await (options.classifyShadow ?? classifyYoutubeShadow)(fetched.meta, fetched.transcriptText);
+    } catch {
+      console.warn(`  ! Jev shadow classification unavailable for ${videoId}; summary unchanged`);
+    }
+  }
   let slideImages: FrameRef[] = [];
   const artifacts: Record<string, string | undefined> = { notesPath };
   let status: 'done' | 'partial' = 'done';
@@ -272,6 +283,7 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
       videoType: notes.videoType,
       tldr: notes.tldr,
       topics: notes.topics,
+      ...(shadow ? { shadow } : {}),
       artifacts: artifactsForState,
     });
   });

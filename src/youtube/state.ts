@@ -2,6 +2,7 @@ import path from 'node:path';
 import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { readJson, writeJson, pathExists } from '../fs.js';
 import { youtubeLibraryDir, youtubeStatePath } from '../paths.js';
+import type { YoutubeShadow } from './shadow.js';
 
 const LOCK_STALE_MS = 10 * 60 * 1000;
 
@@ -28,6 +29,7 @@ export interface YoutubeVideoState {
   videoType?: string;
   tldr?: string;
   topics?: string[];
+  shadow?: YoutubeShadow;
   artifacts: YoutubeVideoArtifacts;
   error?: string;
   updatedAt: string;

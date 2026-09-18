@@ -12,6 +12,7 @@ import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunPro
 import { extractJsonArray } from '../bookmark-classify-llm.js';
 import { getCanonicalBookmarkById, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import { loadYoutubeState } from '../youtube/state.js';
+import { youtubeShadowReviews, type YoutubeShadowReview } from '../youtube/shadow.js';
 import { readDailyMeta, type DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import { collectDailyCoverage, type DailyCoverage } from './coverage.js';
@@ -383,6 +384,7 @@ export function renderDigestMarkdown(
   dueReviews: ReviewCard[] = [],
   reviewsQueued = 0,
   llmMeta: { engine?: string; error?: string } = {},
+  shadowReviews: YoutubeShadowReview[] = [],
 ): string {
   const notesSuffix = (url: string | null | undefined): string => {
     const videoId = extractYoutubeVideoId(url);
@@ -480,6 +482,15 @@ export function renderDigestMarkdown(
       lines.push(`Grade after recalling: \`ft review grade ${card.id} again|fuzzy|got-it\``);
       lines.push('');
     }
+  }
+
+  if (shadowReviews.length) {
+    lines.push('## YouTube classification disagreements — review', '', 'Shadow mode only: summaries are unchanged. Confidence is not calibrated accuracy.', '');
+    for (const review of shadowReviews) {
+      const title = linkLabel(review.title).replace(/[<>*_`\\]/g, '');
+      lines.push(`- [${title}](https://www.youtube.com/watch?v=${encodeURIComponent(review.videoId)}) — rules: **${review.ruleLabel}**; summary: **${review.summaryLabel ?? 'unavailable'}**; Jev: **${review.label}** (${Math.round(review.confidence * 100)}% confidence).`);
+    }
+    lines.push('');
   }
 
   lines.push('## Today\'s throughline');
@@ -678,8 +689,9 @@ export async function synthesizeDaily(
   const digestPath = dailyDigestPath(collection.date);
   const now = options.now ?? new Date();
   const groundExternal = Boolean(options.groundExternal);
+  const shadowReviews = youtubeShadowReviews(await loadYoutubeState(), collection.sinceIso, collection.untilIso);
 
-  if (collection.items.length === 0 && collection.projectDeltas.length === 0) {
+  if (collection.items.length === 0 && collection.projectDeltas.length === 0 && shadowReviews.length === 0) {
     return {
       digestPath,
       themes: [],
@@ -812,7 +824,7 @@ export async function synthesizeDaily(
   const llmMeta = { engine: llmEngine, error: llmError };
   const digestMarkdown = renderDigestMarkdown(
     collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
-    llmMeta,
+    llmMeta, shadowReviews,
   );
   await writeMd(digestPath, digestMarkdown);
   // The markdown stays the durable artifact; the page is the readable one.
@@ -821,7 +833,7 @@ export async function synthesizeDaily(
     htmlPath = dailyDigestHtmlPath(collection.date);
     await writeMd(htmlPath, renderDigestHtml(
       collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
-      llmMeta,
+      llmMeta, shadowReviews,
     ));
   }
   // Built from the markdown that was just written, so `ft daily --epub` on an

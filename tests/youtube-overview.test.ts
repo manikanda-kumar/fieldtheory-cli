@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { processVideo } from '../src/youtube/overview.js';
 import { NoTranscriptError } from '../src/youtube/fetch.js';
+import { loadYoutubeState, markVideo, updateYoutubeState } from '../src/youtube/state.js';
 
 async function withTempRoots<T>(fn: (roots: { dataDir: string; libraryDir: string }) => Promise<T>): Promise<T> {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'ft-youtube-overview-'));
@@ -21,6 +22,35 @@ async function withTempRoots<T>(fn: (roots: { dataDir: string; libraryDir: strin
     await fs.rm(tmp, { recursive: true, force: true });
   }
 }
+
+test('shadow labels are saved only for new IDs, never steer notes, and failures do not block summaries', async () => {
+  await withTempRoots(async () => {
+    let calls = 0;
+    const common = {
+      overview: 'none' as const, indexCanonical: false,
+      fetchVideo: async () => ({ meta: { title: 'How to build a demo' }, transcriptText: 'Host welcomes a guest.', segments: [], frames: null, contentHash: 'h1' }),
+      llm: { chat: async () => ({ text: '{}', json: { videoType: 'tutorial', tldr: 'Unchanged summary', keyPoints: [], chapters: [], actionItems: [], topics: [] } }) },
+      classifyShadow: async () => {
+        calls++;
+        return { model: 'jev-1.13.0', rubric: 'youtube-format-v2', evidenceHash: 'h', classifiedAt: '2026-09-18T10:00:00Z', label: 'interview' as const, confidence: 0.97, ruleLabel: 'tutorial' };
+      },
+    };
+    const first = await processVideo('new', common);
+    const before = await fs.readFile(first.notesPath!, 'utf8');
+    assert.match(before, /videoType: tutorial/);
+    assert.equal((await loadYoutubeState()).videos.new.shadow?.label, 'interview');
+    await processVideo('new', common);
+    await processVideo('new', { ...common, force: true });
+    await updateYoutubeState(state => { markVideo(state, 'old-failure', { status: 'failed' }); });
+    await processVideo('old-failure', common);
+    assert.equal(calls, 1);
+    assert.equal((await loadYoutubeState()).videos['old-failure'].shadow, undefined);
+    assert.equal((await loadYoutubeState()).videos.new.videoType, 'tutorial');
+    const failed = await processVideo('jev-failure', { ...common, classifyShadow: async () => { throw new Error('timeout'); } });
+    assert.equal(failed.status, 'done');
+    assert.equal((await loadYoutubeState()).videos['jev-failure'].shadow, undefined);
+  });
+});
 
 test('processVideo notes-only path writes markdown, indexes, and marks state done', async () => {
   await withTempRoots(async ({ libraryDir }) => {
