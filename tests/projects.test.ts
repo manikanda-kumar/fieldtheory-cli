@@ -97,6 +97,7 @@ function hermeticSessionRoots(root: string) {
     ampThreadsRoot: path.join(root, 'no-amp'),
     piSessionsRoot: path.join(root, 'no-pi'),
     droidRoot: path.join(root, 'no-droid'),
+    agentSessionsCli: false as const,
   };
 }
 

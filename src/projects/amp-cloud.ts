@@ -7,6 +7,9 @@ const execFileAsync = promisify(execFile);
 const MAX_ACTIVITY_ITEMS = 200;
 const MAX_EXPORTS_PER_SYNC = 200;
 const MAX_TITLE_CHARS = 240;
+// A backlog drain (200 exports) takes ~7 min; 5 min killed it daily so the
+// backlog never shrank. Keep headroom above a full max-exports batch.
+const SYNC_TIMEOUT_MS = 15 * 60_000;
 
 interface AgentSessionsPayload {
   activity?: unknown;
@@ -102,7 +105,7 @@ export async function collectAmpCloudActivity(options: {
       'amp-cloud', 'sync', '--json', '--since', `${options.retentionDays}d`, '--limit', String(MAX_ACTIVITY_ITEMS),
       '--max-exports', String(MAX_EXPORTS_PER_SYNC),
     ], {
-      timeout: 300_000,
+      timeout: SYNC_TIMEOUT_MS,
       maxBuffer: 2 * 1024 * 1024,
     });
     const payload = JSON.parse(String(stdout)) as AgentSessionsPayload;
