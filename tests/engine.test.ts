@@ -446,6 +446,49 @@ test('resolveEngine: agy respects FT_AGY_MODEL override', async () => {
   }
 });
 
+test('resolveEngine: claude respects FT_CLAUDE_MODEL and FT_CLAUDE_EFFORT', async () => {
+  if (process.platform === 'win32') return;
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-engine-claude-model-'));
+  const fakeBin = path.join(tmpDir, 'claude');
+  const origPath = process.env.PATH;
+  const origModel = process.env.FT_CLAUDE_MODEL;
+  const origEffort = process.env.FT_CLAUDE_EFFORT;
+  process.env.PATH = tmpDir;
+
+  try {
+    fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeBin, 0o755);
+
+    const { resolveEngine } = await import('../src/engine.js');
+    delete process.env.FT_CLAUDE_MODEL;
+    delete process.env.FT_CLAUDE_EFFORT;
+    const bare = await resolveEngine({ override: 'claude' });
+    assert.equal(bare.model, undefined);
+    assert.equal(bare.effort, undefined);
+
+    process.env.FT_CLAUDE_MODEL = 'opus';
+    process.env.FT_CLAUDE_EFFORT = 'medium';
+    const fromEnv = await resolveEngine({ override: 'claude' });
+    assert.equal(fromEnv.model, 'opus');
+    assert.equal(fromEnv.effort, 'medium');
+    const args = fromEnv.config.args('hi', fromEnv);
+    assert.ok(args.includes('--model') && args.includes('opus'));
+    assert.ok(args.includes('--effort') && args.includes('medium'));
+
+    const fromFlag = await resolveEngine({ override: 'claude', model: 'sonnet', effort: 'high' });
+    assert.equal(fromFlag.model, 'sonnet');
+    assert.equal(fromFlag.effort, 'high');
+  } finally {
+    process.env.PATH = origPath;
+    if (origModel !== undefined) process.env.FT_CLAUDE_MODEL = origModel;
+    else delete process.env.FT_CLAUDE_MODEL;
+    if (origEffort !== undefined) process.env.FT_CLAUDE_EFFORT = origEffort;
+    else delete process.env.FT_CLAUDE_EFFORT;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('resolveEngine: grok respects explicit --model and FT_GROK_MODEL', async () => {
   if (process.platform === 'win32') return;
 

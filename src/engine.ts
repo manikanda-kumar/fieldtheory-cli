@@ -264,13 +264,25 @@ function resolveAgyModel(profileModel: string | undefined): string | undefined {
     ?? AGY_DEFAULT_MODEL;
 }
 
+/**
+ * The claude engine has no pinned default (the CLI's own setting applies), but
+ * FT_CLAUDE_MODEL / FT_CLAUDE_EFFORT let unattended runs that don't pass
+ * --model/--effort (e.g. sync-youtube via the saved default engine) pin both.
+ */
+function resolveClaudeModel(profileModel: string | undefined): string | undefined {
+  return cleanOptional(profileModel) ?? cleanOptional(process.env.FT_CLAUDE_MODEL);
+}
+
 function resolve(name: string, profile: EngineRunProfile = {}): ResolvedEngine {
   const model = name === 'grok'
     ? resolveGrokModel(profile.model)
     : name === 'agy'
       ? resolveAgyModel(profile.model)
-      : cleanOptional(profile.model);
-  const effort = cleanOptional(profile.effort);
+      : name === 'claude'
+        ? resolveClaudeModel(profile.model)
+        : cleanOptional(profile.model);
+  const effort = cleanOptional(profile.effort)
+    ?? (name === 'claude' ? cleanOptional(process.env.FT_CLAUDE_EFFORT) : undefined);
   // Web search is only meaningful for grok today; ignore the flag elsewhere.
   const webSearch = name === 'grok' && Boolean(profile.webSearch);
   return {
