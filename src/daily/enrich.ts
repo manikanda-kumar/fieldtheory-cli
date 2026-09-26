@@ -28,7 +28,7 @@ export interface EnrichThinItemsOptions {
   limit?: number;
   now?: Date;
   onMissingKey?: () => void;
-  /** Let a search-capable engine summarize auth-walled X links from their URL and saved context. */
+  /** Let a search-capable engine (grok, claude) ground every X link, not only status posts read via x.pcstyle.dev. */
   webSearch?: boolean;
   /**
    * Summarize through a local engine CLI (claude, codex, grok, droid, agy)
@@ -68,7 +68,7 @@ export interface EnrichBackfillOptions extends EnrichThinItemsOptions {
 
 /** Fetch/cache summaries for otherwise-thin daily items. This function never throws. */
 export async function enrichThinItems(items: CanonicalRecentItem[], options: EnrichThinItemsOptions = {}): Promise<EnrichThinItemsResult> {
-  const eligible = items.filter((item) => isEligible(item, canEnrichX(options)));
+  const eligible = items.filter((item) => isEligible(item, canEnrichX(options), true));
   if (eligible.length === 0) return { enrichedCount: 0, summaries: new Map() };
   if (!options.llm && !options.engine?.engine && !openCodeApiKey()) {
     options.onMissingKey?.();
@@ -130,11 +130,18 @@ export function isEnrichmentEligible(item: CanonicalRecentItem): boolean {
   return isEligible(item, false);
 }
 
-function isEligible(item: CanonicalRecentItem, allowX: boolean): boolean {
+/**
+ * `allowX` admits every X link (a search-capable engine grounds it); `allowXPosts`
+ * admits only status URLs, whose text is read through the public x.pcstyle.dev
+ * reader. Only the daily digest sets `allowXPosts`, so backfill never sends the
+ * whole archive of old X bookmarks to that third-party service.
+ */
+function isEligible(item: CanonicalRecentItem, allowX: boolean, allowXPosts = false): boolean {
   if (contentLength(item.searchText) >= THIN_CONTENT_CHARS || !item.canonicalUrl) return false;
   try {
     const url = new URL(item.canonicalUrl);
-    return (url.protocol === 'http:' || url.protocol === 'https:') && !isExcludedEnrichmentUrl(url, allowX);
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && !isExcludedEnrichmentUrl(url, allowX || (allowXPosts && isXStatusUrl(url)));
   } catch {
     return false;
   }
@@ -151,6 +158,10 @@ function isExcludedEnrichmentUrl(url: URL, allowX: boolean): boolean {
 
 function isXUrl(url: URL): boolean {
   return /(^|\.)(x|twitter)\.com$/.test(url.hostname.toLowerCase());
+}
+
+function isXStatusUrl(url: URL): boolean {
+  return isXUrl(url) && /^\/[^/]+\/status\/\d+/.test(url.pathname);
 }
 
 function shouldAttempt(_url: string, cached: LinkEnrichmentEntry | undefined, now: Date, retryFailed = false): boolean {
@@ -245,7 +256,7 @@ async function enrichEligibleItems(
     let update: LinkEnrichmentEntry;
     try {
       const material = isXUrl(new URL(url))
-        ? [`URL: ${url}`, item.displayTitle && `Title: ${item.displayTitle}`, `Saved context: ${item.searchText}`].filter(Boolean).join('\n')
+        ? await extractXMaterial(item, fetchFn)
         : await retryTransient('fetch', () => extractPageMaterial(url, fetchFn));
       await delay(250);
       const summary = await retryTransient('llm', async () => {
@@ -374,6 +385,39 @@ function topErrorKinds(entries: LinkEnrichmentEntry[]): Array<{ error: string; c
 }
 
 function delay(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+const X_READER_URL = 'https://x.pcstyle.dev/api/convert';
+const X_POST_TEXT_LIMIT = 4_000;
+
+/**
+ * X pages are auth-walled, so status URLs are read as Markdown (post plus
+ * thread) through the public x.pcstyle.dev reader. Any failure, and non-status
+ * links such as /i/article/, fall back to the saved context so a
+ * search-capable engine can still ground them.
+ */
+async function extractXMaterial(item: CanonicalRecentItem, fetchFn: FetchFn): Promise<string> {
+  const url = item.canonicalUrl!;
+  const saved = [`URL: ${url}`, item.displayTitle && `Title: ${item.displayTitle}`, `Saved context: ${item.searchText}`].filter(Boolean).join('\n');
+  if (!isXStatusUrl(new URL(url))) return saved;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetchFn(`${X_READER_URL}?url=${encodeURIComponent(url)}`, {
+      signal: controller.signal,
+      headers: { Accept: 'text/markdown', 'User-Agent': 'Mozilla/5.0 (compatible; FieldTheoryDigest/1.0)' },
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      return saved;
+    }
+    const text = (await readLimitedBody(response, BODY_LIMIT_BYTES)).trim();
+    return text ? `URL: ${url}\nPost:\n${text.slice(0, X_POST_TEXT_LIMIT)}` : saved;
+  } catch {
+    return saved;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function extractPageMaterial(url: string, fetchFn: FetchFn): Promise<string> {
   const controller = new AbortController();

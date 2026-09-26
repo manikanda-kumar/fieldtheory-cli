@@ -941,6 +941,44 @@ test('daily: grounded enrichment summarizes thin X links from saved context with
   });
 });
 
+test('daily: thin X posts are read through x.pcstyle.dev without grounding; backfill still excludes them', async () => {
+  await withIsolatedDataDir(async () => {
+    const post = (id: string): CanonicalRecentItem => ({
+      id,
+      canonicalUrl: `https://x.com/alice/status/${id}`,
+      displayTitle: 'alice',
+      searchText: `short post ${id}`,
+      sources: ['x'],
+      firstSavedAt: null,
+      lastSavedAt: null,
+      primaryCategory: null,
+      primaryDomain: null,
+    });
+    assert.equal(isEnrichmentEligible(post('1')), false);
+
+    const requested: string[] = [];
+    const prompts: string[] = [];
+    const result = await enrichThinItems([post('1'), post('2')], {
+      fetch: async (input) => {
+        const url = String(input);
+        requested.push(url);
+        return url.includes('status%2F1')
+          ? new Response('## Post — Alice\n\nFull thread text about eval harnesses.', { status: 200 })
+          : new Response('', { status: 503 });
+      },
+      llm: async (value) => {
+        prompts.push(value);
+        return '<summary>Summary.</summary>';
+      },
+    });
+
+    assert.equal(result.enrichedCount, 2);
+    assert.ok(requested.every((url) => url.startsWith('https://x.pcstyle.dev/api/convert?url=https%3A%2F%2Fx.com%2Falice%2Fstatus%2F')));
+    assert.ok(prompts.some((value) => /Full thread text about eval harnesses/.test(value)));
+    assert.ok(prompts.some((value) => /Saved context: short post 2/.test(value)), 'reader failure falls back to saved context');
+  });
+});
+
 test('daily: retries a transient 429 fetch and records failure errors without retrying 404s', async () => {
   await withIsolatedDataDir(async () => {
     const item: CanonicalRecentItem = { id: 'retry', canonicalUrl: 'https://example.com/retry', displayTitle: 'retry', searchText: 'https://example.com/retry', sources: [], firstSavedAt: null, lastSavedAt: null, primaryCategory: null, primaryDomain: null };

@@ -479,6 +479,15 @@ test('resolveEngine: claude respects FT_CLAUDE_MODEL and FT_CLAUDE_EFFORT', asyn
     const fromFlag = await resolveEngine({ override: 'claude', model: 'sonnet', effort: 'high' });
     assert.equal(fromFlag.model, 'sonnet');
     assert.equal(fromFlag.effort, 'high');
+
+    assert.ok(!args.includes('--allowedTools'));
+    const withSearch = await resolveEngine({ override: 'claude', webSearch: true });
+    assert.equal(withSearch.webSearch, true);
+    const searchArgs = withSearch.config.args('the prompt', withSearch);
+    const allowed = searchArgs.indexOf('--allowedTools');
+    assert.equal(searchArgs[allowed + 1], 'WebSearch,WebFetch');
+    assert.ok(searchArgs[allowed + 2].startsWith('--'), 'variadic --allowedTools must not swallow the prompt');
+    assert.equal(searchArgs.at(-1), 'the prompt');
   } finally {
     process.env.PATH = origPath;
     if (origModel !== undefined) process.env.FT_CLAUDE_MODEL = origModel;

@@ -64,8 +64,11 @@ export interface EngineConfig {
 const KNOWN_ENGINES: Record<string, EngineConfig> = {
   claude: {
     bin: 'claude',
+    // Web search/fetch tools are denied in headless mode unless allowed;
+    // --allowedTools is variadic, so it must precede a flag, not the prompt.
     args: (p, engine, system) => [
       '-p',
+      ...(engine?.webSearch ? ['--allowedTools', 'WebSearch,WebFetch'] : []),
       '--output-format',
       'text',
       ...(system ? ['--system-prompt', system] : []),
@@ -283,8 +286,8 @@ function resolve(name: string, profile: EngineRunProfile = {}): ResolvedEngine {
         : cleanOptional(profile.model);
   const effort = cleanOptional(profile.effort)
     ?? (name === 'claude' ? cleanOptional(process.env.FT_CLAUDE_EFFORT) : undefined);
-  // Web search is only meaningful for grok today; ignore the flag elsewhere.
-  const webSearch = name === 'grok' && Boolean(profile.webSearch);
+  // Web search is only wired for grok and claude; ignore the flag elsewhere.
+  const webSearch = (name === 'grok' || name === 'claude') && Boolean(profile.webSearch);
   return {
     name,
     config: KNOWN_ENGINES[name],
