@@ -83,6 +83,30 @@ test('youtube state round-trips through load and save', async () => {
   });
 });
 
+test('youtube state relocates standard Mac/Linux artifact paths without rewriting saved state', async () => {
+  await withTempEnv(async ({ dataDir, libraryDir }) => {
+    const state: YoutubeState = { version: 1, playlists: {}, videos: {} };
+    markVideo(state, 'v1', {
+      status: 'done', contentHash: 'preserved', artifacts: {
+        notesPath: '/Users/old/.fieldtheory/library/youtube/2026-07/v1.md',
+        audioPath: '/home/other/.fieldtheory/bookmarks/youtube/artifacts/v1/audio.mp3',
+        thumbnailPath: 'https://example.com/image.jpg',
+        customPath: '/tmp/custom.md',
+        unsafePath: '/Users/old/.fieldtheory/library/youtube/../outside.md',
+      },
+    });
+    await saveYoutubeState(state);
+    const loaded = await loadYoutubeState();
+    assert.deepEqual(loaded.videos.v1.artifacts, {
+      ...state.videos.v1.artifacts,
+      notesPath: path.join(libraryDir, 'youtube/2026-07/v1.md'),
+      audioPath: path.join(dataDir, 'youtube/artifacts/v1/audio.mp3'),
+    });
+    assert.equal(shouldProcess(loaded, 'v1', 'preserved', false), false);
+    assert.deepEqual(JSON.parse(await fs.readFile(youtubeStatePath(), 'utf8')), state);
+  });
+});
+
 test('youtube state update reclaims stale lock from dead pid', async () => {
   await withTempEnv(async () => {
     await fs.mkdir(path.dirname(youtubeStatePath()), { recursive: true });

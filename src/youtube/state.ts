@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { readJson, writeJson, pathExists } from '../fs.js';
-import { youtubeLibraryDir, youtubeStatePath } from '../paths.js';
+import { youtubeDir, youtubeLibraryDir, youtubeStatePath } from '../paths.js';
 import type { YoutubeShadow } from './shadow.js';
 
 const LOCK_STALE_MS = 10 * 60 * 1000;
@@ -60,10 +60,20 @@ export async function loadYoutubeState(): Promise<YoutubeState> {
 
   const videos: Record<string, YoutubeVideoState> = {};
   for (const [videoId, video] of Object.entries(state.videos ?? {})) {
+    const artifacts = { ...video.artifacts };
+    // Legacy state stores absolute home paths. Resolve the standard portable
+    // data layout on this machine without changing hashes or forcing a resync.
+    for (const [key, value] of Object.entries(artifacts)) {
+      const match = value?.match(/^\/(?:Users|home)\/[^/]+\/\.fieldtheory\/(library\/youtube|bookmarks\/youtube)\/(.+)$/);
+      if (match && !match[2].split('/').includes('..')) {
+        const root = match[1] === 'library/youtube' ? youtubeLibraryDir() : youtubeDir();
+        artifacts[key] = path.join(root, match[2]);
+      }
+    }
     videos[videoId] = {
       ...video,
       status: video.status,
-      artifacts: video.artifacts ?? {},
+      artifacts,
       updatedAt: video.updatedAt,
     };
   }

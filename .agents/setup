@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Install software only. Private data and user authentication belong to runtime,
+# not to a reusable project snapshot.
+root="$(dirname "$(dirname "$(realpath "$0")")")"
+export PATH="$HOME/.local/bin:$PATH"
+node -e 'if (Number(process.versions.node.split(".")[0]) < 20) process.exit(1)'
+if ! command -v git-lfs >/dev/null; then
+  sudo apt-get update -qq
+  sudo apt-get install -y git-lfs
+fi
+if ! command -v yt-dlp >/dev/null; then
+  uv tool install 'yt-dlp[default]'
+fi
+npm ci --prefix "$root" --no-audit --no-fund
+npm run build --prefix "$root"

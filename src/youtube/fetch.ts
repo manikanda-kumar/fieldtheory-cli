@@ -75,7 +75,7 @@ export async function fetchVideo(videoId: string, options: FetchVideoOptions = {
   let segments: TranscriptSegment[] = [];
   let frames: FrameRef[] | null = null;
 
-  // Rung 1: cookie/impersonation-armed yt-dlp captions (manual subs first, then auto).
+  // Rung 1: cookie/impersonation-armed yt-dlp captions (original English first).
   // This leads the ladder because it carries auth that the bare timedtext endpoint cannot.
   if (hasCommand('yt-dlp')) {
     const vtt = await fetchYtDlpTranscript(videoId, videoUrl, runCommandWithRetry, options.ytDlp).catch(() => '');
@@ -309,24 +309,31 @@ async function fetchYtDlpTranscript(videoId: string, videoUrl: string, runComman
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'ft-youtube-subs-'));
   try {
     const outputTemplate = path.join(tempDir, '%(id)s.%(ext)s');
-    const stdout = await runCommandImpl('yt-dlp', [
-      ...ytDlpAccessArgs(ytDlp),
-      '--write-subs',
-      '--write-auto-sub',
-      '--sub-langs',
-      'en.*,en-orig,en',
-      '--sub-format',
-      'vtt',
-      '--skip-download',
-      '--output',
-      outputTemplate,
-      videoUrl,
-    ]).catch(() => '');
-    if (parseVttTranscript(stdout).length) return stdout;
+    // Request original English first: a broad en.* request can try a translated
+    // track first and abort on its 429 before downloading the available original.
+    for (const languages of ['en-orig', 'en.*,en']) {
+      const stdout = await runCommandImpl('yt-dlp', [
+        ...ytDlpAccessArgs(ytDlp),
+        '--write-subs',
+        '--write-auto-sub',
+        '--sub-langs',
+        languages,
+        '--sub-format',
+        'vtt',
+        '--skip-download',
+        '--output',
+        outputTemplate,
+        videoUrl,
+      ]).catch(() => '');
+      if (parseVttTranscript(stdout).length) return stdout;
 
-    const files = await readdir(tempDir).catch(() => []);
-    const subtitleFile = files.find((file) => file.endsWith('.vtt') && (file.startsWith(videoId) || files.length === 1));
-    return subtitleFile ? await readFile(path.join(tempDir, subtitleFile), 'utf8') : '';
+      const files = await readdir(tempDir).catch(() => []);
+      for (const file of files.filter((file) => file.endsWith('.vtt') && (file.startsWith(videoId) || files.length === 1))) {
+        const vtt = await readFile(path.join(tempDir, file), 'utf8');
+        if (parseVttTranscript(vtt).length) return vtt;
+      }
+    }
+    return '';
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
   }

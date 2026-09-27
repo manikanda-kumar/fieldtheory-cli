@@ -128,6 +128,25 @@ test('fetchVideo passes yt-dlp browser cookies and impersonation to metadata and
   }
 });
 
+test('fetchVideo requests original English before broader tracks and falls back when absent', async () => {
+  for (const originalAvailable of [true, false]) {
+    const requested: string[] = [];
+    const result = await fetchVideo('v1', {
+      hasCommand: (command) => command === 'yt-dlp',
+      fetchText: async () => '',
+      runCommand: async (_command, args) => {
+        if (args.includes('-J')) return JSON.stringify({ title: 'Talk', duration: 12 });
+        const language = args[args.indexOf('--sub-langs') + 1];
+        requested.push(language);
+        if (language === 'en-orig' && !originalAvailable) return '';
+        return `WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n${language}`;
+      },
+    });
+    assert.deepEqual(requested, originalAvailable ? ['en-orig'] : ['en-orig', 'en.*,en']);
+    assert.equal(result.transcriptText, originalAvailable ? 'en-orig' : 'en.*,en');
+  }
+});
+
 test('fetchVideo lets yt-dlp download subtitle files when direct timedtext fetch is blocked', async () => {
   const commands: Array<{ command: string; args: string[] }> = [];
   const result = await fetchVideo('v1', {
