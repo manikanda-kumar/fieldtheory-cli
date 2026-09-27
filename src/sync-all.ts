@@ -7,7 +7,7 @@ export interface SyncAllOptions {
   only?: string;
   skip?: string[];
   xList?: string;
-  playlist?: string;
+  playlist?: string | string[];
   youtubeLimit?: number;
   noSynthesis?: boolean;
   classify?: boolean;
@@ -70,6 +70,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
   }
   const enabled = (source: SyncAllSource): boolean => (!only || only.has(source)) && !skip.has(source);
   const classify = Boolean(options.classify && !options.noSynthesis);
+  const playlists = typeof options.playlist === 'string' ? [options.playlist] : options.playlist ?? [];
 
   const steps: SyncAllStep[] = [
     {
@@ -162,17 +163,17 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       command: ['sync-projects'],
       enabled: enabled('projects'),
     },
-    {
-      id: 'youtube',
-      label: 'Sync YouTube playlist',
+    ...(playlists.length ? playlists : ['']).map((playlist, index): SyncAllStep => ({
+      id: index === 0 ? 'youtube' : `youtube-${index + 1}`,
+      label: playlists.length > 1 ? `Sync YouTube playlist ${playlist}` : 'Sync YouTube playlist',
       source: 'youtube',
-      command: options.playlist
-        ? ['sync-youtube', '--playlist', options.playlist, '--limit', String(options.youtubeLimit ?? 8)]
+      command: playlist
+        ? ['sync-youtube', '--playlist', playlist, '--limit', String(options.youtubeLimit ?? 8)]
         : ['sync-youtube', '--limit', String(options.youtubeLimit ?? 8)],
-      enabled: enabled('youtube') && Boolean(options.playlist),
+      enabled: enabled('youtube') && Boolean(playlist),
       retryable: true,
-      reason: options.playlist ? undefined : 'pass --playlist <url-or-id> to include',
-    },
+      reason: playlist ? undefined : 'pass --playlist <url-or-id> to include',
+    })),
     {
       id: 'canonical-index',
       label: 'Rebuild unified canonical index',

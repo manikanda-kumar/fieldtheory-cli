@@ -1377,8 +1377,8 @@ export function buildCli() {
     .description('Run the daily unified refresh: X, Raindrop, GitHub Stars, projects, optional X list/YouTube, then canonical rebuild')
     .option('--dry-run', 'Show the planned refresh steps without running them', false)
     .option('--x-list <id>', 'Include a 24h X list digest refresh')
-    .option('--playlist <url-or-id>', 'Include a capped YouTube playlist sync')
-    .option('--youtube-limit <n>', 'Max YouTube videos to process when --playlist is set', (v: string) => Number(v), 8)
+    .option('--playlist <url-or-id>', 'Include a capped YouTube playlist sync (repeat for multiple playlists)', collectCsvOption, [])
+    .option('--youtube-limit <n>', 'Consider the first N entries per playlist (already processed videos are skipped)', (v: string) => Number(v), 8)
     .option('--skip <sources>', 'Comma-separated sources to skip: following,x,x-list,raindrop,github-stars,rss,projects,youtube', collectCsvOption, [])
     .option('--only <sources>', 'Comma-separated sources to run before the required canonical rebuild')
     .option('--no-synthesis', 'Skip canonical Markdown export after rebuilding the unified index')
@@ -1392,7 +1392,7 @@ export function buildCli() {
         only: stringOption(options.only),
         skip: options.skip as string[],
         xList: stringOption(options.xList),
-        playlist: stringOption(options.playlist),
+        playlist: options.playlist as string[],
         youtubeLimit: typeof options.youtubeLimit === 'number' && Number.isFinite(options.youtubeLimit) ? options.youtubeLimit : 8,
         noSynthesis: options.synthesis === false,
         classify: Boolean(options.classify),

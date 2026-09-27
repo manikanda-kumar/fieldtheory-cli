@@ -68,6 +68,38 @@ test('buildSyncAllPlan runs the daily digest step in the synthesis tail', () => 
   assert.ok(ids.indexOf('daily') > ids.indexOf('canonical-md'), 'daily runs after canonical markdown export');
 });
 
+test('multiple YouTube playlists run sequentially before the synthesis tail without force', async () => {
+  const commands: string[][] = [];
+  await runSyncAll({ only: 'youtube', playlist: ['PLsaved', 'UUchannel'], youtubeLimit: 20 }, {
+    async run(command) {
+      commands.push(command);
+      return { exitCode: 0 };
+    },
+  });
+  assert.deepEqual(commands, [
+    ['sync-youtube', '--playlist', 'PLsaved', '--limit', '20'],
+    ['sync-youtube', '--playlist', 'UUchannel', '--limit', '20'],
+    ['index'],
+    ['md', '--canonical'],
+    ['daily', '--write', '--epub'],
+  ]);
+});
+
+test('multiple YouTube playlists honor source filters and dry runs', async () => {
+  for (const filter of [{ skip: ['youtube'] }, { only: 'projects' }]) {
+    const plan = buildSyncAllPlan({ ...filter, playlist: ['PLsaved', 'UUchannel'] });
+    const youtube = plan.filter((step) => step.source === 'youtube');
+    assert.equal(youtube.length, 2);
+    assert.ok(youtube.every((step) => !step.enabled));
+  }
+  const result = await runSyncAll({ dryRun: true, only: 'youtube', playlist: ['PLsaved', 'UUchannel'] }, {
+    async run() { throw new Error('Dry run must not launch commands'); },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.steps.filter((step) => step.source === 'youtube' && step.status === 'planned').length, 2);
+  assert.equal(new Set(result.steps.map((step) => step.id)).size, result.steps.length);
+});
+
 test('buildSyncAllPlan honors --only and --skip source filters', () => {
   const plan = buildSyncAllPlan({ only: 'github-stars,raindrop,projects,youtube', skip: ['youtube'], noSynthesis: true });
 
