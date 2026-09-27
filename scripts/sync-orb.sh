@@ -2,12 +2,12 @@
 set -euo pipefail
 umask 077
 
-# A local-output pilot, deliberately not the Mac wrapper. Never publishes data,
-# imports browser tabs, scans local projects, or changes schedules.
+# Never imports browser tabs, scans local projects, or changes schedules.
+# --run is local-only; --daily requires the verified single-writer cutover marker.
 root="$(dirname "$(dirname "$(realpath "$0")")")"
 mode="${1:---check}"
-if [[ $# -gt 1 || ! "$mode" =~ ^--(check|dry-run|run)$ ]]; then
-  echo 'Usage: scripts/sync-orb.sh [--check|--dry-run|--run]' >&2
+if [[ $# -gt 1 || ! "$mode" =~ ^--(check|dry-run|run|daily)$ ]]; then
+  echo 'Usage: scripts/sync-orb.sh [--check|--dry-run|--run|--daily]' >&2
   exit 2
 fi
 export PATH="$HOME/.local/bin:$PATH"
@@ -32,7 +32,7 @@ fi
 
 failed=0
 missing() { echo "NOT READY: $*" >&2; failed=1; }
-for tool in node git git-lfs gh yt-dlp claude flock; do
+for tool in node git git-lfs gh yt-dlp claude flock python3; do
   command -v "$tool" >/dev/null || missing "install $tool"
 done
 [[ -f "$root/dist/cli.js" ]] || missing 'build CLI with npm run build'
@@ -55,9 +55,32 @@ if ! node --input-type=module -e '
 fi
 [[ "$failed" == 0 ]] || exit 1
 echo 'Preflight passed (credentials present; source access still needs a live pilot).'
-[[ "$mode" == --run ]] || exit 0
+[[ "$mode" != --check ]] || exit 0
 
 # This only protects writers inside THIS orb; Mac cutover is a separate step.
 exec 9>"$HOME/.fieldtheory/sync-orb.lock"
 flock -n 9 || { echo 'Another orb sync is running.' >&2; exit 1; }
-node "$root/dist/cli.js" "${args[@]}"
+if [[ "$mode" == --run ]]; then
+  exec node "$root/dist/cli.js" "${args[@]}"
+fi
+[[ -f "$HOME/.config/fieldtheory/orb-canonical-writer" ]] || {
+  echo 'Daily publication blocked: Mac-to-orb writer handoff has not been verified.' >&2
+  exit 1
+}
+node "$root/scripts/orb-data.mjs" refresh
+bash "$root/scripts/sync-orb.sh" --check
+rc=0
+node "$root/dist/cli.js" "${args[@]}" || rc=$?
+# sync-rss currently exits zero on individual feed failures. Surface them as a
+# degraded daily run without throwing away successful ingestion.
+node --input-type=module -e '
+  import fs from "node:fs";
+  const meta = JSON.parse(fs.readFileSync(`${process.env.HOME}/.fieldtheory/bookmarks/rss/meta.json`, "utf8"));
+  const failed = meta.feeds.filter(feed => feed.lastError);
+  for (const feed of failed) console.error(`RSS failure: ${feed.name}: ${feed.lastError}`);
+  if (failed.length) process.exit(1);
+' || rc=1
+# Preserve successful source updates even if another source failed. The exit code
+# and per-feed log remain visible; publication does not turn partial success green.
+node "$root/scripts/orb-data.mjs" publish
+exit "$rc"

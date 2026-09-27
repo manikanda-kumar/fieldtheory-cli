@@ -73,3 +73,22 @@ test('orb rejects unknown arguments, prevents overlap, and propagates pipeline f
   });
   assert.equal(failed.status, 7);
 });
+
+test('orb daily mode requires handoff and reports RSS failures after publishing good data', { skip: process.platform !== 'linux' }, (t) => {
+  const f = fixture(t);
+  const blocked = f.run('--daily');
+  assert.equal(blocked.status, 1);
+  assert.match(blocked.stderr, /handoff has not been verified/);
+  assert.doesNotMatch(blocked.stdout, /"args"/);
+  fs.mkdirSync(path.join(f.home, '.config/fieldtheory'), { recursive: true });
+  fs.writeFileSync(path.join(f.home, '.config/fieldtheory/orb-canonical-writer'), 'verified');
+  fs.mkdirSync(path.join(f.home, '.fieldtheory/bookmarks/rss'));
+  fs.writeFileSync(path.join(f.home, '.fieldtheory/bookmarks/rss/meta.json'), JSON.stringify({ feeds: [
+    { name: 'working', lastError: null }, { name: 'blocked', lastError: 'HTTP 403' },
+  ] }));
+  const result = f.run('--daily');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /RSS failure: blocked: HTTP 403/);
+  const calls = result.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line).args);
+  assert.deepEqual(calls.map(args => args[1]), ['refresh', 'sync-all', 'publish']);
+});

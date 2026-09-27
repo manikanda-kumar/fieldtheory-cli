@@ -51,3 +51,26 @@ nonzero even though later steps may produce a partial digest; inspect its report
 
 No schedule is enabled by these scripts. Do not add the full job to
 `.agents/resume`: a manual wake must not accidentally start another daily run.
+
+## Production entry point
+
+After the verified handoff, create the machine-local marker
+`~/.config/fieldtheory/orb-canonical-writer` recording the handoff evidence.
+Only then use `scripts/sync-orb.sh --daily`. It holds the same lock across
+refresh, ingestion, and publication. It refuses dirty or locally-ahead data
+checkouts before refreshing, fast-forwards from origin/main, hydrates LFS, and
+rechecks prerequisites. It publishes only pipeline-owned bookmarks/library data,
+excluding project snapshots and credential-like paths. Existing staged changes,
+SQLite sidecars, failed SQLite integrity checks, or remote races stop publication;
+local output is retained for recovery. Python 3 supplies the SQLite integrity check.
+
+Partial source updates are preserved and published, but source exit failures and
+RSS per-feed failures produce a nonzero daily exit. Read the per-source log, not
+just the final success line. Do not edit a shell script while it is running.
+
+The CLI currently labels rolling digests with the UTC date, even when TZ is set.
+At 09:00 IST that matches the Indian calendar date; an overnight manual pilot can
+reuse the previous UTC day's file. Existing digests are not overwritten by normal
+sync. Validate an explicit `daily --write --epub --force` pilot separately, and
+preserve the Mac's original digest/watermark during initial data reconciliation
+so the next scheduled digest includes all unreviewed new saves.
