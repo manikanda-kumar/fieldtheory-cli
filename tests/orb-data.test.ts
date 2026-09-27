@@ -74,3 +74,67 @@ test('orb publication rejects a corrupt database without staging it', (t) => {
   assert.throws(() => publishData(f.root), /integrity check failed/);
   assert.equal(f.git('diff', '--cached', '--name-only'), '');
 });
+
+function collectorSnapshot(f: ReturnType<typeof fixture>) {
+  f.git('checkout', '-b', 'mac-collectors');
+  for (const [file, content] of Object.entries({
+    'bookmarks/projects/projects.jsonl': '{"repo":"new-project"}\n',
+    'bookmarks/projects/meta.json': '{"lastSyncedAt":"2026-09-28T02:30:00Z"}\n',
+    'library/projects/new.md': '# New Mac project\n',
+    'library/projects-active.md': '# Active projects\n',
+  })) {
+    fs.mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true });
+    fs.writeFileSync(path.join(f.root, file), content);
+  }
+}
+
+test('refresh imports only project snapshots, handles deletions, and publishes once before ingestion', (t) => {
+  const f = fixture(t);
+  fs.mkdirSync(path.join(f.root, 'library/projects'));
+  fs.writeFileSync(path.join(f.root, 'library/projects/old.md'), '# Retired\n');
+  f.git('add', '.'); f.git('commit', '-m', 'old project'); f.git('push');
+  const database = fs.readFileSync(path.join(f.root, 'bookmarks/bookmarks.db'));
+  collectorSnapshot(f);
+  fs.rmSync(path.join(f.root, 'library/projects/old.md'));
+  // The collector branch may carry stale canonical data and unrelated files.
+  fs.writeFileSync(path.join(f.root, 'bookmarks/bookmarks.db'), 'must not import');
+  fs.writeFileSync(path.join(f.root, 'bookmarks/items.jsonl'), 'must not import');
+  fs.writeFileSync(path.join(f.root, 'bookmarks/projects/cookies.json'), 'must not import');
+  f.git('add', '.'); f.git('commit', '-m', 'collector'); f.git('push', 'origin', 'mac-collectors');
+  f.git('checkout', 'main');
+  refreshData(f.root);
+  assert.deepEqual(fs.readFileSync(path.join(f.root, 'bookmarks/bookmarks.db')), database);
+  assert.equal(fs.readFileSync(path.join(f.root, 'bookmarks/items.jsonl'), 'utf8'), 'initial\n');
+  assert.equal(fs.existsSync(path.join(f.root, 'bookmarks/projects/cookies.json')), false);
+  assert.equal(fs.existsSync(path.join(f.root, 'library/projects/old.md')), false);
+  assert.equal(fs.readFileSync(path.join(f.root, 'library/projects/new.md'), 'utf8'), '# New Mac project\n');
+  assert.equal(f.git('diff', 'origin/mac-collectors', 'HEAD', '--', 'bookmarks/projects/projects.jsonl', 'bookmarks/projects/meta.json', 'library/projects', 'library/projects-active.md'), '');
+  assert.equal(f.git('status', '--porcelain'), '');
+  const commit = f.git('rev-parse', 'HEAD');
+  assert.equal(f.git('ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0], commit);
+  refreshData(f.root);
+  assert.equal(f.git('rev-parse', 'HEAD'), commit, 'unchanged collector creates no empty commit');
+  fs.writeFileSync(path.join(f.root, 'library/daily.md'), '# Digest\n');
+  assert.doesNotThrow(() => publishData(f.root), 'normal publication works after isolated project import');
+});
+
+test('refresh rejects absent, incomplete, or symlinked collector snapshots before staging', (t) => {
+  for (const failure of ['absent', 'incomplete', 'symlink']) {
+    const f = fixture(t);
+    const original = f.git('rev-parse', 'HEAD');
+    if (failure !== 'absent') {
+      collectorSnapshot(f);
+      if (failure === 'incomplete') fs.rmSync(path.join(f.root, 'bookmarks/projects/meta.json'));
+      else {
+        fs.rmSync(path.join(f.root, 'library/projects/new.md'));
+        fs.symlinkSync('/tmp/outside-projects', path.join(f.root, 'library/projects/new.md'));
+      }
+      f.git('add', '.'); f.git('commit', '-m', 'bad collector'); f.git('push', 'origin', 'mac-collectors');
+      f.git('checkout', 'main');
+    }
+    assert.throws(() => refreshData(f.root), /fetch failed|Incomplete collector|regular non-executable/);
+    assert.equal(f.git('status', '--porcelain'), '');
+    assert.equal(f.git('rev-parse', 'HEAD'), original);
+    assert.equal(f.git('ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0], original);
+  }
+});

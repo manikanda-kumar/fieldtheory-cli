@@ -12,6 +12,28 @@ function git(root, ...args) {
   return result.stdout.trimEnd();
 }
 
+function pushSnapshot(root) {
+  // Never merge a remote race, especially one involving the SQLite database.
+  git(root, 'push', 'origin', 'HEAD:main');
+  const local = git(root, 'rev-parse', 'HEAD');
+  const remote = git(root, 'ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0];
+  if (local !== remote) throw new Error('Remote main does not match the published snapshot.');
+  return local;
+}
+
+function projectFiles(root, ref) {
+  const files = new Set();
+  for (const entry of git(root, 'ls-tree', '-r', '-z', ref, '--',
+    'bookmarks/projects', 'library/projects', 'library/projects-active.md').split('\0').filter(Boolean)) {
+    const tab = entry.indexOf('\t');
+    const file = entry.slice(tab + 1);
+    if (!/^(?:bookmarks\/projects\/(?:projects\.jsonl|meta\.json)|library\/projects\/[^/]+\.md|library\/projects-active\.md)$/.test(file)) continue;
+    if (!entry.startsWith('100644 blob ')) throw new Error(`Project snapshot must be a regular non-executable file: ${file}`);
+    files.add(file);
+  }
+  return files;
+}
+
 export function refreshData(root) {
   if (git(root, 'branch', '--show-current') !== 'main') throw new Error('Data checkout must be on main.');
   if (git(root, 'status', '--porcelain')) throw new Error('Data checkout has unpublished edits; reconcile before refreshing.');
@@ -21,6 +43,20 @@ export function refreshData(root) {
   }
   git(root, 'merge', '--ff-only', 'origin/main');
   git(root, 'lfs', 'pull', '--include=bookmarks/bookmarks.db', '--exclude=');
+  // Import only the collector's project snapshots, never its DB or branch history.
+  git(root, 'fetch', 'origin', 'refs/heads/mac-collectors:refs/remotes/origin/mac-collectors');
+  const source = git(root, 'rev-parse', 'origin/mac-collectors');
+  const incoming = projectFiles(root, source);
+  for (const required of ['bookmarks/projects/projects.jsonl', 'bookmarks/projects/meta.json', 'library/projects-active.md']) {
+    if (!incoming.has(required)) throw new Error(`Incomplete collector snapshot: missing ${required}`);
+  }
+  const files = [...new Set([...projectFiles(root, 'HEAD'), ...incoming])];
+  git(root, '--literal-pathspecs', 'restore', '--source', source, '--staged', '--worktree', '--', ...files);
+  if (git(root, 'diff', '--cached', '--name-only')) {
+    git(root, 'diff', '--cached', '--check');
+    git(root, 'commit', '-m', `data: import Mac project snapshots from ${source}`);
+    pushSnapshot(root);
+  }
 }
 
 export function publishData(root) {
@@ -50,11 +86,7 @@ export function publishData(root) {
   }
   // A non-fast-forward push is a hard stop, never an invitation to merge DBs.
   // Git LFS's pre-push hook uploads the database before advancing main.
-  git(root, 'push', 'origin', 'HEAD:main');
-  const local = git(root, 'rev-parse', 'HEAD');
-  const remote = git(root, 'ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0];
-  if (local !== remote) throw new Error('Remote main does not match the published snapshot.');
-  return local;
+  return pushSnapshot(root);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
