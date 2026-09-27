@@ -64,6 +64,28 @@ excluding project snapshots and credential-like paths. Existing staged changes,
 SQLite sidecars, failed SQLite integrity checks, or remote races stop publication;
 local output is retained for recovery. Python 3 supplies the SQLite integrity check.
 
+### Mac collector exchange
+
+The Mac collector uses a separate checkout and publishes to `origin/mac-collectors`,
+never to `main`. Before ingestion, the orb refresh explicitly imports only:
+
+- `bookmarks/projects/projects.jsonl` and `bookmarks/projects/meta.json`
+- `library/projects/*.md` (direct children only) and `library/projects-active.md`
+
+Refresh commits and publishes this isolated snapshot to `main` before running the
+pipeline; it is **not** a read-only operation. It never merges collector history or
+imports that branch's database. Removed project notes are removed on `main` too.
+Missing required snapshot files, symlinks, executable files, or a failed push stop
+the run and retain local state for review. An unchanged snapshot adds no commit.
+Normal pipeline publication still rejects project edits.
+
+The Mac aims to publish at 08:00 IST. If it is asleep, the orb uses the latest
+previously published snapshot; `bookmarks/projects/meta.json:lastSyncedAt` records
+its age. Browser collectors publish to Raindrop independently. Neither collector
+must be online for the orb's 09:00 ingestion, provided the initial snapshot branch
+exists. A failed snapshot push leaves an unpublished commit: reconcile it before
+retrying, rather than bypassing the clean-checkout guard.
+
 Partial source updates are preserved and published, but source exit failures and
 RSS per-feed failures produce a nonzero daily exit. Read the per-source log, not
 just the final success line. Do not edit a shell script while it is running.
