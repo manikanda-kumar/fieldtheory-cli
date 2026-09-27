@@ -29,8 +29,10 @@ function fixture(t: test.TestContext) {
 
 test('orb publication commits only data and verifies the remote', (t) => {
   const f = fixture(t);
-  fs.writeFileSync(path.join(f.root, 'library/new.md'), '# New\n');
+  const prose = '# New\nImported tweet with trailing whitespace \n';
+  fs.writeFileSync(path.join(f.root, 'library/new.md'), prose);
   const commit = publishData(f.root);
+  assert.equal(fs.readFileSync(path.join(f.root, 'library/new.md'), 'utf8'), prose);
   assert.equal(f.git('rev-parse', 'HEAD'), commit);
   assert.equal(f.git('ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0], commit);
   assert.equal(f.git('status', '--porcelain'), '');
@@ -80,7 +82,7 @@ function collectorSnapshot(f: ReturnType<typeof fixture>) {
   for (const [file, content] of Object.entries({
     'bookmarks/projects/projects.jsonl': '{"repo":"new-project"}\n',
     'bookmarks/projects/meta.json': '{"lastSyncedAt":"2026-09-28T02:30:00Z"}\n',
-    'library/projects/new.md': '# New Mac project\n',
+    'library/projects/new.md': '# New Mac project \n',
     'library/projects-active.md': '# Active projects\n',
   })) {
     fs.mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true });
@@ -107,7 +109,7 @@ test('refresh imports only project snapshots, handles deletions, and publishes o
   assert.equal(fs.readFileSync(path.join(f.root, 'bookmarks/items.jsonl'), 'utf8'), 'initial\n');
   assert.equal(fs.existsSync(path.join(f.root, 'bookmarks/projects/cookies.json')), false);
   assert.equal(fs.existsSync(path.join(f.root, 'library/projects/old.md')), false);
-  assert.equal(fs.readFileSync(path.join(f.root, 'library/projects/new.md'), 'utf8'), '# New Mac project\n');
+  assert.equal(fs.readFileSync(path.join(f.root, 'library/projects/new.md'), 'utf8'), '# New Mac project \n');
   assert.equal(f.git('diff', 'origin/mac-collectors', 'HEAD', '--', 'bookmarks/projects/projects.jsonl', 'bookmarks/projects/meta.json', 'library/projects', 'library/projects-active.md'), '');
   assert.equal(f.git('status', '--porcelain'), '');
   const commit = f.git('rev-parse', 'HEAD');
