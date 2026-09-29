@@ -66,8 +66,12 @@ export function publishData(root) {
   const files = [...new Set([...tracked, ...untracked])];
   const committed = git(root, 'diff', '--name-only', '-z', 'origin/main...HEAD').split('\0').filter(Boolean);
   for (const file of [...files, ...committed]) {
+    // Exported article titles may discuss credentials or cookies. Limit this
+    // exception to the dated Markdown naming contract in library/bookmarks.
+    const bookmarkArticle = /^library\/bookmarks\/\d{4}-\d{2}-\d{2}-[^/]+\.md$/.test(file);
     if (!/^(bookmarks|library)\//.test(file) || /^(?:bookmarks|library)\/projects(?:\/|$)|^library\/projects-active\.md$/.test(file)
-      || /(?:^|\/)(?:\.env[^/]*|\.preferences|[^/]*(?:cookies|credentials|oauth-token|storage-state)[^/]*|[^/]*\.(?:pem|key))$/i.test(file)) {
+      || /(?:^|\/)(?:\.env[^/]*|\.preferences|[^/]*\.(?:pem|key))$/i.test(file)
+      || (!bookmarkArticle && /(?:^|\/)[^/]*(?:cookies|credentials|oauth-token|storage-state)[^/]*$/i.test(file))) {
       throw new Error(`Refusing to publish non-pipeline or sensitive path: ${file}`);
     }
   }

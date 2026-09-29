@@ -39,9 +39,36 @@ test('orb publication commits only data and verifies the remote', (t) => {
   assert.equal(publishData(f.root), commit, 'retry after successful publication adds no empty commit');
 });
 
+test('orb publication permits credential-related titles only in dated bookmark Markdown', (t) => {
+  const f = fixture(t);
+  const files = [
+    'library/bookmarks/2026-09-28-unknown-credentials-api-for-gemini-managed-agents.md',
+    'library/bookmarks/2026-09-29-example-browser-cookies.md',
+    'library/bookmarks/2026-09-29-example-oauth-token-guide.md',
+    'library/bookmarks/2026-09-29-example-storage-state-guide.md',
+  ];
+  for (const file of files) {
+    fs.mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true });
+    fs.writeFileSync(path.join(f.root, file), '# Public article\n');
+  }
+  publishData(f.root);
+  for (const file of files) assert.equal(f.git('show', `origin/main:${file}`), '# Public article');
+  assert.equal(f.git('status', '--porcelain'), '');
+});
+
 test('orb publication rejects unrelated files, credential paths, staged edits, and SQLite sidecars', (t) => {
   const f = fixture(t);
-  for (const file of ['sync-all.sh', 'bookmarks/credentials.json', 'library/projects/local.md', 'bookmarks/bookmarks.db-wal']) {
+  for (const file of [
+    'sync-all.sh', 'bookmarks/credentials.json', 'library/projects/local.md', 'bookmarks/bookmarks.db-wal',
+    'library/bookmarks/credentials.md', 'library/bookmarks/cookies.txt',
+    'library/bookmarks/2026-09-28-example-credentials.json',
+    'library/bookmarks/nested/2026-09-28-example-credentials.md',
+    'bookmarks/2026-09-28-example-credentials.md',
+    'library/daily/2026-09-28-example-credentials.md',
+    'library/bookmarks/oauth-token.json', 'library/bookmarks/storage-state.json',
+    'library/bookmarks/.env', 'library/bookmarks/.preferences',
+    'library/bookmarks/2026-09-28-example.pem', 'library/bookmarks/2026-09-28-example.key',
+  ]) {
     const dest = path.join(f.root, file);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, 'fixture');
