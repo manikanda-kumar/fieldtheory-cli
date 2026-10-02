@@ -37,6 +37,43 @@ export function truncateAtBoundary(value: string, maxChars: number): string {
   return `${head.replace(/[,;:—–-]$/, '').trimEnd()}…`;
 }
 
+/** Feed excerpts carry syndication boilerplate and undecoded entities that are not content. */
+function stripFeedBoilerplate(value: string): string {
+  return value
+    .replace(/The post .{1,200}? appeared first on .{1,80}?\.(?=\s|$)/g, ' ')
+    .replace(/\[(?:…|\.{3})\]/g, '…')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ');
+}
+
+/** Index-time titles of social posts are the first ~120 characters of the post. */
+const LONG_TITLE_CHARS = 100;
+
+/**
+ * True when the display title is only the opening of the saved text (a social
+ * post cut at index time) rather than a title in its own right.
+ */
+export function isTruncatedTitle(item: SummarizableItem): boolean {
+  const title = compact(item.displayTitle ?? '');
+  if (!title) return false;
+  const text = compact(item.searchText.replace(/https?:\/\/\S+/g, ' '));
+  let at = text.toLowerCase().indexOf(title.toLowerCase());
+  while (at !== -1) {
+    const rest = text.slice(at + title.length);
+    // Merged rows repeat the title before the body; that is not a continuation.
+    if (rest.trim().toLowerCase().startsWith(title.toLowerCase())) {
+      at = text.toLowerCase().indexOf(title.toLowerCase(), at + 1);
+      continue;
+    }
+    if (/^[\p{L}\p{N}]/u.test(rest)) return true;
+    if (title.length >= LONG_TITLE_CHARS && !/[.!?…]$/.test(title) && /^\s+\p{Ll}/u.test(rest)) return true;
+    at = text.toLowerCase().indexOf(title.toLowerCase(), at + 1);
+  }
+  return false;
+}
+
 /** The best concise summary already present in an item's saved text. */
 export function summarizeSavedText(item: SummarizableItem, maxChars: number): string {
   const truncate = (value: string): string => truncateAtBoundary(value, maxChars);
@@ -61,14 +98,19 @@ export function summarizeSavedText(item: SummarizableItem, maxChars: number): st
       seenLines.add(key);
       return true;
     });
-  const text = substantiveLines.length > 0
-    ? compact(substantiveLines.join(' '))
-    : compact(item.searchText.replace(/https?:\/\/\S+/g, ' '));
+  const text = compact(stripFeedBoilerplate(substantiveLines.length > 0
+    ? substantiveLines.join(' ')
+    : item.searchText.replace(/https?:\/\/\S+/g, ' ')));
   // Merged rows can repeat the title at the head of the text (title + source
   // text both carry it), so strip every leading occurrence, not just one.
   let withoutTitle = text;
+  // A title that is only the opening of a post must not be stripped: removing
+  // it leaves a body that starts mid-sentence ("…room to get creative").
+  const truncatedTitle = isTruncatedTitle(item);
   while (title && withoutTitle.toLowerCase().startsWith(title.toLowerCase())) {
-    withoutTitle = withoutTitle.slice(title.length);
+    const rest = withoutTitle.slice(title.length);
+    if (truncatedTitle && !rest.trim().toLowerCase().startsWith(title.toLowerCase())) break;
+    withoutTitle = rest;
     // Titles truncated mid-word at index time leave a dangling fragment
     // ("…pus" → "h to get…") at the start; drop it at the word boundary.
     if (/^\S/.test(withoutTitle)) withoutTitle = withoutTitle.replace(/^\S+/, '');
@@ -83,5 +125,6 @@ export function summarizeSavedText(item: SummarizableItem, maxChars: number): st
     .replace(/\b(?:[\w-]+\.)+[a-z]{2,}\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  if (truncatedTitle) return truncate(withoutTitle);
   return truncate(meaningfulRemainder.length >= 40 ? withoutTitle : title || text);
 }

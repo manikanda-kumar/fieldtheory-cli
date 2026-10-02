@@ -15,14 +15,15 @@ import {
   renderReadingSourceLinks,
 } from './reading-html.js';
 import { separateReadingLinks } from './reading-text.js';
-import { summarizeSavedText, truncateAtBoundary } from './summary.js';
+
 import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import type { DailyCollection } from './collect.js';
 import type { ConnectedItem, RelatedRef } from './connect.js';
 import type { DailyCoverage } from './coverage.js';
 import type { ReviewCard } from './review.js';
 import type { YoutubeShadowReview } from '../youtube/shadow.js';
-import { dailyItemDisplaySummary, displayDomain, extractYoutubeVideoId, type DailyTheme } from './synthesize.js';
+import { dailyItemBody, dailyItemHeadline, displayDomain, extractYoutubeVideoId, relatedTitle, themeLede, type DailyTheme } from './synthesize.js';
+import type { DailyGist } from './gist.js';
 
 const SNIPPET_CHARS = 220;
 
@@ -54,6 +55,7 @@ export function renderDigestHtml(
   reviewsQueued = 0,
   llmMeta: { engine?: string; error?: string } = {},
   shadowReviews: YoutubeShadowReview[] = [],
+  gists: Map<string, DailyGist> = new Map(),
 ): string {
   const itemById = new Map(collection.items.map((item) => [item.id, item]));
   const relatedById = new Map<string, RelatedRef>();
@@ -71,11 +73,11 @@ export function renderDigestHtml(
   const toItem = (item: CanonicalRecentItem, group: string, lead = false): HtmlItem => {
     const notes = notesLink(item.canonicalUrl);
     return {
-      title: oneLine(item.displayTitle ?? item.canonicalUrl ?? item.id),
+      title: oneLine(dailyItemHeadline(item, gists.get(item.id))),
       url: item.canonicalUrl ?? undefined,
       eyebrow: displayDomain(item.canonicalUrl) || item.sources.join(' · '),
       byline: [savedLabel(item, collection.date), item.primaryCategory ?? undefined].filter(Boolean).join(' · '),
-      body: htmlEscape(dailyItemDisplaySummary(item) ? summarizeSavedText(item, 700) : ''),
+      body: htmlEscape(dailyItemBody(item, gists.get(item.id))),
       extra: notes ? [notes] : undefined,
       lead,
       group,
@@ -101,7 +103,7 @@ export function renderDigestHtml(
       const notes = notesLink(ref.url);
       const refDomain = displayDomain(ref.url);
       relatedItems.push({
-        title: oneLine(ref.title ?? ref.url ?? id),
+        title: relatedTitle(ref.title ?? ref.url ?? id),
         url: ref.url ?? undefined,
         eyebrow: 'connects to an earlier save',
         byline: refDomain || undefined,
@@ -190,11 +192,7 @@ export function renderDigestHtml(
     }).join('');
 
   const overview = usedLlm && themes.length > 0
-    ? themes.slice(0, 3).map((theme) => {
-        const summary = oneLine(theme.summary);
-        const sentence = summary.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? summary;
-        return truncateAtBoundary(sentence, 300);
-      }).filter(Boolean).join(' ')
+    ? themes.slice(0, 3).map((theme) => themeLede(theme.summary)).filter(Boolean).join(' ')
     : 'Synthesis was unavailable, so today’s saves are organized by source. The reading list below includes all collected material.';
 
   const reflection = themes[0]?.title ?? collection.items[0]?.displayTitle ?? 'today’s material';

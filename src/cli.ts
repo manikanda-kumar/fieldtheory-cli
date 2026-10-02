@@ -1836,6 +1836,7 @@ export function buildCli() {
     .option('--ground', 'Allow web/X search for additional grounded notes (best with --engine grok)', false)
     .option('--no-ground', 'Disable web/X grounding even if FT_DAILY_GROUND is set')
     .option('--no-html', 'Skip the companion HTML page written beside the digest markdown')
+    .option('--no-gists', 'Skip the per-item LLM gists and render excerpts of the saved text')
     .option('--epub', 'Also write a Kindle/e-reader EPUB beside the digest markdown', false)
     .option('--json', 'JSON output')
     .action(safe(async (options, command) => {
@@ -1899,6 +1900,7 @@ export function buildCli() {
         }
         const result = await synthesizeDaily(collection, connected, {
           html: options.html !== false,
+          gists: options.gists !== false,
           epub: Boolean(options.epub),
           enrichedCount: enrichment.enrichedCount,
           enrichedItemIds: collection.items.filter((item) => item.canonicalUrl && enrichment.summaries.has(item.canonicalUrl)).map((item) => item.id),
@@ -1915,6 +1917,7 @@ export function buildCli() {
         console.log(`    themes: ${result.themes.length} (${result.usedLlm ? `llm via ${result.llmEngine ?? 'default'}` : 'mechanical'})${groundExternal ? ' · grounded' : ''}`);
         if (!result.usedLlm && result.llmError) console.log(`    llm failed: ${result.llmError}`);
         console.log(`    reviews: ${result.reviewsDue} due · ${result.reviewsQueued} queued for tomorrow`);
+        console.log(`    item gists: ${result.gistCount} of ${result.themedCount + result.alsoSavedCount}`);
         if (result.enrichedCount > 0) console.log(`    enriched links available: ${result.enrichedCount}`);
         if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);
         const interests = await writeInterests();
