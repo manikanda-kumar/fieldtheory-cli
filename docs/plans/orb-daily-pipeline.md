@@ -96,3 +96,65 @@ reuse the previous UTC day's file. Existing digests are not overwritten by norma
 sync. Validate an explicit `daily --write --epub --force` pilot separately, and
 preserve the Mac's original digest/watermark during initial data reconciliation
 so the next scheduled digest includes all unreviewed new saves.
+
+### Opt-in browser bookmark feed
+
+Create the local marker `~/.config/fieldtheory/orb-browser-bookmarks` after browser
+sign-in and a reviewed dry run. Daily mode then imports downloaded bookmarks into
+Raindrop before normal ingestion, under the existing writer lock. Other modes
+(`--check`, `--dry-run`, `--run`) never perform this external write.
+
+The importer reads both `Bookmarks` and `AccountBookmarks` in these orb profiles:
+
+- Chrome: `~/.config/fieldtheory-browser-profiles/chrome/Default`
+- Vivaldi: `~/.config/vivaldi/Default` (not the older custom launcher profile)
+
+Supervised headless browser services keep these files synced while the orb is
+awake; they pause with the orb. The feed reads the latest downloaded snapshot,
+not the cloud directly, and does not guarantee a new sync cycle after every wake.
+No tabs, cookies, passwords or browser settings are imported or modified.
+
+Preview or run manually while holding the same lock:
+
+```sh
+flock -n ~/.fieldtheory/sync-orb.lock node scripts/sync-browser-bookmarks.mjs --dry-run
+flock -n ~/.fieldtheory/sync-orb.lock node scripts/sync-browser-bookmarks.mjs --run
+```
+
+The first run includes historical bookmarks. Normalized URLs are deduplicated
+across browsers and the full Raindrop account. New links go into `Browser Bookmarks`
+with browser tags and their original save date (earliest across duplicates).
+Invalid dates and non-HTTP(S)/credentialed URLs are skipped. Existing Raindrop
+items are not edited; nothing is deleted. A bookmark removed from Raindrop but
+still present in a browser can be imported again on a later run.
+
+Writes are batched at 100. Only explicit HTTP 429 rejections are retried (at most
+twice, respecting Retry-After up to 90 seconds, or waiting 60 seconds if absent).
+Lost responses and other errors are never retried automatically. Re-inventory
+before retrying: a partial batch may already exist remotely.
+Failures remain visible as a nonzero daily exit, while successful imports can still
+flow through ingestion and publication. This manual feed alone writes only to
+Raindrop; the next daily run updates the private canonical index and library.
+
+### Chrome tabs from other devices
+
+The local `~/.config/fieldtheory/orb-chrome-tabs` marker enables
+`scripts/sync-chrome-tabs.mjs --run` after bookmarks and before Raindrop ingestion.
+The same script accepts `--dry-run` for a live browser/API read without imports;
+hold `~/.fieldtheory/sync-orb.lock` for manual calls as above.
+
+The supervised `fieldtheory-chrome-sync` service needs its existing signed-in
+profile plus `--remote-debugging-address=127.0.0.1 --remote-debugging-port=9225`.
+Never create a portal for this debugging port. `agent-browser` reads only the
+`chrome://history/syncedTabs` foreign-device cards in its own tab, then closes
+that tab and detaches. It does not open the remote links, read local history,
+change sync settings, or export credentials. Missing/empty foreign-session UI
+fails visibly (including when there are genuinely no remote tabs).
+
+Missing HTTP(S) links go into `Chrome Saved Tabs`, with `chrome`/`synced-tabs`
+tags and device provenance. Dates mean **last tab activity**, not bookmark save
+time. Stale devices are reported with Chrome's freshness label, not silently
+treated as current. This reads the browser's cached view (up to its native
+10-device limit); it cannot force a sleeping remote device to sync. Existing
+Raindrop URLs are skipped account-wide. The Vivaldi remote-tab pull remains
+one-off; its bookmarks are automated separately.

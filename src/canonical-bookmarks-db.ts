@@ -1289,6 +1289,7 @@ export function relatedSeedTerms(seedText: string, maxTerms = 8): string[] {
 export interface FindRelatedOptions {
   excludeIds?: string[];
   beforeIso?: string;
+  sinceIso?: string;
   limit?: number;
 }
 
@@ -1300,6 +1301,7 @@ export async function findRelatedCanonicalBookmarks(seedText: string, options: F
   const excludeIds = options.excludeIds ?? [];
   const limit = options.limit ?? 3;
   const beforeMs = options.beforeIso ? Date.parse(options.beforeIso) : null;
+  const sinceMs = options.sinceIso ? Date.parse(options.sinceIso) : null;
   const db = await openDb(twitterBookmarksIndexPath());
 
   try {
@@ -1310,9 +1312,10 @@ export async function findRelatedCanonicalBookmarks(seedText: string, options: F
       conditions.push(`c.id NOT IN (${excludeIds.map(() => '?').join(',')})`);
       params.push(...excludeIds);
     }
-    // beforeIso is applied in JS: first_saved_at mixes ISO and Twitter-format
-    // strings, so SQL string comparison would silently drop X bookmarks.
-    params.push(beforeMs == null ? limit : limit * 5);
+    // Date bounds are applied in JS: first_saved_at mixes ISO and Twitter
+    // formats. With a lower bound, don't let archived hits exhaust the limit
+    // before eligible current-year matches have been considered.
+    params.push(sinceMs != null ? -1 : beforeMs == null ? limit : limit * 5);
 
     const rows = db.exec(
       `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count, c.sources_json,
@@ -1325,9 +1328,10 @@ export async function findRelatedCanonicalBookmarks(seedText: string, options: F
       params,
     );
     const values = (rows[0]?.values ?? []).filter((row) => {
-      if (beforeMs == null) return true;
+      if (beforeMs == null && sinceMs == null) return true;
       const ms = parseSavedAt(row[7] == null ? null : String(row[7]));
-      return ms != null && ms < beforeMs;
+      return ms != null && (beforeMs == null || ms < beforeMs)
+        && (sinceMs == null || ms >= sinceMs);
     });
     return values.slice(0, limit).map(mapSearchRow);
   } finally {

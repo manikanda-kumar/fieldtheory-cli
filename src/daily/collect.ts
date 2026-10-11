@@ -146,12 +146,15 @@ export async function collectDaily(options: CollectDailyOptions = {}): Promise<D
   // Oldest-first means each capped rolling batch drains the backlog before
   // newer arrivals; the timestamp+id cursor below prevents equal timestamps
   // from causing a permanent tie at the watermark.
-  const windowItems = await getCanonicalBookmarksSince(
+  const windowItems = (await getCanonicalBookmarksSince(
     sinceIso,
     undefined,
     untilIso,
     useOverflowCursor ? meta.lastRunItemId : undefined,
-  );
+  )).filter((item) => item.firstSavedAt != null
+    // Imported archives stay searchable, but prior-year saves never consume
+    // a daily batch (including rolling windows spanning New Year).
+    && Date.parse(item.firstSavedAt) >= Date.parse(`${date.slice(0, 4)}-01-01T00:00:00.000Z`));
   const items = windowItems.slice(0, maxItems);
   const carriedOver = windowItems.length - items.length;
   const lastCollected = items.at(-1);

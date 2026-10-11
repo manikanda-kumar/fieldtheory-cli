@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { writeJson, writeJsonLines } from '../src/fs.js';
-import { rebuildCanonicalIndex, relatedSeedTerms, type CanonicalRecentItem } from '../src/canonical-bookmarks-db.js';
+import { getCanonicalBookmarksSince, rebuildCanonicalIndex, relatedSeedTerms, type CanonicalRecentItem } from '../src/canonical-bookmarks-db.js';
 import { readFile } from 'node:fs/promises';
 import { collectDaily } from '../src/daily/collect.js';
 import { connectDailyItems } from '../src/daily/connect.js';
@@ -274,6 +274,73 @@ test('daily: collect handles Twitter-format and offset-ISO timestamps in first_s
     const collection = await collectDaily({ date: '2026-07-06' });
     assert.equal(collection.items.length, 1);
     assert.equal(collection.items[0].canonicalUrl, 'https://github.com/a/offset-repo');
+  });
+});
+
+test('daily: imported prior-year bookmarks remain indexed but cannot enter summaries, connections, or recall', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    const now = new Date('2026-10-02T03:30:00.000Z');
+    await mkdir(path.join(dir, 'raindrop'), { recursive: true });
+    const records = [
+      // Enough high-scoring archive hits to catch filtering AFTER the FTS cap.
+      ...Array.from({ length: 20 }, (_, i) => ({
+        id: i, url: `https://example.com/archive-${i}`, title: 'archived-vector search embeddings',
+        excerpt: 'vector search embeddings', createdAt: '2025-06-01T00:00:00.000Z',
+      })),
+      { id: 20, url: 'https://example.com/current-context', title: 'Current context',
+        excerpt: 'A guide to vector search embeddings and retrieval implementations. '.repeat(5),
+        createdAt: '2026-01-01T05:30:00+05:30' },
+      { id: 21, url: 'https://example.com/fresh', title: 'vector search embeddings',
+        excerpt: 'Detailed vector search embeddings implementation notes. '.repeat(5),
+        createdAt: '2026-10-02T01:00:00.000Z' },
+    ].map((record) => ({ ...record, syncedAt: now.toISOString() }));
+    await writeJsonLines(path.join(dir, 'raindrop', 'bookmarks.jsonl'), records);
+    await rebuildCanonicalIndex();
+    const indexed = await getCanonicalBookmarksSince('2020-01-01T00:00:00.000Z');
+    assert.equal(indexed.length, 22, 'archive must remain in the library');
+    await queueReviewCards(indexed.filter((item) => item.canonicalUrl?.includes('/archive-')), now,
+      { initialDelayDays: 0, maxCards: 20 });
+
+    const collection = await collectDaily({ now });
+    assert.deepEqual(collection.items.map((item) => item.canonicalUrl), ['https://example.com/fresh']);
+    const connected = await connectDailyItems(collection);
+    assert.deepEqual(connected[0].related.map((ref) => ref.url), ['https://example.com/current-context']);
+    const prompts: string[] = [];
+    const result = await synthesizeDaily(collection, connected, { now, invoke: async (prompt) => {
+      prompts.push(prompt);
+      throw new Error('offline');
+    } });
+    assert.ok(prompts.length > 0);
+    for (const prompt of prompts) assert.doesNotMatch(prompt, /archived-vector|\/archive-/);
+    const digest = await readFileText(result.digestPath);
+    assert.doesNotMatch(digest, /archived-vector|\/archive-/);
+    assert.match(digest, /Current context/);
+    assert.equal(result.reviewsDue, 1, 'current-year recall is not crowded out by old cards');
+    assert.equal((await listDueReviewCards(now, 100)).length, 21, 'old recall cards are not deleted');
+  });
+});
+
+test('daily: prior-year saves do not consume New Year batch capacity or overflow cursors', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [
+      starRecord({ id: 1, fullName: 'a/prior-year', starredAt: '2025-12-31T23:59:59.000Z' }),
+      starRecord({ id: 2, fullName: 'a/year-boundary', starredAt: '2026-01-01T05:30:00+05:30' }),
+      starRecord({ id: 3, fullName: 'a/new-year', starredAt: '2026-01-01T01:00:00.000Z' }),
+    ]);
+    await rebuildCanonicalIndex();
+    const now = new Date('2026-01-01T12:00:00.000Z');
+    const first = await collectDaily({ now, maxItems: 1 });
+    assert.deepEqual(first.items.map((item) => item.canonicalUrl), ['https://github.com/a/year-boundary']);
+    assert.equal(first.carriedOver, 1);
+    assert.equal(Date.parse(first.nextWatermark), Date.parse('2026-01-01T00:00:00Z'));
+    ensureDailyDir();
+    await writeJson(dailyMetaPath(), { lastRunAt: first.nextWatermark, lastRunItemId: first.nextWatermarkItemId });
+    const second = await collectDaily({ now, maxItems: 1 });
+    assert.deepEqual(second.items.map((item) => item.canonicalUrl), ['https://github.com/a/new-year']);
+    assert.equal(second.carriedOver, 0);
+    assert.equal(second.nextWatermark, now.toISOString());
+    const historical = await collectDaily({ date: '2025-12-31', now });
+    assert.deepEqual(historical.items.map((item) => item.canonicalUrl), ['https://github.com/a/prior-year']);
   });
 });
 

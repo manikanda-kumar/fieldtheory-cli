@@ -96,10 +96,13 @@ async function writeReviewCards(cards: ReviewCard[]): Promise<void> {
  * yet come first, then the ones shown longest ago, so the whole backlog cycles
  * even when nobody runs `ft review grade`.
  */
-export async function listDueReviewCards(now: Date = new Date(), limit = 3): Promise<ReviewCard[]> {
+export async function listDueReviewCards(now: Date = new Date(), limit = 3, savedSinceIso?: string): Promise<ReviewCard[]> {
   const nowMs = now.getTime();
+  const savedSinceMs = savedSinceIso ? Date.parse(savedSinceIso) : null;
   return (await readReviewCards())
     .filter((card) => Date.parse(card.dueAt) <= nowMs)
+    .filter((card) => savedSinceMs == null
+      || (card.savedAt != null && Date.parse(card.savedAt) >= savedSinceMs))
     .sort((a, b) => shownRank(a) - shownRank(b)
       || Date.parse(a.dueAt) - Date.parse(b.dueAt)
       || a.createdAt.localeCompare(b.createdAt))

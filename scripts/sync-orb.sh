@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 
-# Never imports browser tabs, scans local projects, or changes schedules.
+# No local project scans or schedule changes; daily browser feeds require opt-in.
 # --run is local-only; --daily requires the verified single-writer cutover marker.
 root="$(dirname "$(dirname "$(realpath "$0")")")"
 mode="${1:---check}"
@@ -70,6 +70,14 @@ fi
 node "$root/scripts/orb-data.mjs" refresh
 bash "$root/scripts/sync-orb.sh" --check
 rc=0
+# Opt-in on this orb only. Browser profiles and their credentials stay outside Git.
+# Feed Raindrop before its incremental read; partial imports still get ingested.
+if [[ -f "$HOME/.config/fieldtheory/orb-browser-bookmarks" ]]; then
+  node "$root/scripts/sync-browser-bookmarks.mjs" --run || rc=1
+fi
+if [[ -f "$HOME/.config/fieldtheory/orb-chrome-tabs" ]]; then
+  node "$root/scripts/sync-chrome-tabs.mjs" --run || rc=1
+fi
 node "$root/dist/cli.js" "${args[@]}" || rc=$?
 # sync-rss currently exits zero on individual feed failures. Surface them as a
 # degraded daily run without throwing away successful ingestion.

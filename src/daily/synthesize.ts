@@ -884,7 +884,9 @@ export async function synthesizeDaily(
       }
     }
   }
-  const dueReviews = collection.isExplicitDate ? [] : await listDueReviewCards(now);
+  const dueReviews = collection.isExplicitDate ? [] : await listDueReviewCards(
+    now, 3, `${collection.date.slice(0, 4)}-01-01T00:00:00.000Z`,
+  );
   const reviewQueue = collection.isExplicitDate
     ? { added: 0, total: 0 }
     : await queueReviewCards(collection.items, now);

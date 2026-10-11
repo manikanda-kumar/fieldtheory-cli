@@ -36,6 +36,7 @@ export async function connectDailyItems(collection: DailyCollection): Promise<Co
     const related = await findRelatedCanonicalBookmarks(seedTextFor(item), {
       excludeIds,
       beforeIso: collection.sinceIso,
+      sinceIso: `${collection.date.slice(0, 4)}-01-01T00:00:00.000Z`,
       limit: RELATED_PER_ITEM,
     });
     connected.push({
