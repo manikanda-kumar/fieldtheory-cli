@@ -32,7 +32,7 @@ fi
 
 failed=0
 missing() { echo "NOT READY: $*" >&2; failed=1; }
-for tool in node git git-lfs gh yt-dlp claude flock python3; do
+for tool in node git git-lfs gh yt-dlp ffmpeg summarize tesseract claude flock python3; do
   command -v "$tool" >/dev/null || missing "install $tool"
 done
 [[ -f "$root/dist/cli.js" ]] || missing 'build CLI with npm run build'

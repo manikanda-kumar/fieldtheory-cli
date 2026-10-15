@@ -168,8 +168,8 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       label: playlists.length > 1 ? `Sync YouTube playlist ${playlist}` : 'Sync YouTube playlist',
       source: 'youtube',
       command: playlist
-        ? ['sync-youtube', '--playlist', playlist, '--limit', String(options.youtubeLimit ?? 8)]
-        : ['sync-youtube', '--limit', String(options.youtubeLimit ?? 8)],
+        ? ['sync-youtube', '--playlist', playlist, '--limit', String(options.youtubeLimit ?? 8), '--overview', 'slides']
+        : ['sync-youtube', '--limit', String(options.youtubeLimit ?? 8), '--overview', 'slides'],
       enabled: enabled('youtube') && Boolean(playlist),
       retryable: true,
       reason: playlist ? undefined : 'pass --playlist <url-or-id> to include',

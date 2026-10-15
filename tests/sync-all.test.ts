@@ -35,7 +35,7 @@ function runPlanAssertions(): void {
     'youtube',
     'canonical-index',
   ]);
-  assert.deepEqual(plan.find((step) => step.id === 'youtube')?.command, ['sync-youtube', '--playlist', 'PL1', '--limit', '3']);
+  assert.deepEqual(plan.find((step) => step.id === 'youtube')?.command, ['sync-youtube', '--playlist', 'PL1', '--limit', '3', '--overview', 'slides']);
   // Plain incremental sync: --continue resumes a saved deep cursor, which on a
   // nightly schedule can pin the sync at the timeline tail and miss new saves.
   assert.deepEqual(plan.find((step) => step.id === 'x')?.command, ['sync']);
@@ -77,8 +77,8 @@ test('multiple YouTube playlists run sequentially before the synthesis tail with
     },
   });
   assert.deepEqual(commands, [
-    ['sync-youtube', '--playlist', 'PLsaved', '--limit', '20'],
-    ['sync-youtube', '--playlist', 'UUchannel', '--limit', '20'],
+    ['sync-youtube', '--playlist', 'PLsaved', '--limit', '20', '--overview', 'slides'],
+    ['sync-youtube', '--playlist', 'UUchannel', '--limit', '20', '--overview', 'slides'],
     ['index'],
     ['md', '--canonical'],
     ['daily', '--write', '--epub'],
