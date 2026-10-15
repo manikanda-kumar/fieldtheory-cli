@@ -26,7 +26,7 @@ const args = process.argv.slice(2);
 if (args[0] === '--input-type=module') {
   process.exit(spawnSync(${JSON.stringify(process.execPath)}, args, {stdio:'inherit'}).status ?? 1);
 }
-console.log(JSON.stringify({args, tz:process.env.TZ, data:process.env.FT_DATA_DIR}));
+console.log(JSON.stringify({args, tz:process.env.TZ, data:process.env.FT_DATA_DIR, ocrWorkers:process.env.SUMMARIZE_SLIDES_WORKERS, ocrThreads:process.env.OMP_THREAD_LIMIT}));
 if (args[0].endsWith('sync-browser-bookmarks.mjs')) process.exit(Number(process.env.TEST_BROWSER_EXIT || 0));
 if (args[0].endsWith('sync-chrome-tabs.mjs')) process.exit(Number(process.env.TEST_TABS_EXIT || 0));
 process.exit(Number(process.env.TEST_CLI_EXIT || 0));
@@ -48,6 +48,8 @@ test('orb dry run bypasses auth/data checks and excludes Mac hooks and X', { ski
     '--youtube-limit', '20', '--classify', '--dry-run']);
   assert.equal(output.tz, 'Asia/Calcutta');
   assert.equal(output.data, undefined, 'use canonical home paths, not an override that relocates mirrored context');
+  assert.equal(output.ocrWorkers, '1');
+  assert.equal(output.ocrThreads, '1');
   assert.equal(fs.existsSync(path.join(f.home, '.fieldtheory')), false);
 });
 

@@ -2100,7 +2100,7 @@ export function buildCli() {
         process.exitCode = 1;
         return;
       }
-      const tts = overview === 'none' ? undefined : createTtsClient({ engine: ttsEngine });
+      const tts = overview === 'audio' || overview === 'video' ? createTtsClient({ engine: ttsEngine }) : undefined;
       if (tts) tts.resolve?.();
       const videoNotes = videoNotesMode === 'off' || !engine ? null : createAgyVideoNotesClient({ engine, ytDlp });
       const videoNotesOffReason = videoNotesMode === 'off' ? '--video-notes off' : !engine ? 'no local engine; video notes need --engine agy' : videoNotesUnavailableReason({ engine });

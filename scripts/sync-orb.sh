@@ -18,6 +18,8 @@ unset FT_DATA_DIR FT_LIBRARY_DIR
 export FT_DAILY_ENGINE=claude FT_DAILY_MODEL=opus FT_DAILY_EFFORT=medium
 export FT_DAILY_GROUND=1 FT_CLAUDE_MODEL=opus FT_CLAUDE_EFFORT=medium
 export FT_ENRICH_ENGINE=claude
+# Parallel OCR processes plus OpenMP threads can exhaust the Linux OCR timeout.
+export OMP_THREAD_LIMIT=1 SUMMARIZE_SLIDES_WORKERS=1
 # No agy/Grok login is required for this first orb pipeline.
 export FT_DAILY_FALLBACK_ENGINE=claude FT_DAILY_FALLBACK_MODEL=sonnet
 export FT_DAILY_FALLBACK_ENGINE_2=claude FT_DAILY_FALLBACK_MODEL_2=sonnet

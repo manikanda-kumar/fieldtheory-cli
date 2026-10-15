@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { buildCli, parseVideoIdsText } from '../src/cli.js';
 
 test('sync-all accumulates repeated playlists without changing sync-youtube parsing', async () => {
@@ -31,4 +34,36 @@ test('ft sync-youtube help shows notes-only flags', () => {
 
 test('parseVideoIdsText parses retry files with comments and dedupes ids', () => {
   assert.deepEqual(parseVideoIdsText('abc\n# retry later\n\ndef\nabc\n  ghi  \n'), ['abc', 'def', 'ghi']);
+});
+
+test('slide-only sync can finish without an audio engine; audio still requires one', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-youtube-cli-'));
+  const before = { FT_DATA_DIR: process.env.FT_DATA_DIR, FT_LIBRARY_DIR: process.env.FT_LIBRARY_DIR, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
+  const exitCode = process.exitCode;
+  const error = console.error;
+  const errors: string[] = [];
+  t.after(() => {
+    for (const [name, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    process.exitCode = exitCode;
+    console.error = error;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  process.env.FT_DATA_DIR = path.join(root, 'bookmarks');
+  process.env.FT_LIBRARY_DIR = path.join(root, 'library');
+  delete process.env.OPENAI_API_KEY;
+  console.error = (...args) => { errors.push(args.join(' ')); };
+  const ids = path.join(root, 'ids.txt');
+  fs.writeFileSync(ids, '# no pending videos\n');
+  const args = ['node', 'ft', 'sync-youtube', '--video-ids-file', ids, '--engine', 'none', '--tts', 'openai'];
+
+  await buildCli().parseAsync([...args, '--overview', 'slides']);
+  assert.equal(process.exitCode ?? 0, 0, errors.join('\n'));
+  assert.ok(fs.existsSync(path.join(root, 'library/youtube/index.html')));
+
+  await buildCli().parseAsync([...args, '--overview', 'audio']);
+  assert.equal(process.exitCode, 1);
+  assert.match(errors.join('\n'), /OPENAI_API_KEY is required for OpenAI TTS/);
 });
