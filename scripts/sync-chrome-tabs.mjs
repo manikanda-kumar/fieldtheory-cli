@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Caller holds sync-orb.lock. Reads Chrome's foreign-session UI, never local history.
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { normalizeBookmarkUrl } from '../dist/url-normalize.js';
@@ -44,11 +46,12 @@ export function readChromeSessions(run = browser) {
   }
 }
 
-export function sessionRecords(sessions, now = Date.now()) {
+export function sessionRecords(sessions, now = Date.now(), excludedDevices = []) {
   const records = new Map();
   let skipped = 0;
   for (const session of sessions) {
     if (typeof session.device !== 'string' || !Array.isArray(session.tabs)) throw new Error('Invalid remote session');
+    if (excludedDevices.includes(session.device)) continue;
     for (const tab of session.tabs) {
       let url, created;
       try {
@@ -74,10 +77,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     if (process.argv.length !== 3 || !['--run', '--dry-run'].includes(process.argv[2])) {
       throw new Error('Usage: node scripts/sync-chrome-tabs.mjs --dry-run|--run (hold sync-orb.lock)');
     }
+    let excludedDevices = [];
+    try {
+      excludedDevices = fs.readFileSync(path.join(os.homedir(), '.config/fieldtheory/chrome-tabs-excluded-devices'), 'utf8')
+        .split(/\r?\n/).map(name => name.trim()).filter(Boolean);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
     const sessions = readChromeSessions();
-    const { records, skipped } = sessionRecords(sessions);
+    const { records, skipped } = sessionRecords(sessions, Date.now(), excludedDevices);
     const pending = await planImport(records);
-    console.log(JSON.stringify({ chromeDevices: sessions.map(s => ({ device: s.device, tabs: s.tabs.length, lastUpdate: s.lastUpdate })),
+    console.log(JSON.stringify({ chromeDevices: sessions.map(s => ({ device: s.device, tabs: s.tabs.length,
+      lastUpdate: s.lastUpdate, excluded: excludedDevices.includes(s.device) })),
       uniqueWebTabs: records.size, skipped, existing: records.size - pending.length, toCreate: pending.length,
       dryRun: process.argv[2] === '--dry-run' }));
     if (process.argv[2] === '--run') await importBookmarks(pending, undefined, undefined, 'Chrome Saved Tabs');

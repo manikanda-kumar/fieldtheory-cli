@@ -143,6 +143,13 @@ The local `~/.config/fieldtheory/orb-chrome-tabs` marker enables
 The same script accepts `--dry-run` for a live browser/API read without imports;
 hold `~/.fieldtheory/sync-orb.lock` for manual calls as above.
 
+To exclude a computer from this feed, put its exact Chrome device name in
+`~/.config/fieldtheory/chrome-tabs-excluded-devices`, one name per line. Blank
+lines are ignored; without the file, all devices remain eligible. Exclusions
+apply before URL deduplication, and the run report marks matching devices
+`excluded: true`. This does not change Chrome's account sync settings or remove
+previously imported tabs. Keep the machine-specific file outside Git.
+
 The supervised `fieldtheory-chrome-sync` service needs its existing signed-in
 profile plus `--remote-debugging-address=127.0.0.1 --remote-debugging-port=9225`.
 Never create a portal for this debugging port. `agent-browser` reads only the

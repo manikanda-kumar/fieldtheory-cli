@@ -20,6 +20,21 @@ test('remote tab records deduplicate, preserve activity dates/provenance, and re
   assert.throws(() => sessionRecords([{ device: 'Phone' }]), /Invalid remote session/);
 });
 
+test('excluded devices contribute no tabs or provenance, including URLs shared with personal devices', () => {
+  const input = [
+    { device: 'Work laptop', tabs: [tab, { ...tab, url: 'https://internal.example/work-only' }] },
+    { device: 'Phone', tabs: [{ ...tab, title: 'Personal article' }] },
+    { device: 'Work laptop 2', tabs: [{ ...tab, url: 'https://example.net/personal' }] },
+  ];
+  const result = sessionRecords(input, Date.now(), ['Work laptop']);
+  const items = [...result.records.values()];
+  assert.deepEqual(items.map(item => item.link), ['https://example.com/read', 'https://example.net/personal']);
+  assert.equal(items[0].title, 'Personal article');
+  assert.match(items[0].note, /Phone/);
+  assert.match(items[1].note, /Work laptop 2/);
+  assert.equal(sessionRecords(input).records.size, 3);
+});
+
 test('reader uses foreign-session page and always closes its own tab and daemon', () => {
   const calls: string[][] = [];
   const devices = [{ device: 'Phone', tabs: [tab] }];
