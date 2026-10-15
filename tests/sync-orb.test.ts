@@ -17,7 +17,7 @@ function fixture(t: test.TestContext) {
   fs.writeFileSync(path.join(home, '.fieldtheory/bookmarks/bookmarks.db'), 'SQLite format 3\0');
   fs.writeFileSync(path.join(home, '.fieldtheory/bookmarks/youtube/state.json'), '{}');
   fs.writeFileSync(path.join(home, '.fieldtheory/bookmarks/.preferences'), '{"defaultEngine":"claude"}');
-  for (const tool of ['gh', 'claude', 'git-lfs', 'yt-dlp']) {
+  for (const tool of ['gh', 'claude', 'git-lfs', 'yt-dlp', 'ffmpeg', 'summarize', 'tesseract']) {
     fs.writeFileSync(path.join(home, '.local/bin', tool), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   }
   fs.writeFileSync(path.join(home, '.local/bin/node'), `#!${process.execPath}
