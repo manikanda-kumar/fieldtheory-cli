@@ -1,6 +1,6 @@
 /** Static, semantic reading surface shared by daily output and design previews. */
 import { htmlEscape, htmlLink, type HtmlGroup, type HtmlItem } from '../html-kit.js';
-import { decodeReadingText, readingSourceLabel, separateReadingLinks } from './reading-text.js';
+import { decodeReadingText, readingSourceLabel, separateReadingLinks, splitInlineNumberedList, stripFeedFooter } from './reading-text.js';
 
 export const DAILY_READING_CSS = `
 :root{color-scheme:light;--ink:#242721;--muted:#555b51;--line:#d9dccf;--accent:#315941;--paper:#fbfaf5}
@@ -34,6 +34,8 @@ a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-of
 .source-links{display:block;margin:.45em 0 0}
 .related-list{padding-left:1.2em}
 .related-list li{margin:.75em 0}
+.summary-list{margin:.6em 0;padding-left:1.4em}
+.summary-list li{margin:.35em 0;padding-left:.2em}
 .related-list .byline{display:block;margin:.2em 0 0}
 .quote{margin:1em 0;padding-left:1em;border-left:2px solid var(--accent)}
 .reveal-body{margin-top:.8em}
@@ -57,12 +59,20 @@ export function renderReadingItem(item: HtmlItem): string {
     '<article class="item">',
     `<h3>${htmlEscape(title.text || 'Saved page')}</h3>`,
     meta ? `<p class="byline">${htmlEscape(meta)}</p>` : '',
-    body.text ? `<p class="summary">${htmlEscape(body.text)}</p>` : '',
+    renderReadingSummary(stripFeedFooter(body.text)),
     renderReadingSourceLinks(item, [...title.urls, ...body.urls]),
     item.extra?.length ? `<p class="footnote">${item.extra.join(' · ')}</p>` : '',
     item.footnote ? `<p class="footnote">${htmlEscape(item.footnote)}</p>` : '',
     '</article>',
   ].join('');
+}
+
+/** Summary prose, or a real list when the source was a flattened "1. … 2. …" roundup. */
+function renderReadingSummary(text: string): string {
+  if (!text) return '';
+  const items = splitInlineNumberedList(text);
+  if (!items) return `<p class="summary">${htmlEscape(text)}</p>`;
+  return `<ol class="summary-list">${items.map((item) => `<li>${htmlEscape(item)}</li>`).join('')}</ol>`;
 }
 
 export function renderReadingSourceLinks(item: HtmlItem, embeddedUrls: string[], label?: string): string {

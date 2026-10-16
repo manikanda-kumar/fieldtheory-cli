@@ -261,3 +261,54 @@ date: "2026-08-15"
   assert.match(chapter, /&lt;script&gt;/);
   assert.doesNotMatch(chapter, /<script>/);
 });
+
+test('digestMarkdownToEpub turns flattened and plain-text lists into real lists', () => {
+  const result = digestMarkdownToEpub(`---
+date: "2026-09-30"
+---
+
+# Daily Learning Review — 2026-09-30
+
+## Off-Thesis
+
+### Wednesday assorted links
+
+1. No fertility rebound. 2. Deregulation in Idaho (WSJ). 3. Release 2. 0 notes? 4. “Aristotle’s school.”
+
+Steps:
+1. First step
+2. Second step
+
+• Dot bullet
+◦ Hollow bullet
+
+- Parent
+  - Child one
+  - Child two
+`);
+  const entries = readZip(result.epub);
+  const chapter = [...entries.entries()].find(([name]) => name.includes('off-thesis'))![1].data.toString('utf8');
+
+  assert.match(
+    chapter,
+    /<ol>\n    <li>No fertility rebound\.<\/li>\n    <li>Deregulation in Idaho \(WSJ\)\.<\/li>\n    <li>Release 2\. 0 notes\?<\/li>\n    <li>“Aristotle’s school\.”<\/li>\n  <\/ol>/,
+  );
+  assert.match(chapter, /<p>Steps:<\/p>\n  <ol>\n    <li>First step<\/li>\n    <li>Second step<\/li>\n  <\/ol>/);
+  assert.match(chapter, /<ul>\n    <li>Dot bullet<\/li>\n    <li>Hollow bullet<\/li>\n  <\/ul>/);
+  assert.match(chapter, /<li>Parent<ul><li>Child one<\/li><li>Child two<\/li><\/ul><\/li>/);
+});
+
+test('digestMarkdownToEpub keeps the source number of a list that starts mid-count', () => {
+  const result = digestMarkdownToEpub(`---
+date: "2026-09-25"
+---
+
+# Daily Learning Review — 2026-09-25
+
+## Notes
+
+2. **Second rule**: keep modules small.
+`);
+  const chapter = [...readZip(result.epub).entries()].find(([name]) => name.includes('notes'))![1].data.toString('utf8');
+  assert.match(chapter, /<ol start="2">\n    <li><strong>Second rule<\/strong>: keep modules small\.<\/li>/);
+});

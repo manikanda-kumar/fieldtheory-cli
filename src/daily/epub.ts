@@ -13,6 +13,7 @@
 import { renderTextCover } from '../cover.js';
 import { buildEpub, xmlEscape, type EpubChapter } from '../epub.js';
 import { cleanDisplayUrl } from '../url-normalize.js';
+import { splitInlineNumberedList, stripFeedFooter } from './reading-text.js';
 
 export interface DigestEpubOptions {
   /** Overrides the date parsed from the markdown front matter. */
@@ -147,6 +148,8 @@ function renderBlocks(lines: string[]): string {
   const out: string[] = [];
   let paragraph: string[] = [];
   let listItems: string[] = [];
+  let listTag: 'ul' | 'ol' = 'ul';
+  let listStart = 1;
   let quote: string[] = [];
   let reveal: { label: string; lines: string[] } | null = null;
 
@@ -159,15 +162,25 @@ function renderBlocks(lines: string[]): string {
     quote = [];
   };
   const flushList = () => {
-    if (listItems.length) out.push(`  <ul>\n${listItems.join('\n')}\n  </ul>`);
+    // Keep the source numbering when a list arrives mid-count ("2. …").
+    const start = listTag === 'ol' && listStart !== 1 ? ` start="${listStart}"` : '';
+    if (listItems.length) out.push(`  <${listTag}${start}>\n${listItems.join('\n')}\n  </${listTag}>`);
     listItems = [];
+    listStart = 1;
+  };
+  const pushItem = (tag: 'ul' | 'ol', text: string, number = 1) => {
+    flushParagraph();
+    if (listItems.length && listTag !== tag) flushList();
+    if (!listItems.length) listStart = number;
+    listTag = tag;
+    listItems.push(`    <li>${inline(text)}</li>`);
   };
   const flushAll = () => { flushParagraph(); flushQuote(); flushList(); };
 
   for (const raw of lines) {
     // ` · [notes](../youtube/…md)` points at a library file the book does not
     // carry, so the whole affordance goes rather than leaving a dangling word.
-    const line = raw.replace(/\s*·\s*\[(?:local )?notes\]\((?!https?:)[^)]*\)/g, '').replace(/\s+$/, '');
+    const line = stripFeedFooter(raw.replace(/\s*·\s*\[(?:local )?notes\]\((?!https?:)[^)]*\)/g, '')).replace(/\s+$/, '');
 
     if (reveal) {
       if (/^<\/details>/.test(line)) {
@@ -206,19 +219,44 @@ function renderBlocks(lines: string[]): string {
     }
     flushQuote();
 
-    const bullet = /^[-*] (.+)$/.exec(line);
-    if (bullet) {
-      flushParagraph();
-      listItems.push(`    <li>${inline(bullet[1])}</li>`);
+    // Saved sources carry their own lists (`•`/`◦` bullets, `1.` items);
+    // left as paragraph text they run together on one line on a Kindle.
+    const bullet = /^[-*•◦⚬▪] (.+)$/.exec(line);
+    if (bullet) { pushItem('ul', bullet[1]); continue; }
+    const numbered = /^\d{1,3}[.)] (.+)$/.exec(line);
+    if (numbered) {
+      const items = splitInlineNumberedList(line);
+      if (items) {
+        flushAll();
+        listTag = 'ol';
+        listItems = items.map((item) => `    <li>${inline(item)}</li>`);
+        flushList();
+      } else {
+        pushItem('ol', numbered[1], Number(/^\d+/.exec(line)![0]));
+      }
       continue;
     }
 
-    // Two-space continuation under a bullet: the item's summary line.
-    const continuation = /^ {2,}(\S.*)$/.exec(line);
-    if (continuation && listItems.length) {
-      const last = listItems.pop()!;
-      listItems.push(last.replace(/<\/li>$/, `<p class="summary">${inline(continuation[1])}</p></li>`));
-      continue;
+    if (listItems.length) {
+      // Indented bullet under an item: a nested list, not a summary line.
+      const nested = /^ {2,}[-*•◦⚬▪] (.+)$/.exec(line);
+      if (nested) {
+        const last = listItems.pop()!;
+        const item = `<li>${inline(nested[1])}</li>`;
+        listItems.push(
+          /<\/ul><\/li>$/.test(last)
+            ? last.replace(/<\/ul><\/li>$/, `${item}</ul></li>`)
+            : last.replace(/<\/li>$/, `<ul>${item}</ul></li>`),
+        );
+        continue;
+      }
+      // Two-space continuation under a bullet: the item's summary line.
+      const continuation = /^ {2,}(\S.*)$/.exec(line);
+      if (continuation) {
+        const last = listItems.pop()!;
+        listItems.push(last.replace(/<\/li>$/, `<p class="summary">${inline(continuation[1])}</p></li>`));
+        continue;
+      }
     }
 
     flushList();

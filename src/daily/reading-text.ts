@@ -26,3 +26,31 @@ export function readingSourceLabel(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, '') || 'Read source'; }
   catch { return 'Read source'; }
 }
+
+/** WordPress feed footer that saved RSS text carries into item excerpts. */
+export function stripFeedFooter(value: string): string {
+  return value.replace(/\s*The post .+? appeared first on .+?\.$/, '');
+}
+
+/**
+ * Link roundups ("1. A. 2. B. 3. C.") arrive flattened onto one line. Split
+ * on markers that count up from 1 and follow a sentence end, so a stray
+ * "version 2. " inside an item does not start a new one.
+ */
+export function splitInlineNumberedList(line: string): string[] | null {
+  if (!/^1[.)] /.test(line)) return null;
+  const starts = [0];
+  let next = 2;
+  for (;;) {
+    const marker = new RegExp(`(?<=[.?!)\\]"'”’…])\\s+${next}[.)] `, 'g');
+    marker.lastIndex = starts[starts.length - 1] + 3;
+    const match = marker.exec(line);
+    if (!match) break;
+    starts.push(match.index);
+    next += 1;
+  }
+  if (starts.length < 2) return null;
+  return starts.map((start, index) =>
+    line.slice(start, starts[index + 1] ?? line.length).trim().replace(/^\d{1,3}[.)] /, ''),
+  );
+}

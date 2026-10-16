@@ -79,3 +79,16 @@ test('daily HTML keeps full headings, titled links and paragraph summaries witho
   const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
   for (const match of html.matchAll(/href="#([^"]+)"/g)) assert.ok(ids.has(match[1]));
 });
+
+test('reading items render flattened numbered roundups as real lists', () => {
+  const html = renderReadingItem({
+    title: 'Wednesday assorted links',
+    url: 'https://marginalrevolution.com/x',
+    body: '1. No fertility rebound. 2. Deregulation in Idaho (WSJ). 3. How to keep […] The post Wednesday assorted links appeared first on Marginal REVOLUTION.',
+  });
+  assert.match(html, /<ol class="summary-list"><li>No fertility rebound\.<\/li><li>Deregulation in Idaho \(WSJ\)\.<\/li><li>How to keep \[…\]<\/li><\/ol>/);
+  assert.doesNotMatch(html, /appeared first/);
+
+  const prose = renderReadingItem({ title: 'Prose', body: 'Version 2. 0 shipped. 1. Not a list start mid-sentence.' });
+  assert.match(prose, /<p class="summary">Version 2\. 0 shipped\./);
+});
