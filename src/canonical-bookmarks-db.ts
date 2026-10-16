@@ -1132,6 +1132,9 @@ export async function upsertYoutubeVideosAsSources(videos: YoutubeSourceVideoInp
       try {
         for (const video of videos) {
           const source = youtubeSourceFromVideo(video, savedAt);
+          // Regenerating notes must not turn an existing video into a new daily save.
+          const existing = db.exec('SELECT saved_at FROM bookmark_sources WHERE id = ?', [source.id])[0]?.values[0];
+          if (existing) source.savedAt = existing[0] as string | null;
           db.run(`DELETE FROM bookmark_sources WHERE id = ?`, [source.id]);
           sourceStmt.run(sourceInsertParams(source, canonicalIdForDedupeKey(source.dedupeKey)));
         }

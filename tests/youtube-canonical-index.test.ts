@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { searchCanonicalBookmarks, upsertYoutubeVideosAsSources } from '../src/canonical-bookmarks-db.js';
+import { getCanonicalBookmarksSince, searchCanonicalBookmarks, upsertYoutubeVideosAsSources } from '../src/canonical-bookmarks-db.js';
+import { collectDaily } from '../src/daily/collect.js';
 
 async function withIsolatedDataDir(fn: () => Promise<void>): Promise<void> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'ft-youtube-canonical-'));
@@ -75,14 +76,31 @@ test('upsertYoutubeVideosAsSources includes chapter summaries in canonical searc
   });
 });
 
-test('upsertYoutubeVideosAsSources is idempotent for the same video', async () => {
+test('upsertYoutubeVideosAsSources refreshes content without making existing videos newly saved', async (t) => {
+  const originalSavedAt = '2026-07-08T12:00:00.000Z';
+  const backfilledAt = '2026-10-16T06:00:00.000Z';
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(originalSavedAt) });
   await withIsolatedDataDir(async () => {
     await upsertYoutubeVideosAsSources([{ videoId: 'v1', title: 'Original', tldr: 'alpha', topics: [] }]);
-    await upsertYoutubeVideosAsSources([{ videoId: 'v1', title: 'Updated', tldr: 'beta', topics: [] }]);
+    t.mock.timers.setTime(new Date(backfilledAt).getTime());
+    await upsertYoutubeVideosAsSources([
+      { videoId: 'v1', title: 'Updated', tldr: 'beta', topics: [] },
+      { videoId: 'v2', title: 'New video', tldr: 'gamma', topics: [] },
+    ]);
 
-    const matches = await searchCanonicalBookmarks({ query: '', limit: 10 });
-
+    const matches = await searchCanonicalBookmarks({ query: 'beta', limit: 10 });
     assert.equal(matches.length, 1);
     assert.equal(matches[0].displayTitle, 'Updated');
+    assert.equal((await searchCanonicalBookmarks({ query: 'alpha', limit: 10 })).length, 0);
+
+    const indexed = await getCanonicalBookmarksSince('2026-01-01T00:00:00.000Z');
+    assert.equal(indexed.length, 2);
+    const updated = indexed.find((item) => item.displayTitle === 'Updated')!;
+    assert.equal(updated.firstSavedAt, originalSavedAt);
+    assert.equal(updated.lastSavedAt, originalSavedAt);
+    assert.equal(indexed.find((item) => item.displayTitle === 'New video')!.firstSavedAt, backfilledAt);
+
+    const daily = await collectDaily({ date: '2026-10-16' });
+    assert.deepEqual(daily.items.map((item) => item.displayTitle), ['New video']);
   });
 });
