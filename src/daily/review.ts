@@ -6,7 +6,7 @@
 
 import { pathExists, readJson, writeJson } from '../fs.js';
 import { dailyReviewPath, ensureDailyDir } from './paths.js';
-import { summarizeSavedText } from './summary.js';
+import { hasReadingContent, summarizeSavedText } from './summary.js';
 
 const MAX_NEW_CARDS_PER_DIGEST = 3;
 const ANSWER_CHARS = 360;
@@ -100,6 +100,7 @@ export async function listDueReviewCards(now: Date = new Date(), limit = 3, save
   const nowMs = now.getTime();
   const savedSinceMs = savedSinceIso ? Date.parse(savedSinceIso) : null;
   return (await readReviewCards())
+    .filter((card) => hasReadingContent({ displayTitle: card.title, searchText: card.answer, sources: card.sources }))
     .filter((card) => Date.parse(card.dueAt) <= nowMs)
     .filter((card) => savedSinceMs == null
       || (card.savedAt != null && Date.parse(card.savedAt) >= savedSinceMs))
@@ -154,7 +155,7 @@ export async function queueReviewCards(
   const existing = await readReviewCards();
   const known = new Set(existing.map((card) => card.canonicalId));
   const candidates = [...items]
-    .filter((item) => !known.has(item.id))
+    .filter((item) => !known.has(item.id) && hasReadingContent(item))
     .sort((a, b) => cleanText(b.searchText).length - cleanText(a.searchText).length || a.id.localeCompare(b.id))
     .slice(0, options.maxCards ?? MAX_NEW_CARDS_PER_DIGEST);
 
@@ -167,7 +168,7 @@ export async function queueReviewCards(
       canonicalId: item.id,
       title,
       url: item.canonicalUrl,
-      prompt: `Without opening it, what problem, claim, or technique made you save “${title}”?`,
+      prompt: `Without opening it, explain the main claim or technique in “${title}” and one reason or example that supports it.`,
       answer,
       sources: item.sources,
       savedAt: item.firstSavedAt,

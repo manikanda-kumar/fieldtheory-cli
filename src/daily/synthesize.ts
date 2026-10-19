@@ -21,11 +21,11 @@ import { digestMarkdownToEpub } from './epub.js';
 import { renderDigestHtml } from './html.js';
 import { writeDailyIndexHtml } from './index-html.js';
 import { listDueReviewCards, markReviewCardsShown, queueReviewCards, type ReviewCard } from './review.js';
-import { isTruncatedTitle, summarizeSavedText, truncateAtBoundary } from './summary.js';
+import { hasReadingContent, isTruncatedTitle, summarizeSavedText, truncateAtBoundary } from './summary.js';
 import { generateDailyGists, type DailyGist } from './gist.js';
 import { readingSourceLabel, separateReadingLinks } from './reading-text.js';
 
-const SNIPPET_CHARS = 240;
+const SNIPPET_CHARS = 900;
 const ITEM_SUMMARY_CHARS = 220;
 const MAX_THEMES = 7;
 const HEADLINE_CHARS = 90;
@@ -116,8 +116,19 @@ export interface DailyTheme {
   itemIds: string[];
   relatedIds: string[];
   projects: string[];
+  /** Ranked editorial takeaway, with validated supporting current-item ids. */
+  takeaway?: { text: string; itemIds: string[] };
+  question?: string;
+  relatedReasons?: Record<string, string>;
   /** Optional X/web-grounded notes that flesh out the theme (validated URLs). */
   externalNotes: DailyExternalNote[];
+}
+
+/** Use the same evidence-backed reflection in Markdown and HTML; never pair raw FTS matches. */
+export function dailyReflection(themes: DailyTheme[]): string | undefined {
+  const theme = themes[0];
+  if (!theme) return undefined;
+  return theme.question || `Choose one claim in “${theme.title}”. What evidence supports it, and where might it fail?`;
 }
 
 export interface SynthesizeDailyOptions {
@@ -163,7 +174,7 @@ export interface SynthesizeDailyResult {
   droppedCitations: number;
   themedCount: number;
   alsoSavedCount: number;
-  /** Thin items are a subset of alsoSavedCount, never a separate rendering path. */
+  /** Weak captures are a subset of alsoSavedCount, rendered as Captured, unread. */
   thinSkipped: number;
   enrichedCount: number;
   /** Items rendered with an LLM-written gist instead of a mechanical excerpt. */
@@ -174,7 +185,7 @@ export interface SynthesizeDailyResult {
 }
 
 function snippet(item: CanonicalRecentItem): string {
-  return item.searchText.replace(/\s+/g, ' ').slice(0, SNIPPET_CHARS);
+  return summarizeSavedText(item, SNIPPET_CHARS);
 }
 
 export interface DailyAliases {
@@ -211,17 +222,20 @@ export function buildDailyPrompt(
 ): string {
   const itemAlias = new Map([...aliases.items.entries()].map(([alias, id]) => [id, alias]));
   const relatedAlias = new Map([...aliases.related.entries()].map(([alias, id]) => [id, alias]));
+  const relatedByItem = new Map(connected.map(({ item, related }) => [item.id, related]));
   const groundExternal = Boolean(options.groundExternal);
 
   const lines: string[] = [];
   lines.push(`Date: ${collection.date}`);
   lines.push('');
   lines.push('NEW ITEMS (saved today):');
-  for (const { item, related } of connected) {
+  for (const item of collection.items) {
     lines.push(`- id=${itemAlias.get(item.id)} source=${item.sources.join(',')} title=${JSON.stringify(item.displayTitle ?? item.canonicalUrl ?? item.id)}`);
     lines.push(`  snippet: ${options.gists?.get(item.id)?.gist || snippet(item)}`);
-    for (const ref of related) {
+    for (const ref of relatedByItem.get(item.id) ?? []) {
+      if (!ref.summary) continue;
       lines.push(`  related: id=${relatedAlias.get(ref.id)} title=${JSON.stringify(ref.title ?? ref.url ?? ref.id)}`);
+      lines.push(`    evidence: ${JSON.stringify(ref.summary)}`);
     }
   }
   lines.push('');
@@ -232,9 +246,14 @@ export function buildDailyPrompt(
     lines.push(`- repo=${delta.repo} commits=[${subjects}] questions=[${questions}] ampThreadCount=${delta.ampThreads.length}`);
   }
   lines.push('');
-  lines.push(`TASK: Group the new items into 3-${MAX_THEMES} themes. Respond with ONLY a JSON array:`);
+  lines.push(`TASK: Group the new items into 3-${MAX_THEMES} themes (fewer if the evidence supports fewer). Order themes by practical learning value: concrete mechanisms, useful tradeoffs and well-supported comparisons before minor releases or inventories.`);
+  lines.push('The first three themes each need a takeaway: 30-60 words stating the lesson, a concrete supporting mechanism or example, and a useful implication or action only when supported by the supplied material. Cite its supporting NEW ITEM ids in takeaway.itemIds. Use fewer than three takeaways when there is not enough substance; never pad. Later themes need no takeaway.');
+  lines.push('Write theme summaries as a specific claim, supporting evidence and a distinction or limitation where available, not a list of titles or “several talks agree”. Compare what sources actually check, enable or trade away. Retain material source caveats. Label interpretive connections “Editorial synthesis”; examples of projects are not evidence of mainstream adoption. Never invent tensions or claim that one source supersedes another.');
+  lines.push('Each theme may include one question that can be answered from its supplied evidence: ask about a concrete mechanism, tradeoff or failure boundary. Do not ask what changed between keyword-matched titles, or why the reader saved a link. Respond with ONLY a JSON array:');
+  const editorialFields = '  "takeaway": {"text": "lesson, concrete evidence and implication", "itemIds": ["i1"]}, "question": "an evidence-backed reflection question?", "relatedReasons": {"r1": "specific relationship supported by both snippets"},';
   if (groundExternal) {
     lines.push('[{"title": "...", "summary": "2-4 sentences on what is new and why it matters together",');
+    lines.push(editorialFields);
     lines.push('  "itemIds": ["<id like i1 from NEW ITEMS>"], "relatedIds": ["<id like r1 from related lines>"], "projects": ["<repo from PROJECT ACTIVITY>"],');
     lines.push('  "externalNotes": [{"claim": "one grounded fact that adds context", "sourceUrl": "https://...", "sourceLabel": "optional short source name", "aboutIds": ["i1"]}]}]');
     lines.push(RELATED_RULE);
@@ -242,6 +261,7 @@ export function buildDailyPrompt(
     lines.push('External notes: you MAY use web and X search to ground additional context (author background, related announcement, clarifying fact). Prefer 0-3 externalNotes per theme. Every external note MUST include a real https sourceUrl you verified via search. aboutIds may only use short ids from this prompt. If search finds nothing useful, omit externalNotes or return []. Never fabricate URLs or claims.');
   } else {
     lines.push('[{"title": "...", "summary": "2-4 sentences on what is new and why it matters together",');
+    lines.push(editorialFields);
     lines.push('  "itemIds": ["<id like i1 from NEW ITEMS>"], "relatedIds": ["<id like r1 from related lines>"], "projects": ["<repo from PROJECT ACTIVITY>"]}]');
     lines.push(RELATED_RULE);
     lines.push('Rules: cite only the short ids (i1, i2, r1, ...) and repo names that appear verbatim above. Mention a project only when a theme genuinely connects to that repo\'s activity. Do not invent items, ids, or repos. Do not add external web claims.');
@@ -251,7 +271,7 @@ export function buildDailyPrompt(
 }
 
 const MAX_EXTERNAL_NOTES_PER_THEME = 3;
-const RELATED_RULE = `relatedIds: at most ${MAX_RELATED_PER_THEME} per theme, only earlier saves that are about the same subject as the theme. The related lines are keyword matches and many are unrelated; leave those out.`;
+const RELATED_RULE = `relatedIds: at most ${MAX_RELATED_PER_THEME} per theme, only when both supplied snippets support a useful comparison. Each needs a relatedReasons entry keyed by its r-id explaining the relationship in one sentence. Keyword overlap alone is not a connection; omit unsupported or title-only references.`;
 
 /** Accept only absolute http(s) URLs for external notes — blocks invented paths. */
 export function isHttpUrl(value: string): boolean {
@@ -309,6 +329,7 @@ function parseExternalNotes(
 
 export function validateThemes(raw: unknown, collection: DailyCollection, connected: ConnectedItem[], aliases: DailyAliases): { themes: DailyTheme[]; dropped: number } {
   const repos = new Set(collection.projectDeltas.map((delta) => delta.repo));
+  const relatedWithEvidence = new Set(connected.flatMap(({ related }) => related.filter((ref) => ref.summary).map((ref) => ref.id)));
   const citedItems = new Set<string>();
   const themes: DailyTheme[] = [];
   let dropped = 0;
@@ -348,12 +369,38 @@ export function validateThemes(raw: unknown, collection: DailyCollection, connec
       continue;
     }
 
+    const relatedReasons: Record<string, string> = {};
+    if (candidate.relatedReasons && typeof candidate.relatedReasons === 'object') {
+      for (const [alias, reason] of Object.entries(candidate.relatedReasons)) {
+        const id = aliases.related.get(alias);
+        if (id && related.kept.includes(id) && relatedWithEvidence.has(id) && typeof reason === 'string' && reason.trim()) {
+          relatedReasons[id] = truncateAtBoundary(reason, 350);
+        }
+      }
+    }
+    let takeaway: DailyTheme['takeaway'];
+    if (candidate.takeaway && typeof candidate.takeaway === 'object') {
+      const value = candidate.takeaway as Record<string, unknown>;
+      const citations = mapAliases(value.itemIds, aliases.items);
+      const text = typeof value.text === 'string' ? value.text.trim() : '';
+      if (text && text.length <= 700 && citations.kept.length > 0 && citations.removed === 0
+        && citations.kept.every((id) => uniqueItems.includes(id))) {
+        takeaway = { text, itemIds: citations.kept };
+      } else {
+        dropped += 1;
+      }
+    }
+    const question = typeof candidate.question === 'string' && candidate.question.length <= 400
+      ? candidate.question.trim() : undefined;
     themes.push({
       title,
       summary,
       itemIds: uniqueItems,
-      relatedIds: related.kept.slice(0, MAX_RELATED_PER_THEME),
+      relatedIds: related.kept.filter((id) => relatedReasons[id]).slice(0, MAX_RELATED_PER_THEME),
       projects: projects.kept,
+      ...(takeaway ? { takeaway } : {}),
+      ...(question ? { question } : {}),
+      relatedReasons,
       externalNotes: external.notes,
     });
   }
@@ -430,6 +477,7 @@ export function renderDigestMarkdown(
   llmMeta: { engine?: string; error?: string } = {},
   shadowReviews: YoutubeShadowReview[] = [],
   gists: Map<string, DailyGist> = new Map(),
+  capturedIds = new Set(collection.items.filter((item) => !hasReadingContent(item)).map((item) => item.id)),
 ): string {
   const notesSuffix = (url: string | null | undefined): string => {
     const videoId = extractYoutubeVideoId(url);
@@ -460,20 +508,6 @@ export function renderDigestMarkdown(
       `${sourceLine(item.canonicalUrl, [...title.urls, ...summary.urls])}${notesSuffix(item.canonicalUrl)}`, '',
     ].join('\n');
   };
-  const reflectionPrompt = (): string => {
-    const focus = themes[0]?.title ?? collection.items[0]?.displayTitle ?? 'today\'s material';
-    const project = collection.projectDeltas[0]?.repo;
-    if (project) {
-      return `What assumption in [[project:${project}]] might “${focus}” change? Name the smallest experiment that would test it.`;
-    }
-    const connectedItem = connected.find((entry) => entry.related.length > 0);
-    if (connectedItem?.related[0]) {
-      const older = relatedTitle(connectedItem.related[0].title ?? connectedItem.related[0].url ?? 'an earlier save');
-      return `What changed between today’s “${dailyItemHeadline(connectedItem.item, gists.get(connectedItem.item.id))}” and “${older}”? State the difference in your own words.`;
-    }
-    return `Which item in “${focus}” deserves 20 focused minutes, and what question will you try to answer before opening it?`;
-  };
-
   const lines: string[] = [];
   lines.push('---');
   lines.push(`date: "${collection.date}"`);
@@ -501,6 +535,24 @@ export function renderDigestMarkdown(
 
   lines.push(`> **${collection.items.length} new saves · ${dueReviews.length} review${dueReviews.length === 1 ? '' : 's'} due · ${collection.projectDeltas.length} active project${collection.projectDeltas.length === 1 ? '' : 's'}**`);
   lines.push('');
+
+  const priorities = usedLlm ? themes.filter((theme) => theme.takeaway).slice(0, 3) : [];
+  if (priorities.length > 0) {
+    lines.push('## Read first', '');
+    priorities.forEach((theme, index) => {
+      lines.push(`${index + 1}. **${linkLabel(theme.title)}** — ${theme.takeaway!.text}`, '');
+      for (const id of theme.takeaway!.itemIds) {
+        const item = itemById.get(id);
+        if (!item) continue;
+        const title = linkLabel(dailyItemHeadline(item, gists.get(id)));
+        lines.push(`   ${item.canonicalUrl ? `[${title}](${item.canonicalUrl})` : title}${notesSuffix(item.canonicalUrl)}`, '');
+      }
+    });
+  } else if (collection.items.length > 0 && capturedIds.size === collection.items.length) {
+    lines.push('These saves contain too little source content for a reliable briefing. Their links are kept under Captured, unread.', '');
+  } else if (!usedLlm) {
+    lines.push('Synthesis was unavailable, so this is a structured inbox rather than a thematic briefing. All collected links remain below.', '');
+  }
 
   lines.push('## Recall first');
   lines.push('');
@@ -540,22 +592,11 @@ export function renderDigestMarkdown(
     lines.push('');
   }
 
-  lines.push('## Today\'s throughline');
-  lines.push('');
-  if (usedLlm) {
-    // One sentence per theme: the full summary opens its section below.
-    for (const theme of themes) lines.push(`- **${theme.title}:** ${themeLede(theme.summary)}`);
-  } else {
-    lines.push('Synthesis was unavailable, so this is a structured inbox rather than a thematic briefing. The material below remains complete.');
+  const reflection = dailyReflection(themes);
+  if (reflection) {
+    lines.push('## Ponder', '', `> ${reflection}`, '');
+    lines.push('Answer from the evidence before opening more links; name a mechanism, tradeoff or failure boundary.', '');
   }
-  lines.push('');
-
-  lines.push('## Ponder');
-  lines.push('');
-  lines.push(`> ${reflectionPrompt()}`);
-  lines.push('');
-  lines.push('Write a brief answer before opening more links; the point is to connect the material to your own work.');
-  lines.push('');
 
   lines.push('## Today\'s material');
   lines.push('');
@@ -578,7 +619,8 @@ export function renderDigestMarkdown(
         const ref = relatedById.get(id);
         if (!ref) continue;
         const title = separateReadingLinks(ref.title ?? ref.url ?? id);
-        lines.push(`- ${linkLabel(relatedTitle(title.text) || 'Saved page')}`);
+        const reason = theme.relatedReasons?.[id];
+        lines.push(`- ${linkLabel(relatedTitle(title.text) || 'Saved page')}${reason ? ` — ${reason}` : ''}`);
         const links = sourceLine(ref.url, title.urls);
         if (links) lines.push(`  ${links}${notesSuffix(ref.url)}`);
       }
@@ -600,14 +642,27 @@ export function renderDigestMarkdown(
     lines.push('');
   }
 
-  if (alsoSavedIds.length > 0) {
+  const readableAlsoSaved = alsoSavedIds.filter((id) => !capturedIds.has(id));
+  if (readableAlsoSaved.length > 0) {
     lines.push('## Also saved');
     lines.push('');
-    for (const id of alsoSavedIds) {
+    for (const id of readableAlsoSaved) {
       const item = itemById.get(id);
       if (!item) continue;
       lines.push(renderItem(item, id));
 
+    }
+    lines.push('');
+  }
+
+  const captured = alsoSavedIds.filter((id) => capturedIds.has(id));
+  if (captured.length > 0) {
+    lines.push('## Captured, unread', '', 'Saved links without enough source content for a reliable summary. Kept for reference, not used as learning material.', '');
+    for (const id of captured) {
+      const item = itemById.get(id);
+      if (!item) continue;
+      const title = linkLabel(item.displayTitle ?? item.canonicalUrl ?? id);
+      lines.push(`- ${item.canonicalUrl ? `[${title}](${item.canonicalUrl})` : title}${notesSuffix(item.canonicalUrl)}`);
     }
     lines.push('');
   }
@@ -763,7 +818,10 @@ export async function synthesizeDaily(
   let llmEngine: string | undefined;
   let llmError: string | undefined;
   const enrichedItemIds = new Set(options.enrichedItemIds ?? []);
-  const promptItems = collection.items.filter((item) => contentLength(item.searchText) >= THIN_CONTENT_CHARS || enrichedItemIds.has(item.id));
+  const promptItems = collection.items.filter((item) => hasReadingContent(item)
+    && (contentLength(item.searchText) >= THIN_CONTENT_CHARS || enrichedItemIds.has(item.id)));
+  const promptIds = new Set(promptItems.map((item) => item.id));
+  const capturedIds = new Set(collection.items.filter((item) => !promptIds.has(item.id)).map((item) => item.id));
   const thinSkipped = collection.items.length - promptItems.length;
 
   // Gists come first so theme grouping reads them instead of a 240-char cut.
@@ -775,7 +833,7 @@ export async function synthesizeDaily(
   }
   const gistInvoke = options.invokeGist
     ?? (options.invoke ? undefined : (prompt: string) => defaultInvoke(options.profile ?? {}, prompt));
-  const gistItems = collection.items.filter((item) => notesPaths.has(item.id) || contentLength(item.searchText) >= GIST_MIN_CHARS);
+  const gistItems = promptItems.filter((item) => notesPaths.has(item.id) || contentLength(item.searchText) >= GIST_MIN_CHARS);
   const gists = options.gists === false || !gistInvoke || gistItems.length === 0
     ? new Map<string, DailyGist>()
     : await generateDailyGists(gistItems, {
@@ -842,11 +900,10 @@ export async function synthesizeDaily(
     } catch (error) {
       errors.push(`prompt build: ${error instanceof Error ? error.message : String(error)}`);
     }
-    // On an LLM failure the fallback intentionally covers all items, including
-    // thin links: it is a mechanical availability fallback, not synthesis.
+    // An engine outage must not promote weak captures into learning material.
     if (!usedLlm) {
       llmError = errors.join(' | ').replace(/\s+/g, ' ').slice(0, 400) || 'unknown';
-      themes = mechanicalThemes(collection);
+      themes = mechanicalThemes({ ...collection, items: promptItems });
     }
   }
 
@@ -875,7 +932,7 @@ export async function synthesizeDaily(
   });
   let relatedReviewQueue = { added: 0, total: 0 };
   if (!collection.isExplicitDate) {
-    const relatedId = connected.flatMap((entry) => entry.related).at(0)?.id;
+    const relatedId = themes.flatMap((theme) => theme.relatedIds).at(0);
     if (relatedId) {
       const relatedItem = await getCanonicalBookmarkById(relatedId);
       if (relatedItem) {
@@ -889,12 +946,12 @@ export async function synthesizeDaily(
   );
   const reviewQueue = collection.isExplicitDate
     ? { added: 0, total: 0 }
-    : await queueReviewCards(collection.items, now);
+    : await queueReviewCards(promptItems, now);
   const reviewsQueued = relatedReviewQueue.added + reviewQueue.added;
   const llmMeta = { engine: llmEngine, error: llmError };
   const digestMarkdown = renderDigestMarkdown(
     collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
-    llmMeta, shadowReviews, gists,
+    llmMeta, shadowReviews, gists, capturedIds,
   );
   await writeMd(digestPath, digestMarkdown);
   // The markdown stays the durable artifact; the page is the readable one.
@@ -903,7 +960,7 @@ export async function synthesizeDaily(
     htmlPath = dailyDigestHtmlPath(collection.date);
     await writeMd(htmlPath, renderDigestHtml(
       collection, connected, themes, alsoSavedIds, usedLlm, youtubeNotes, coverage, dueReviews, reviewsQueued,
-      llmMeta, shadowReviews, gists,
+      llmMeta, shadowReviews, gists, capturedIds,
     ));
   }
   // Built from the markdown that was just written, so `ft daily --epub` on an

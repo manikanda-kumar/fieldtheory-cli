@@ -13,7 +13,8 @@ import { enrichBackfill, enrichThinItems, isEnrichmentEligible, mergeEnrichmentS
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
 import { buildDailyAliases, buildDailyPrompt, contentLength, dailyFallbackChain, dailyItemSummary, extractYoutubeVideoId, synthesizeDaily } from '../src/daily/synthesize.js';
-import { dailyDigestPath, dailyIndexPath, dailyMetaPath, ensureDailyDir } from '../src/daily/paths.js';
+import { dailyDigestPath, dailyIndexPath, dailyMetaPath, dailyReviewPath, ensureDailyDir } from '../src/daily/paths.js';
+import { digestMarkdownToEpub } from '../src/daily/epub.js';
 import { gradeReviewCard, listDueReviewCards, markReviewCardsShown, queueReviewCards } from '../src/daily/review.js';
 
 async function readFileText(filePath: string): Promise<string> {
@@ -285,7 +286,7 @@ test('daily: imported prior-year bookmarks remain indexed but cannot enter summa
       // Enough high-scoring archive hits to catch filtering AFTER the FTS cap.
       ...Array.from({ length: 20 }, (_, i) => ({
         id: i, url: `https://example.com/archive-${i}`, title: 'archived-vector search embeddings',
-        excerpt: 'vector search embeddings', createdAt: '2025-06-01T00:00:00.000Z',
+        excerpt: 'Vector search embeddings retrieve documents by similarity rather than exact keyword matches. Measure recall against labeled queries.', createdAt: '2025-06-01T00:00:00.000Z',
       })),
       { id: 20, url: 'https://example.com/current-context', title: 'Current context',
         excerpt: 'A guide to vector search embeddings and retrieval implementations. '.repeat(5),
@@ -308,7 +309,7 @@ test('daily: imported prior-year bookmarks remain indexed but cannot enter summa
     const prompts: string[] = [];
     const result = await synthesizeDaily(collection, connected, { now, invoke: async (prompt) => {
       prompts.push(prompt);
-      throw new Error('offline');
+      return JSON.stringify([{ title: 'Vector retrieval', summary: 'Compare retrieval implementations.', itemIds: ['i1'], relatedIds: ['r1'], relatedReasons: { r1: 'The earlier guide explains the retrieval implementation discussed today.' } }]);
     } });
     assert.ok(prompts.length > 0);
     for (const prompt of prompts) assert.doesNotMatch(prompt, /archived-vector|\/archive-/);
@@ -802,7 +803,7 @@ test('daily: synthesize renders items from themes dropped by the cap under Also 
   });
 });
 
-test('daily: thin bare links are excluded from synthesis and reconciled into Also saved', async () => {
+test('daily: thin bare links are excluded from synthesis and kept as Captured, unread', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeStars(dir, [
       starRecord({ id: 1, fullName: 'eligible/in-prompt', starredAt: '2026-07-06T12:00:00.000Z' }),
@@ -829,7 +830,7 @@ test('daily: thin bare links are excluded from synthesis and reconciled into Als
     assert.match(prompt, /id=i1 source=github-stars title="eligible\/in-prompt"/);
     assert.ok(!prompt.includes('Distinctive thin link title'));
     const digest = await readFileText(result.digestPath);
-    assert.match(digest, /## Also saved/);
+    assert.match(digest, /## Captured, unread/);
     assert.match(digest, /Distinctive thin link title/);
     assert.match(digest, /thin_skipped: 1/);
     assert.match(digest, /thin links skipped from synthesis 1/);
@@ -876,6 +877,90 @@ test('daily: skips the LLM when every item is thin', async () => {
     assert.equal(result.themes.length, 0);
     assert.equal(result.thinSkipped, 2);
     assert.equal(result.alsoSavedCount, 2);
+    const digest = await readFileText(result.digestPath);
+    assert.match(digest, /## Captured, unread/);
+    assert.match(digest, /too little source content/);
+    assert.doesNotMatch(digest, /## Ponder|## Read first|Synthesis was unavailable/);
+    const html = await readFileText(result.htmlPath!);
+    assert.match(html, /too little source content/);
+    assert.doesNotMatch(html, /id="ponder"|id="takeaways"|Synthesis was unavailable/);
+  });
+});
+
+test('daily: ranked takeaways cite evidence while weak captures stay out of synthesis and recall, even offline', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, Array.from({ length: 7 }, (_, index) => starRecord({
+      id: index + 1, fullName: `editorial/item-${index + 1}`, starredAt: `2026-07-06T0${index}:00:00.000Z`,
+    })));
+    await rebuildCanonicalIndex();
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const [login, tab, runtime, authArticle, restored, release, metadata] = collection.items;
+    login.displayTitle = 'Captured sign-in page';
+    login.searchText = 'Amp sign-in page shown in place of the actual thread. The page encourages users to sign in and the actual thread could not be read. '.repeat(3);
+    tab.displayTitle = 'Captured tab';
+    tab.searchText = 'Remote open tab from Example-Mac. Date reflects last tab activity, not bookmark creation. Chrome Saved Tabs '.repeat(3);
+    runtime.displayTitle = 'Runtime verification';
+    runtime.searchText = 'A verifier runs the real app through join, reload and a persistence check. Completion depends on the receipt, not on the worker saying done. Two failed fixes trigger human review.';
+    authArticle.displayTitle = 'Testing login walls';
+    authArticle.searchText = 'Test login walls by checking session expiry and retrying authentication only after obtaining a fresh session. Never confuse a successful HTTP response with access to the underlying document.';
+    restored.displayTitle = 'Enriched capture';
+    restored.searchText = `${tab.searchText} summary: A stale result must be invalidated when calculation code changes. Run the tests again before displaying the number.`;
+    release.displayTitle = 'Minor release';
+    release.searchText = 'This release fixes dependency declarations so plugins work after the HTTP client changes. Declare the dependency directly instead of relying on transitive installation.';
+    metadata.searchText = 'Rust editorial GitHub Stars Rust editorial '.repeat(5);
+    const connected = collection.items.map((item) => ({ item, related: [{
+      id: 'earlier-monzo', title: 'Tested calculations', url: 'https://example.com/monzo', score: 1,
+      summary: 'Monzo marks results stale when calculation code changes and only displays numbers after tests pass.',
+    }, { id: 'title-only', title: 'Unsubstantiated keyword match', url: 'https://example.com/no-evidence', score: 2 }] }));
+    const reason = 'Editorial synthesis: both withhold acceptance until checks pass; one checks app behavior, the other calculation results.';
+    const responses = [
+      { title: 'Verify behavior', summary: 'Runtime checks must run independently.', itemIds: ['i1'], relatedIds: ['r1', 'r2'], relatedReasons: { r1: reason, r2: 'No evidence supports this.' }, takeaway: { text: 'Run a persistence check before accepting done.', itemIds: ['i1'] }, question: 'Why must the verifier reject a deliberately broken app?' },
+      { title: 'Check authentication', summary: 'A login response is not the requested document.', itemIds: ['i2'], takeaway: { text: 'Validate document access after authentication.', itemIds: ['i2'] } },
+      { title: 'Invalidate stale results', summary: 'Changed code requires renewed evidence.', itemIds: ['i3'], takeaway: { text: 'Invalidate numerical outputs when their code changes.', itemIds: ['i3'] } },
+      { title: 'Minor release', summary: 'Direct dependencies prevent plugin failures.', itemIds: ['i4'], takeaway: { text: 'An invented fourth priority must not displace the first three.', itemIds: ['i99'] } },
+    ];
+    let prompt = '';
+    const result = await synthesizeDaily(collection, connected, { epub: true, invoke: async (value) => {
+      prompt = value;
+      return JSON.stringify(responses);
+    } });
+    assert.equal(result.themedCount, 4);
+    assert.equal(result.alsoSavedCount, 3);
+    assert.equal(result.thinSkipped, 3);
+    assert.equal(result.droppedCitations, 1);
+    assert.doesNotMatch(prompt, /Captured sign-in page|Captured tab|Unsubstantiated keyword match/);
+    assert.match(prompt, /evidence: "Monzo marks results stale/);
+    const markdown = await readFileText(result.digestPath);
+    const html = await readFileText(result.htmlPath!);
+    for (const output of [markdown, html]) {
+      assert.match(output, /Read first/);
+      assert.match(output, /Captured, unread/);
+      assert.match(output, /Why must the verifier reject a deliberately broken app\?/);
+      assert.match(output, /one checks app behavior, the other calculation results/);
+      assert.doesNotMatch(output, /invented fourth priority|No evidence supports this|Date reflects|What changed between/);
+      for (const item of collection.items) assert.ok(output.includes(item.canonicalUrl!));
+    }
+    assert.ok(markdown.indexOf('## Read first') < markdown.indexOf('## Recall first'));
+    assert.ok(html.indexOf('id="takeaways"') < html.indexOf('id="theme-1"'));
+    assert.equal(html.match(/<li><strong>/g)?.length, 3);
+    const chapters = digestMarkdownToEpub(markdown).chapters;
+    assert.equal(chapters[1].title, 'Read first');
+    assert.ok(chapters.find((chapter) => chapter.title === 'Captured, unread')?.id.endsWith('captured-unread'));
+    const queued = await queueReviewCards(collection.items, new Date('2026-07-07T00:00:00Z'), { maxCards: 6 });
+    assert.equal(queued.added, 4);
+    // Old low-quality cards are filtered on read, without deleting historical state.
+    const state = JSON.parse(await readFileText(dailyReviewPath()));
+    state.cards.push({ ...state.cards[0], id: 'legacy-login', canonicalId: login.id, title: login.displayTitle, answer: login.searchText });
+    await writeJson(dailyReviewPath(), state);
+    const due = await listDueReviewCards(new Date('2026-07-09T00:00:00Z'), 10);
+    assert.equal(due.length, 4);
+    assert.ok(due.every((card) => card.canonicalId !== login.id && card.canonicalId !== tab.id));
+    const offline = await synthesizeDaily(collection, connected, { invoke: async () => { throw new Error('offline'); } });
+    assert.equal(offline.themedCount, 4);
+    assert.equal(offline.alsoSavedCount, 3);
+    const offlineMarkdown = await readFileText(offline.digestPath);
+    assert.doesNotMatch(offlineMarkdown, /## Read first|Date reflects/);
+    assert.match(offlineMarkdown, /## Captured, unread/);
   });
 });
 
@@ -965,7 +1050,7 @@ test('daily: empty enrichment completion is cached as failed and leaves the item
     assert.ok(contentLength(collection.items[0].searchText) < 120);
     const result = await synthesizeDaily(collection, [], { invoke: async () => { throw new Error('should not invoke'); } });
     assert.equal(result.thinSkipped, 1);
-    assert.match(await readFileText(result.digestPath), /Also saved/);
+    assert.match(await readFileText(result.digestPath), /Captured, unread/);
   });
 });
 

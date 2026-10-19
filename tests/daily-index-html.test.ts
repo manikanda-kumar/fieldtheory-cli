@@ -25,7 +25,7 @@ test('daily archive index scans dated files, extracts themes, groups months, and
   try {
     await writeFile(path.join(dir, '2026-08-09.md'), dailyMarkdown(
       '2026-08-09', 48, 2, 'grok',
-      '## Recall first\n\nold recall\n\n## Today’s throughline\n\nbrief\n\n## Agent harnesses\n\nsummary\n\n## Local inference\n\nsummary\n\n## Also saved\n\nlinks',
+      '## Read first\n\npriorities\n\n## Recall first\n\nold recall\n\n## Today’s throughline\n\nbrief\n\n## Agent harnesses\n\nsummary\n\n## Local inference\n\nsummary\n\n## Also saved\n\nlinks\n\n## Captured, unread\n\nreferences',
     ));
     await writeFile(path.join(dir, '2026-08-08.md'), dailyMarkdown(
       '2026-08-08', 7, 1, 'grok/grok-4.6',
@@ -68,6 +68,7 @@ test('daily archive index scans dated files, extracts themes, groups months, and
     assert.doesNotMatch(html, /999 new/);
     assert.doesNotMatch(html, /Recall first/);
     assert.doesNotMatch(html, /Today’s throughline/);
+    assert.doesNotMatch(html, /Read first|Captured, unread/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

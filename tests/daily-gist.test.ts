@@ -81,9 +81,10 @@ test('gist: a failing batch leaves other batches intact and never throws', async
 });
 
 test('gist: notes material keeps the summary and key points, not chapters or frontmatter', () => {
-  const material = notesMaterial('---\nsource: youtube\n---\n\n# Title\n\nThe summary.\n\n## Key points\n\n- Point one.\n\n## Chapters\n\n- [00:00](https://youtu.be/x) Intro\n');
-  assert.equal(material, 'The summary. ## Key points - Point one.');
+  const material = notesMaterial('---\nsource: youtube\n---\n\n# Title\n\nThe summary.\n\n## Key points\n\n- Point one.\n\n## Chapters\n\n- [00:00](https://youtu.be/x) Intro\n\n## Action items\n\n- Test the verifier against a broken app.\n- Keep failed receipts.\n\n## Topics\n\n- Keyword inventory\n\n## Quality warnings\n\n- Fragmentary transcript; details come from slide text.\n');
+  assert.equal(material, 'The summary. ## Key points - Point one. Action items: - Test the verifier against a broken app. - Keep failed receipts. Source caveats: - Fragmentary transcript; details come from slide text.');
   assert.match(buildGistPrompt([{ alias: 'g1', item: item({}), material }]), /Point one/);
+  assert.doesNotMatch(material, /Intro|Keyword inventory|source: youtube/);
 });
 
 test('gist: related titles end on a word and the throughline uses one sentence', () => {

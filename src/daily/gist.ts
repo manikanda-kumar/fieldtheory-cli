@@ -40,12 +40,22 @@ export interface GenerateGistsOptions {
 
 const compact = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
-/** The summary and key points of a notes file; chapters and metadata add length, not gist. */
+/** Keep the main explanation, actionable rules and caveats, not the chapter inventory. */
 export function notesMaterial(markdown: string): string {
   const body = markdown.replace(/^---\n[\s\S]*?\n---\n/, '');
   const stop = body.search(/^## (?:Chapters|Action items|Topics|Quality warnings)\b/m);
   const head = (stop === -1 ? body : body.slice(0, stop)).replace(/^# .*$/m, '');
-  return compact(head).slice(0, NOTES_CHARS);
+  const section = (name: string): string => {
+    const match = body.match(new RegExp(`^## ${name}[^\\n]*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm'));
+    return match ? compact(match[1]) : '';
+  };
+  const actions = section('Action items');
+  const warnings = section('Quality warnings');
+  return [
+    compact(head).slice(0, NOTES_CHARS),
+    ...(actions ? [`Action items: ${actions.slice(0, 1200)}`] : []),
+    ...(warnings ? [`Source caveats: ${warnings.slice(0, 600)}`] : []),
+  ].join(' ');
 }
 
 async function materialFor(item: CanonicalRecentItem, notesPath: string | undefined): Promise<string> {
@@ -53,8 +63,8 @@ async function materialFor(item: CanonicalRecentItem, notesPath: string | undefi
   if (!notesPath) return saved;
   try {
     const notes = notesMaterial(await fs.readFile(notesPath, 'utf8'));
-    // Notes already cover the description that the saved text carries.
-    return notes.length > saved.length ? notes : saved;
+    // Prefer the source note over a longer, metadata-heavy indexed description.
+    return notes.length >= 60 ? notes : saved;
   } catch {
     return saved;
   }
@@ -73,6 +83,7 @@ export function buildGistPrompt(entries: Array<{ alias: string; item: CanonicalR
   lines.push('Respond with ONLY a JSON array: [{"id": "g1", "headline": "...", "gist": "..."}]');
   lines.push('Headline: one complete phrase of at most 90 characters, never cut off and never ending in an ellipsis. Keep the title as is when it is already a complete, descriptive title. For a social post, whose title is only the first characters of the post, write "<Author>: <what the post says>". For a bare repository name, keep "owner/repo" and add a dash and what it is.');
   lines.push('Gist: 2-4 sentences, 40-90 words. Lead with the main claim or what the thing is, then the specifics that carry it: numbers, named techniques, the steps of a workflow, the conclusion or recommendation. Do not open with "This video", "The article", "The post" or describe the format; state the content itself. Do not repeat the headline. Drop feed boilerplate, calls to subscribe, and indexing keywords.');
+  lines.push('Spend detail on how a technique works, what it checks, its tradeoff or failure boundary, and an actionable rule supported by the source; omit lists of incidental tool names. Preserve material caveats (fragmentary transcript, slide-derived detail, illustrative rather than measured numbers).');
   lines.push('Use only facts present in the material; never add outside knowledge or guesses. If the material says too little for two sentences, write one plain sentence with what is there. If it carries no content beyond the title, return an empty gist. Write in English even when the material is in another language.');
   return withSystemOverride('editor writing short, factual summaries of saved reading material', lines.join('\n'));
 }

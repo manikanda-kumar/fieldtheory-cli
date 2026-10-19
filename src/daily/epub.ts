@@ -81,7 +81,7 @@ export function digestMarkdownToEpub(markdown: string, options: DigestEpubOption
       inThemes = true;
       continue;
     }
-    if (key === 'also saved' || key === 'project activity') inThemes = false;
+    if (key === 'also saved' || key === 'captured, unread' || key === 'project activity') inThemes = false;
 
     const bodyMarkup = renderBlocks(section.lines);
     if (!bodyMarkup.trim()) continue;

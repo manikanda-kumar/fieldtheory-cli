@@ -85,7 +85,7 @@ function references(label: string, items: HtmlItem[] = []): string {
   if (!items.length) return '';
   return `<h3>${htmlEscape(label)}</h3><ul class="related-list">${items.map((item) => {
     const title = separateReadingLinks(item.title);
-    return `<li>${htmlEscape(title.text || 'Saved page')}${renderReadingSourceLinks(item, title.urls, item.byline)}${!item.url && !title.urls.length && item.byline ? `<span class="byline">${htmlEscape(item.byline)}</span>` : ''}</li>`;
+    return `<li>${htmlEscape(title.text || 'Saved page')}${item.body ? `<p>${htmlEscape(decodeReadingText(item.body))}</p>` : ''}${renderReadingSourceLinks(item, title.urls, item.byline)}${!item.url && !title.urls.length && item.byline ? `<span class="byline">${htmlEscape(item.byline)}</span>` : ''}</li>`;
   }).join('')}</ul>`;
 }
 
@@ -111,7 +111,7 @@ export function renderReadingPanel(title: string, body: string, _options?: { col
 }
 
 export function renderReadingPage(options: {
-  title: string; subtitle: string; overview: string;
+  title: string; subtitle: string; overview: string; lead?: string;
   contents: Array<{ title: string; id: string }>; body: string; footer: string;
 }): string {
   const overview = separateReadingLinks(options.overview);
@@ -122,7 +122,7 @@ export function renderReadingPage(options: {
     '</head>', '<body>', '<main class="digest">', '<header class="masthead">',
     '<p class="eyebrow">Field Theory · Daily reading</p>', `<h1>${htmlEscape(options.title)}</h1>`,
     `<p class="subtitle">${htmlEscape(options.subtitle)}</p>`, '</header>',
-    `<section class="overview" id="overview"><h2>Today at a glance</h2><p>${htmlEscape(overview.text)}</p>${renderReadingSourceLinks({ title: '' }, overview.urls)}</section>`,
+    options.lead ?? `<section class="overview" id="overview"><h2>Today at a glance</h2><p>${htmlEscape(overview.text)}</p>${renderReadingSourceLinks({ title: '' }, overview.urls)}</section>`,
     `<nav class="contents" aria-label="Contents"><h2>Contents</h2><ol>${options.contents.map((entry) => `<li><a href="#${htmlEscape(entry.id)}">${htmlEscape(separateReadingLinks(entry.title).text)}</a></li>`).join('')}</ol></nav>`,
     options.body, `<footer>${options.footer}</footer>`, '</main>', '</body>', '</html>', '',
   ].join('\n');

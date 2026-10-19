@@ -5,6 +5,7 @@ import { htmlEscape, htmlLink, renderHtmlPage } from '../html-kit.js';
 
 const DATE_FILE_RE = /^(\d{4}-\d{2}-\d{2})\.md$/;
 const FIXED_SECTIONS = new Set([
+  'read first',
   'recall first',
   'today\'s throughline',
   'today’s throughline',
@@ -12,6 +13,7 @@ const FIXED_SECTIONS = new Set([
   'today\'s material',
   'today’s material',
   'also saved',
+  'captured, unread',
   'project activity',
   'system details',
   'coverage and source freshness',

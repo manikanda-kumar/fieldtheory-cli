@@ -22,8 +22,9 @@ import type { ConnectedItem, RelatedRef } from './connect.js';
 import type { DailyCoverage } from './coverage.js';
 import type { ReviewCard } from './review.js';
 import type { YoutubeShadowReview } from '../youtube/shadow.js';
-import { dailyItemBody, dailyItemHeadline, displayDomain, extractYoutubeVideoId, relatedTitle, themeLede, type DailyTheme } from './synthesize.js';
+import { dailyItemBody, dailyItemHeadline, dailyReflection, displayDomain, extractYoutubeVideoId, relatedTitle, themeLede, type DailyTheme } from './synthesize.js';
 import type { DailyGist } from './gist.js';
+import { hasReadingContent } from './summary.js';
 
 const SNIPPET_CHARS = 220;
 
@@ -56,6 +57,7 @@ export function renderDigestHtml(
   llmMeta: { engine?: string; error?: string } = {},
   shadowReviews: YoutubeShadowReview[] = [],
   gists: Map<string, DailyGist> = new Map(),
+  capturedIds = new Set(collection.items.filter((item) => !hasReadingContent(item)).map((item) => item.id)),
 ): string {
   const itemById = new Map(collection.items.map((item) => [item.id, item]));
   const relatedById = new Map<string, RelatedRef>();
@@ -107,7 +109,7 @@ export function renderDigestHtml(
         url: ref.url ?? undefined,
         eyebrow: 'connects to an earlier save',
         byline: refDomain || undefined,
-        body: '',
+        body: htmlEscape(theme.relatedReasons?.[id] ?? ''),
         extra: notes ? [notes] : undefined,
         group,
         searchText: refDomain || undefined,
@@ -139,6 +141,7 @@ export function renderDigestHtml(
   });
 
   const alsoSaved = alsoSavedIds
+    .filter((id) => !capturedIds.has(id))
     .map((id) => itemById.get(id))
     .filter((item): item is CanonicalRecentItem => Boolean(item))
     .map((item) => toItem(item, 'also-saved'));
@@ -152,6 +155,16 @@ export function renderDigestHtml(
       items: alsoSaved,
       group: 'also-saved',
     }));
+  }
+
+  const captured = alsoSavedIds.map((id) => capturedIds.has(id) ? itemById.get(id) : undefined)
+    .filter((item): item is CanonicalRecentItem => Boolean(item));
+  if (captured.length > 0) {
+    contents.push({ title: 'Captured, unread', id: 'captured-unread' });
+    sections.push('<section class="daygroup" id="captured-unread"><h2>Captured, unread</h2>'
+      + '<p>Saved links without enough source content for a reliable summary. Kept for reference, not used as learning material.</p><ul class="related-list">'
+      + captured.map((item) => `<li>${item.canonicalUrl ? htmlLink(item.canonicalUrl, item.displayTitle ?? item.canonicalUrl) : htmlEscape(item.displayTitle ?? item.id)}${notesLink(item.canonicalUrl) ? ` · ${notesLink(item.canonicalUrl)}` : ''}</li>`).join('')
+      + '</ul></section>');
   }
 
   if (collection.projectDeltas.length > 0) {
@@ -193,18 +206,25 @@ export function renderDigestHtml(
 
   const overview = usedLlm && themes.length > 0
     ? themes.slice(0, 3).map((theme) => themeLede(theme.summary)).filter(Boolean).join(' ')
-    : 'Synthesis was unavailable, so today’s saves are organized by source. The reading list below includes all collected material.';
+    : collection.items.length > 0 && capturedIds.size === collection.items.length
+      ? 'These saves contain too little source content for a reliable briefing. Their links are kept under Captured, unread.'
+      : 'Synthesis was unavailable, so today’s saves are organized by source. The reading list below includes all collected material.';
 
-  const reflection = themes[0]?.title ?? collection.items[0]?.displayTitle ?? 'today’s material';
-  const project = collection.projectDeltas[0]?.repo;
-  const ponder = project
-    ? `What assumption in ${htmlEscape(project)} might “${htmlEscape(truncate(reflection, 80))}” change? Name the smallest experiment that would test it.`
-    : `Which item in “${htmlEscape(truncate(reflection, 80))}” deserves 20 focused minutes, and what question will you try to answer before opening it?`;
-
+  const ponder = dailyReflection(themes);
   const reflectionPanels = [
     renderHtmlPanel(`Recall first${dueReviews.length ? ` · ${dueReviews.length} due` : ''}`, recall),
-    renderHtmlPanel('Ponder', `<p class="quote">${ponder}</p><p class="footnote">Answer this before opening more links — the point is to connect the material to your own work.</p>`),
+    ...(ponder ? [renderHtmlPanel('Ponder', `<p class="quote">${htmlEscape(ponder)}</p><p class="footnote">Answer from the evidence; name a mechanism, tradeoff or failure boundary.</p>`)] : []),
   ].join('');
+
+  const priorities = usedLlm ? themes.filter((theme) => theme.takeaway).slice(0, 3) : [];
+  const lead = priorities.length ? '<section class="overview" id="takeaways"><h2>Read first</h2><ol class="summary-list">'
+    + priorities.map((theme) => `<li><strong>${htmlEscape(theme.title)}</strong><p>${htmlEscape(theme.takeaway!.text)}</p>`
+      + theme.takeaway!.itemIds.map((id) => {
+        const item = itemById.get(id);
+        if (!item) return '';
+        return `<p class="footnote">${item.canonicalUrl ? htmlLink(item.canonicalUrl, dailyItemHeadline(item, gists.get(id))) : htmlEscape(dailyItemHeadline(item, gists.get(id)))}${notesLink(item.canonicalUrl) ? ` · ${notesLink(item.canonicalUrl)}` : ''}</p>`;
+      }).join('') + '</li>').join('') + '</ol></section>' : undefined;
+  if (lead) contents.unshift({ title: 'Read first', id: 'takeaways' });
 
   const freshness = (['x', 'raindrop', 'github-stars', 'rss', 'youtube', 'projects'] as const)
     .map((source) => `<li>${htmlEscape(source)}: ${htmlEscape(coverage.freshness[source])}</li>`)
@@ -232,7 +252,8 @@ export function renderDigestHtml(
     `<p class="footnote">${htmlEscape(counts)}</p>`,
   ].join(''), { collapsed: true }));
 
-  contents.push({ title: 'Recall first', id: 'recall' }, { title: 'Ponder', id: 'ponder' });
+  contents.push({ title: 'Recall first', id: 'recall' });
+  if (ponder) contents.push({ title: 'Ponder', id: 'ponder' });
   // Keep source diagnostics at the end, after all reading and reflection.
   const diagnostics = sections.pop() ?? '';
   sections.push(reflectionPanels, diagnostics);
@@ -241,6 +262,7 @@ export function renderDigestHtml(
     title: `Daily Learning Review — ${collection.date}`,
     subtitle: `${collection.items.length} new saves · ${themes.length} themes · ${dueReviews.length} reviews due`,
     overview,
+    lead,
     contents,
     body: sections.join(''),
     footer: `Field Theory · ${htmlEscape(collection.date)}`,

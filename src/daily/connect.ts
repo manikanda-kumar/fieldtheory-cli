@@ -6,6 +6,7 @@
 import { findRelatedCanonicalBookmarks } from '../canonical-bookmarks-db.js';
 import type { CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import type { DailyCollection } from './collect.js';
+import { hasReadingContent, summarizeSavedText } from './summary.js';
 
 const SEED_TEXT_CHARS = 300;
 const RELATED_PER_ITEM = 3;
@@ -15,6 +16,8 @@ export interface RelatedRef {
   title: string | null;
   url: string | null;
   score: number;
+  /** Actual saved prose, not a title-only keyword match. */
+  summary?: string;
 }
 
 export interface ConnectedItem {
@@ -46,6 +49,7 @@ export async function connectDailyItems(collection: DailyCollection): Promise<Co
         title: hit.displayTitle,
         url: hit.canonicalUrl,
         score: hit.score,
+        ...(hasReadingContent(hit) ? { summary: summarizeSavedText(hit, 700) } : {}),
       })),
     });
   }

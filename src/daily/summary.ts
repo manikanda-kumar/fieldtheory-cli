@@ -10,9 +10,31 @@
 export interface SummarizableItem {
   displayTitle: string | null;
   searchText: string;
+  sources?: string[];
 }
 
 const compact = (value: string): string => value.replace(/\s+/g, ' ').trim();
+
+/** A captured URL or page shell is not evidence for a lesson, however long it is. */
+export function hasReadingContent(item: SummarizableItem): boolean {
+  const text = summarizeSavedText(item, 2400);
+  if (/\bRemote open tab from\b|\bDate reflects last tab activity\b/i.test(text)) return false;
+  if (/\b(?:sign[ -]?in|log[ -]?in|login|access denied|captcha)\b/i.test(text)
+    && /shown in place of|instead of|actual thread|page encourages users|central hub for|could not (?:access|read)/i.test(text)) return false;
+  if (/(?:repository page|central hub for).{0,160}(?:issue tracking|collaboration tools)|page encourages users to contribute/i.test(text)) return false;
+  if (/captured page has no (?:README|code)|features can(?:not|'t|’t) be confirmed|no content beyond (?:the )?title/i.test(text)) return false;
+  const prose = compact(text.replace(/https?:\/\/\S+/g, ''));
+  if (prose.length < 40 || prose.split(/\s+/).length < 6) return false;
+  const metadata = new Set([
+    ...compact(item.displayTitle ?? '').toLowerCase().split(/[\s/]+/),
+    'github', 'stars', 'repository', 'from', 'python', 'typescript', 'javascript',
+    'rust', 'go', 'kotlin', 'swift', 'java', 'c', 'c++', 'c#', 'html', 'css',
+  ]);
+  if (prose.toLowerCase().split(/\s+/).every((word) => metadata.has(word))) return false;
+  // A title alone is not an article summary. For X, the title can be the post itself.
+  return prose.toLowerCase() !== compact(item.displayTitle ?? '').toLowerCase()
+    || Boolean(item.sources?.includes('x'));
+}
 
 /**
  * Trim to `maxChars` without cutting mid-word. A sentence end in the last
