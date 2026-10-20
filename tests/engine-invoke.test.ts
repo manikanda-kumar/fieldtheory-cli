@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { ResolvedEngine } from '../src/engine.js';
 
 /**
@@ -95,4 +99,70 @@ test('invokeEngineAsync: captures multi-line stderr in the error message', async
       return true;
     },
   );
+});
+
+test('Claude invocations deliver complete UTF-8 input and preserve native flags', { skip: process.platform === 'win32' }, async (t) => {
+  const { resolveEngine, invokeEngine, invokeEngineAsync, EngineInvocationError } = await import('../src/engine.js');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-claude-transport-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const bin = path.join(tmpDir, 'claude');
+  fs.writeFileSync(bin, `#!${process.execPath}
+const fs = require('node:fs');
+const { createHash } = require('node:crypto');
+const args = process.argv.slice(2);
+const model = args[args.indexOf('--model') + 1];
+if (model === 'invalid' || model === 'closed') {
+  fs.closeSync(0);
+  console.error('invalid model requested');
+  process.exit(model === 'invalid' ? 7 : 0);
+}
+const input = fs.readFileSync(0);
+process.stdout.write(JSON.stringify({ args, bytes: input.length, sha256: createHash('sha256').update(input).digest('hex') }));
+`, { mode: 0o755 });
+
+  const originalPath = process.env.PATH;
+  let engine: ResolvedEngine;
+  try {
+    process.env.PATH = `${tmpDir}${path.delimiter}${originalPath ?? ''}`;
+    engine = await resolveEngine({ engine: 'claude', model: 'opus', effort: 'medium', webSearch: true });
+  } finally {
+    process.env.PATH = originalPath;
+  }
+  engine = { ...engine, config: { ...engine.config, bin } };
+
+  const large = `BEGIN\n${'α → retry🙂\n'.repeat(30_000)}END`;
+  assert.ok(Buffer.byteLength(large) > 128 * 1024, 'must exceed the Linux per-argument limit');
+  for (const invoke of [invokeEngine, invokeEngineAsync]) {
+    for (const [size, user] of [['short', 'hello Ελληνικά\n--not-a-flag "quoted"'], ['large', large]]) {
+      await t.test(`${invoke.name}: ${size} input`, async () => {
+        const output = JSON.parse(await invoke(engine, `SYSTEM: Transport fixture system\n\n---\n\n${user}`, { timeout: 5_000 }));
+        assert.deepEqual(output, {
+          args: ['-p', '--allowedTools', 'WebSearch,WebFetch', '--output-format', 'text', '--system-prompt', 'Transport fixture system', '--model', 'opus', '--effort', 'medium'],
+          bytes: Buffer.byteLength(user),
+          sha256: createHash('sha256').update(user).digest('hex'),
+        });
+      });
+    }
+
+    await t.test(`${invoke.name}: early exit preserves the engine error`, async () => {
+      await assert.rejects(
+        async () => invoke({ ...engine, model: 'invalid' }, large, { timeout: 5_000 }),
+        (error: unknown) => {
+          assert.ok(error instanceof EngineInvocationError);
+          assert.equal(error.reason, 'exit');
+          assert.equal(error.code, 7);
+          assert.equal(error.stderr.trim(), 'invalid model requested');
+          assert.ok(!error.message.includes('BEGIN'));
+          return true;
+        },
+      );
+    });
+
+    await t.test(`${invoke.name}: refuses success after an incomplete prompt write`, async () => {
+      await assert.rejects(
+        async () => invoke({ ...engine, model: 'closed' }, large, { timeout: 5_000 }),
+        (error: unknown) => error instanceof EngineInvocationError && error.reason === 'spawn',
+      );
+    });
+  }
 });

@@ -167,7 +167,7 @@ test('resolveEngine: carries explicit model and effort into engine args', async 
 
     const args = resolved.config.args('PROMPT', resolved);
     if (engineName === 'claude') {
-      assert.deepEqual(args.slice(-5), ['--output-format', 'text', '--model', 'opus', '--effort', 'medium', 'PROMPT'].slice(-5));
+      assert.deepEqual(args.slice(-4), ['--model', 'opus', '--effort', 'medium']);
       assert.ok(args.includes('--model'));
       assert.ok(args.includes('--effort'));
     } else if (engineName === 'grok') {
@@ -321,8 +321,7 @@ test('resolveEngine: claude args include --system-prompt when system prompt prov
     const args = resolved.config.args('hello', resolved, 'You are a test engine.');
     assert.ok(args.includes('--system-prompt'));
     assert.ok(args.includes('You are a test engine.'));
-    // User prompt should still be last
-    assert.equal(args[args.length - 1], 'hello');
+    assert.ok(!args.includes('hello'), 'user prompt travels through stdin, not argv');
   } finally {
     process.env.PATH = origPath;
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -487,7 +486,7 @@ test('resolveEngine: claude respects FT_CLAUDE_MODEL and FT_CLAUDE_EFFORT', asyn
     const allowed = searchArgs.indexOf('--allowedTools');
     assert.equal(searchArgs[allowed + 1], 'WebSearch,WebFetch');
     assert.ok(searchArgs[allowed + 2].startsWith('--'), 'variadic --allowedTools must not swallow the prompt');
-    assert.equal(searchArgs.at(-1), 'the prompt');
+    assert.ok(!searchArgs.includes('the prompt'), 'user prompt travels through stdin, not argv');
   } finally {
     process.env.PATH = origPath;
     if (origModel !== undefined) process.env.FT_CLAUDE_MODEL = origModel;

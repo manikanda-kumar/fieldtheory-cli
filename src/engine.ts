@@ -59,14 +59,17 @@ export function extractSystemPrompt(prompt: string): { system?: string; user: st
 export interface EngineConfig {
   bin: string;
   args: (prompt: string, engine?: Pick<ResolvedEngine, 'model' | 'effort' | 'webSearch'>, systemPrompt?: string) => string[];
+  /** Send the user prompt through stdin instead of a size-limited argument. */
+  promptViaStdin?: boolean;
 }
 
 const KNOWN_ENGINES: Record<string, EngineConfig> = {
   claude: {
     bin: 'claude',
+    promptViaStdin: true,
     // Web search/fetch tools are denied in headless mode unless allowed;
-    // --allowedTools is variadic, so it must precede a flag, not the prompt.
-    args: (p, engine, system) => [
+    // --allowedTools is variadic, so terminate it with the next flag.
+    args: (_p, engine, system) => [
       '-p',
       ...(engine?.webSearch ? ['--allowedTools', 'WebSearch,WebFetch'] : []),
       '--output-format',
@@ -74,7 +77,6 @@ const KNOWN_ENGINES: Record<string, EngineConfig> = {
       ...(system ? ['--system-prompt', system] : []),
       ...(engine?.model ? ['--model', engine.model] : []),
       ...(engine?.effort ? ['--effort', engine.effort] : []),
-      p,
     ],
   },
   codex: {
@@ -531,14 +533,9 @@ function buildMessage(
 }
 
 /**
- * Synchronous engine call — uses `spawnSync` with `input: ''` so the child's
- * stdin is closed with EOF before it starts reading.
- *
- * Background: claude-code's `claude -p` reads stdin when it's not a TTY and
- * concatenates it with the `-p` argument. Leaving stdin open as an unwritten
- * pipe makes older claude versions block forever (and newer versions eat a
- * 3s "no stdin data received" delay per call). Passing `input: ''` sends
- * EOF immediately so the child proceeds with just the prompt arg.
+ * Synchronous engine call — Claude receives the user prompt through stdin
+ * to avoid OS argument-size limits; argv-based engines receive empty stdin.
+ * Always send EOF after the input so headless CLIs do not wait on an open pipe.
  */
 export function invokeEngine(engine: ResolvedEngine, prompt: string, opts: InvokeOptions = {}): string {
   if (engine.name === 'droid') {
@@ -553,7 +550,7 @@ export function invokeEngine(engine: ResolvedEngine, prompt: string, opts: Invok
   const maxBuffer = opts.maxBuffer ?? DEFAULT_MAXBUF;
 
   const result = spawnSync(bin, args(user, engine, system), {
-    input: '',              // EOF on stdin — do not inherit parent stdin
+    input: engine.config.promptViaStdin ? Buffer.from(user, 'utf-8') : '',
     timeout,
     maxBuffer,
     encoding: 'buffer',
@@ -563,7 +560,11 @@ export function invokeEngine(engine: ResolvedEngine, prompt: string, opts: Invok
   const stderrBuf = result.stderr ?? Buffer.alloc(0);
   const stderr    = redactSecrets(tailString(stderrBuf, STDERR_TAIL_BYTES));
 
-  if (result.error) {
+  // A failed child may close stdin before consuming the prompt. Prefer its
+  // actual nonzero exit and stderr over the resulting pipe-write error.
+  const exitedBeforeInput = (result.error as NodeJS.ErrnoException | undefined)?.code === 'EPIPE'
+    && result.status !== null && result.status !== 0;
+  if (result.error && !exitedBeforeInput) {
     const anyErr = result.error as NodeJS.ErrnoException & { code?: string };
     if (anyErr.code === 'ETIMEDOUT') {
       throw new EngineInvocationError({
@@ -613,7 +614,7 @@ export function invokeEngine(engine: ResolvedEngine, prompt: string, opts: Invok
  * Uses `spawn` (not `execFile`) because `execFile` with a callback builds
  * its own internal stdio pipes and silently overrides any stdio option we
  * pass — so we can't close the child's stdin through the execFile API. With
- * `spawn` we get direct control and can `child.stdin.end()` immediately.
+ * `spawn` we can send the prompt when needed, then close stdin with EOF.
  */
 export function invokeEngineAsync(engine: ResolvedEngine, prompt: string, opts: InvokeOptions = {}): Promise<string> {
   const { system, user } = extractSystemPrompt(prompt);
@@ -644,16 +645,13 @@ export function invokeEngineAsync(engine: ResolvedEngine, prompt: string, opts: 
       cwd: opts.cwd ?? engineWorkDir(),
     });
 
-    // Close stdin immediately with EOF so `claude -p` doesn't wait on it.
-    // If spawn itself failed (ENOENT etc) `child.stdin` may be null — guard.
-    try { child.stdin?.end(); } catch { /* spawn error will surface below */ }
-
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     let stdoutBytes = 0;
     let stderrBytes = 0;
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let inputError: NodeJS.ErrnoException | undefined;
 
     /** Compute the redacted tail of buffered stderr for error reporting. */
     const stderrTail = () =>
@@ -735,6 +733,14 @@ export function invokeEngineAsync(engine: ResolvedEngine, prompt: string, opts: 
       if (settled) return;
       const stderr = stderrTail();
       if (code === 0) {
+        if (inputError) {
+          fail(new EngineInvocationError({
+            engine: engine.name, bin, stderr,
+            killed: false, code, signal, reason: 'spawn',
+            message: buildMessage(engine.name, 'spawn', redactSecrets(inputError.message), code, signal, timeout),
+          }));
+          return;
+        }
         succeed(Buffer.concat(stdoutChunks).toString('utf-8').trim());
         return;
       }
@@ -745,5 +751,21 @@ export function invokeEngineAsync(engine: ResolvedEngine, prompt: string, opts: 
         message: buildMessage(engine.name, 'exit', stderr, code, signal, timeout),
       }));
     });
+
+    child.stdin?.on('error', (err: NodeJS.ErrnoException) => {
+      // An early engine exit can break a pending prompt write. Let close
+      // report the engine's exit code and stderr instead of crashing on EPIPE.
+      if (err.code === 'EPIPE') {
+        inputError = err;
+        return;
+      }
+      fail(new EngineInvocationError({
+        engine: engine.name, bin, stderr: stderrTail(),
+        killed: true, code: null, signal: null, reason: 'spawn',
+        message: buildMessage(engine.name, 'spawn', redactSecrets(err.message), null, null, timeout),
+      }));
+    });
+    // End with EOF even for argv-based engines; never inherit parent stdin.
+    child.stdin?.end(engine.config.promptViaStdin ? user : '');
   });
 }
