@@ -68,9 +68,15 @@ export function renderAppShell(): string {
             <button class="source-chip" type="button" data-source="raindrop">Raindrop</button>
             <button class="source-chip" type="button" data-source="github-stars">GitHub</button>
             <button class="source-chip" type="button" data-source="youtube">YouTube</button>
+            <button class="source-chip" type="button" data-source="rss">RSS</button>
+            <button class="source-chip" type="button" data-source="project">Projects</button>
           </div>
           <p id="sourceHint" class="source-hint"><strong>All:</strong> Search the complete saved corpus. Sources stay available at search time so recall can be tuned before opening deeper pages.</p>
-          <div id="activeFilters" class="active-filters"></div>
+          <div id="activeFilters" class="active-filters">
+            <label>Topic <input class="text-field" name="topic" type="search" placeholder="e.g. ai/agents"></label>
+            <label>After <input class="text-field" name="after" type="date"></label>
+            <label>Before <input class="text-field" name="before" type="date"></label>
+          </div>
         </section>
         <p id="status" class="status-line" role="status">Loading…</p>
         <section id="results" class="results" aria-live="polite"></section>
@@ -326,7 +332,9 @@ button, input, textarea { font: inherit; }
 .load-more { display: block; margin: 16px auto 8px; }
 /* display:block above outranks the hidden attribute's UA rule. */
 .load-more[hidden] { display: none; }
-.active-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.active-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; color: var(--ink-soft); font-size: 12px; }
+.active-filters label { display: flex; align-items: center; gap: 5px; }
+.active-filters input { width: 150px; max-width: 42vw; padding: 5px 8px; }
 .status-line { margin: 0 0 12px; color: var(--ink-soft); font-size: 13px; }
 .results { display: grid; gap: 0; }
 .results-feed {
@@ -1119,7 +1127,7 @@ body {
 
 export const appJs = `
 const state = {
-  query:'', source:'', category:'', domain:'', folder:'', offset:0, limit:30, total:0, loading:false,
+  query:'', source:'', category:'', domain:'', folder:'', topic:'', after:'', before:'', offset:0, limit:30, total:0, loading:false,
   lane:'home', statsPayload:null, selectedTrail:0,
   ask: { question:'', save:false, running:false, progress:[], answer:'', error:'', engine:'', pagesRead:[], wikiUpdates:[], savedAs:'' },
 };
@@ -1128,7 +1136,7 @@ const laneMeta = {
   home: { title:'A calmer command center for resurfacing what you already saved.', subtitle:'Ask across the archive, continue useful trails, and tune search by source.' },
   ask: { title:'Ask the library', subtitle:'A local LLM answers from your wiki pages and saved items, with the sources it read.' },
   today: { title:'Today', subtitle:'A lightweight daily surface for new saves, old memories, and what changed.' },
-  bookmarks: { title:'Library', subtitle:'Search X bookmarks, Raindrop, GitHub stars, and YouTube notes.' },
+  bookmarks: { title:'Library', subtitle:'Search X, Raindrop, GitHub, YouTube, RSS, and projects.' },
   sources: { title:'Sources', subtitle:'Operational sync details and shared links live here, not on Home.' },
   people: { title:'People', subtitle:'Trusted authors and experts from your saved knowledge graph.' },
   synthesis: { title:'Synthesis', subtitle:'Turn saved fragments into durable notes, briefs, and open questions.' },
@@ -1139,6 +1147,8 @@ const sourceHints = {
   raindrop: ['Raindrop', 'Long-form web reading and highlights'],
   'github-stars': ['GitHub', 'Starred repos and tool discovery'],
   youtube: ['YouTube', 'Transcript-backed notes and talks'],
+  rss: ['RSS', 'Articles from subscribed feeds'],
+  project: ['Projects', 'Local project activity and goals'],
 };
 const trails = [
   {
@@ -1211,7 +1221,7 @@ function currentListId() {
 function params(resetOffset = false) {
   if (resetOffset) state.offset = 0;
   const p = new URLSearchParams({ limit:String(state.limit), offset:String(state.offset) });
-  for (const key of ['query','category','domain','folder']) if (state[key]) p.set(key, state[key]);
+  for (const key of ['query','category','domain','folder','topic','after','before']) if (state[key]) p.set(key, state[key]);
   if (state.source) p.set('source', state.source);
   return p;
 }
@@ -1415,6 +1425,11 @@ function renderEngagement(item) {
   return row;
 }
 
+function safeExternalUrl(value) {
+  if (typeof value !== 'string') return false;
+  try { return ['http:', 'https:'].includes(new URL(value).protocol); } catch { return false; }
+}
+
 function renderCard(item) {
   const isTweet = Boolean(item.timelineKind);
   const card = el('article', isTweet ? 'tweet-card' : 'bookmark-card');
@@ -1432,9 +1447,10 @@ function renderCard(item) {
   }
   if (item.kind) meta.append(el('span', 'pill pill-kind', item.kind));
   for (const source of item.sources || []) meta.append(el('span', 'pill', source));
-  for (const value of [...(item.categories || []), ...(item.domains || []), ...(item.folderNames || [])]) meta.append(el('span', 'pill', value));
+  for (const value of [...(item.categories || []), ...(item.domains || []), ...(item.topics || []), ...(item.folderNames || [])]) meta.append(el('span', 'pill', value));
   const links = el('div', 'links');
   for (const href of item.links || []) {
+    if (!safeExternalUrl(href)) continue;
     const a = el('a', 'pill', linkLabel(href));
     a.href = href; a.target = '_blank'; a.rel = 'noreferrer'; a.title = href;
     links.append(a);
@@ -1443,10 +1459,20 @@ function renderCard(item) {
   const media = el('div', 'media-grid');
   for (const asset of item.mediaAssets || []) { const img = el('img'); img.src = asset.url; img.alt = 'Downloaded bookmark media'; img.loading = 'lazy'; media.append(img); }
   const actions = el('div', 'actions');
-  const open = el('a', 'details-btn', 'Open on X'); open.href = item.url; open.target = '_blank'; open.rel = 'noreferrer';
   const details = el('button', 'details-btn', 'Details'); details.type = 'button';
   details.addEventListener('click', () => isTweet ? showTweetDetail(item) : showDetail(item.id));
-  actions.append(details, open);
+  actions.append(details);
+  if (safeExternalUrl(item.url)) {
+    const host = new URL(item.url).hostname.toLowerCase();
+    const label = ['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com'].includes(host) ? 'Open on X'
+      : item.sources?.includes('project') ? 'Open project'
+      : item.sources?.includes('github-stars') ? 'Open on GitHub'
+      : item.sources?.includes('youtube') ? 'Watch on YouTube'
+      : item.sources?.includes('rss') ? 'Read article' : 'Open link';
+    const open = el('a', 'details-btn', label);
+    open.href = item.url; open.target = '_blank'; open.rel = 'noreferrer';
+    actions.append(open);
+  }
   const engagement = renderEngagement(item);
   card.append(header, text);
   if (meta.childNodes.length) card.append(meta);
@@ -1735,7 +1761,7 @@ function showTweetDetail(item) {
   const mediaObjects = renderMediaObjects(item.mediaObjects);
   if (mediaObjects) detail.append(el('h3', '', 'Media'), mediaObjects);
   const links = el('div', 'links');
-  for (const href of item.links || []) { const a = el('a', 'pill', linkLabel(href)); a.href = href; a.target = '_blank'; a.rel = 'noreferrer'; a.title = href; links.append(a); }
+  for (const href of item.links || []) { if (!safeExternalUrl(href)) continue; const a = el('a', 'pill', linkLabel(href)); a.href = href; a.target = '_blank'; a.rel = 'noreferrer'; a.title = href; links.append(a); }
   if (links.childNodes.length) detail.append(el('h3', '', 'Links'), links);
   attachLinkPreviews(detail, item);
 }
@@ -1752,11 +1778,12 @@ async function showDetail(id) {
   if (detailPayload.sources?.length) {
     const sources = el('div', 'links');
     for (const source of detailPayload.sources) {
+      if (!safeExternalUrl(source.sourceUrl)) continue;
       const a = el('a', 'pill', source.source + ': ' + linkLabel(source.sourceUrl));
       a.href = source.sourceUrl; a.target = '_blank'; a.rel = 'noreferrer'; a.title = source.sourceUrl;
       sources.append(a);
     }
-    detail.append(el('h3', '', 'Sources'), sources);
+    if (sources.childNodes.length) detail.append(el('h3', '', 'Sources'), sources);
   }
 }
 
@@ -2012,6 +2039,14 @@ document.querySelector('#query').addEventListener('input', (event) => {
   }, 300);
 });
 loadMore.addEventListener('click', () => fetchBookmarks(false));
+
+for (const input of document.querySelectorAll('#activeFilters input')) {
+  input.addEventListener('change', () => {
+    state[input.name] = input.value.trim();
+    setActiveNav('bookmarks');
+    renderLane('bookmarks');
+  });
+}
 
 for (const chip of document.querySelectorAll('[data-source]')) {
   chip.addEventListener('click', () => {

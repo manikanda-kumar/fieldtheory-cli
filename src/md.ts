@@ -42,6 +42,7 @@ import {
   htmlEscape, renderHtmlGroup, renderHtmlPage,
   type HtmlChip, type HtmlItem,
 } from './html-kit.js';
+import { reindexLibraryDocs } from './library-index-db.js';
 
 const MIN_CATEGORY_COUNT = 5;
 const MIN_DOMAIN_COUNT   = 5;
@@ -455,6 +456,7 @@ export async function regenerateLibraryIndexes(): Promise<{ indexPath: string; h
   await writeMd(mdIndexPath(), indexContent);
   const htmlContent = await generateHtmlIndex();
   await writeMd(mdHtmlPath(), htmlContent);
+  await reindexLibraryDocs();
   const pages = Number(/^pages:\s*(\d+)$/m.exec(indexContent)?.[1] ?? 0);
   return { indexPath: mdIndexPath(), htmlPath: mdHtmlPath(), pages };
 }
@@ -614,7 +616,9 @@ export async function compileMd(options: CompileOptions = {}): Promise<CompileRe
   }
 
   try {
-    return await doCompile(options, progress, startTime, onlyFilter);
+    const result = await doCompile(options, progress, startTime, onlyFilter);
+    await reindexLibraryDocs();
+    return result;
   } finally {
     try { fs.unlinkSync(lockPath); } catch { /* best effort */ }
   }

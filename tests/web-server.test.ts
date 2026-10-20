@@ -228,6 +228,41 @@ test('web API lists and shows unified library items with provenance', async () =
   });
 });
 
+test('unified web API exposes canonical topics and applies topic/date filters to items and totals', async () => {
+  await withTempFieldTheoryData(async (root) => {
+    await mkdir(path.join(root, 'github-stars'), { recursive: true });
+    await writeJsonLines(path.join(root, 'github-stars', 'stars.jsonl'), [
+      githubStarRecord(),
+      githubStarRecord({ id: 456, fullName: 'example/types', name: 'types',
+        htmlUrl: 'https://github.com/example/types', topics: ['typescript'],
+        starredAt: '2026-06-15T12:00:00Z' }),
+    ]);
+    await rebuildCanonicalIndex();
+    const server = await startTestServer();
+    try {
+      const get = async (query: string) => {
+        const response = await fetch(`${server.baseUrl}/api/unified?${query}`);
+        assert.equal(response.status, 200);
+        return response.json() as Promise<{ total: number; items: Array<{ id: string; topics: string[] }> }>;
+      };
+      const agents = await get('topic=ai%2Fagents&after=2026-05-01&before=2026-06-01');
+      assert.equal(agents.total, 1);
+      assert.equal(agents.items.length, 1);
+      assert.ok(agents.items[0]!.topics.includes('ai/agents'));
+      const detail = await fetch(`${server.baseUrl}/api/unified/${encodeURIComponent(agents.items[0]!.id)}`);
+      assert.ok(((await detail.json()) as { item: { topics: string[] } }).item.topics.includes('ai/agents'));
+      const types = await get('topic=eng%2Flanguages&after=2026-06-01&before=2026-07-01');
+      assert.equal(types.total, 1);
+      assert.deepEqual(types.items[0]?.topics, ['eng/languages']);
+      const empty = await get('topic=ai%2Fagents&after=2026-06-01');
+      assert.equal(empty.total, 0);
+      assert.deepEqual(empty.items, []);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 test('web API exposes YouTube note path and metadata in unified provenance', async () => {
   await withTempFieldTheoryData(async () => {
     await upsertYoutubeVideosAsSources([{
@@ -347,6 +382,8 @@ test('app shell includes root element and static asset links', () => {
   assert.match(html, /\/app\.js/);
   assert.doesNotMatch(html, /fonts\.googleapis\.com/);
   assert.match(html, /data-source="github-stars"/);
+  assert.match(html, /data-source="rss"/);
+  assert.match(html, /data-source="project"/);
   assert.match(html, /data-lane="people"/);
   assert.match(html, /data-lane="synthesis"/);
   assert.match(appCss, /\.ft-archive-shell/);

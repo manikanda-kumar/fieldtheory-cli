@@ -40,7 +40,7 @@ export function sanitizeBookmarkText(text: string): string {
     .replace(/ignore\s+(previous|above|all)\s+instructions?/gi, '[filtered]')
     .replace(/you\s+are\s+now\s+/gi, '[filtered]')
     .replace(/system\s*:\s*/gi, '[filtered]')
-    .replace(/<\/?tweet_text>/gi, '') // prevent tag escape
+    .replace(/<\/?(?:tweet_text|content)\b[^>]*>/gi, '') // prevent content-boundary escape
     .slice(0, 300);
 }
 

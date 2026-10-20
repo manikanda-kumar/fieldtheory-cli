@@ -36,6 +36,53 @@ test('daily links in both titles and summaries are moved to a separate source li
   assert.ok(!html.match(/<p class="summary">(.*?)<\/p>/)?.[1].includes('https://'));
 });
 
+test('Read first decodes entities, extracts sources, escapes markup and keeps cited items linked', () => {
+  const item = {
+    id: 'one', canonicalUrl: 'https://example.com/article?a=1&b=2',
+    displayTitle: 'Guide &amp; examples https://example.com/deep?x=1&amp;y=2',
+    searchText: 'A substantial article about mechanisms and limitations. '.repeat(4),
+    sources: ['rss'], firstSavedAt: '2026-09-13T00:00:00Z', lastSavedAt: null,
+    primaryCategory: null, primaryDomain: 'example.com',
+  };
+  const collection: DailyCollection = {
+    date: '2026-09-13', sinceIso: '2026-09-12T00:00:00Z', untilIso: '2026-09-14T00:00:00Z',
+    isExplicitDate: true, items: [item], carriedOver: 0, undateableExcluded: 0,
+    nextWatermark: '2026-09-14T00:00:00Z', projectDeltas: [],
+  };
+  const coverage: DailyCoverage = {
+    freshness: { x: 'unknown', raindrop: 'unknown', 'github-stars': 'unknown', rss: 'unknown', youtube: 'unknown', projects: 'unknown' },
+    counts: { collected: 1, themed: 1, alsoSaved: 0, thinSkipped: 0, enriched: 0, carriedOver: 0, citationsDropped: 0, undateableExcluded: 0, synthesis: 'llm' },
+  };
+  const theme = {
+    title: 'Signals &amp; safety https://example.com/theme', summary: 'Evidence supports a bounded approach.',
+    itemIds: ['one'], relatedIds: [], externalNotes: [], projects: [],
+    takeaway: { text: 'Use &lt;checks&gt; &amp; evidence. See https://example.com/lesson?a=1&amp;b=2. Never <script>alert(1)</script>.', itemIds: ['one'] },
+  };
+  const html = renderDigestHtml(collection, [], [theme], [], true, new Map(), coverage);
+  const lead = html.match(/<section class="overview" id="takeaways">([\s\S]*?)<\/section>/)?.[1] ?? '';
+  assert.match(lead, /<strong>Signals &amp; safety<\/strong>/);
+  assert.match(lead, /Use &lt;checks&gt; &amp; evidence/);
+  assert.match(lead, /href="https:\/\/example.com\/lesson\?a=1&amp;b=2"/);
+  assert.match(lead, /href="https:\/\/example.com\/theme"/);
+  assert.match(lead, /href="https:\/\/example.com\/article\?a=1&amp;b=2"[^>]*>Guide &amp; examples<\/a>/);
+  assert.match(lead, /href="https:\/\/example.com\/deep\?x=1&amp;y=2"/);
+  assert.doesNotMatch(lead, /&amp;amp;|&amp;lt;|<script>|<strong>[^<]*https?:/);
+  const markdown = renderDigestMarkdown(collection, [], [theme], [], true, new Map(), coverage);
+  const first = markdown.split('## Read first')[1].split('## Recall first')[0];
+  assert.match(first, /\*\*Signals & safety\*\*/);
+  assert.match(first, /Use &lt;checks&gt; & evidence/);
+  assert.match(first, /\[example.com\]\(https:\/\/example.com\/lesson\?a=1&b=2\)/);
+  assert.match(first, /\[Guide & examples\]\(https:\/\/example.com\/article\?a=1&b=2\)/);
+  assert.match(first, /\[example.com\]\(https:\/\/example.com\/deep\?x=1&y=2\)/);
+  assert.doesNotMatch(first, /&amp;|https?:\/\/example.com\/lesson\?a=1&b=2\. Never/);
+  assert.doesNotMatch(first, /<script>/);
+  const unsafeItem = { ...item, canonicalUrl: 'javascript:alert(1)' };
+  const unsafeHtml = renderDigestHtml({ ...collection, items: [unsafeItem] }, [], [theme], [], true, new Map(), coverage);
+  const unsafeMarkdown = renderDigestMarkdown({ ...collection, items: [unsafeItem] }, [], [theme], [], true, new Map(), coverage);
+  assert.doesNotMatch(unsafeHtml, /href="javascript:/);
+  assert.doesNotMatch(unsafeMarkdown.split('## Read first')[1].split('## Recall first')[0], /\]\(javascript:/);
+});
+
 test('daily HTML keeps full headings, titled links and paragraph summaries without browser controls', () => {
   const title = 'A detailed article title that remains legible in a reading list '.repeat(3);
   const summary = 'A useful complete sentence explaining the saved material. '.repeat(7).trim();

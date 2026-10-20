@@ -8,6 +8,7 @@ import { compareVersions, runWithSpinner, buildCli, parseCookieOption, shouldDow
 import { dataDir } from '../src/paths.js';
 import { skillWithFrontmatter } from '../src/skill.js';
 import { rebuildCanonicalIndex } from '../src/canonical-bookmarks-db.js';
+import { searchLibraryDocs } from '../src/library-index-db.js';
 
 const stdoutCapture = new AsyncLocalStorage<string[]>();
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
@@ -1143,6 +1144,61 @@ test('ft classify --unified --regex runs canonical classification', async () => 
     else process.env.FT_DATA_DIR = origEnv;
     process.exitCode = origExitCode;
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('daily and wiki writes are immediately visible to Library search', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-writer-freshness-'));
+  const previous = {
+    FT_DATA_DIR: process.env.FT_DATA_DIR,
+    FT_LIBRARY_DIR: process.env.FT_LIBRARY_DIR,
+    FT_COMMANDS_DIR: process.env.FT_COMMANDS_DIR,
+  };
+  const previousExitCode = process.exitCode;
+  process.env.FT_DATA_DIR = path.join(root, 'bookmarks');
+  process.env.FT_LIBRARY_DIR = path.join(root, 'library');
+  process.env.FT_COMMANDS_DIR = path.join(root, 'commands');
+  process.exitCode = 0;
+
+  try {
+    const projects = path.join(process.env.FT_DATA_DIR, 'projects');
+    fs.mkdirSync(projects, { recursive: true });
+    await rebuildCanonicalIndex();
+    // Project-only digests need no engine, enrichment, or network access.
+    fs.writeFileSync(path.join(projects, 'projects.jsonl'), JSON.stringify({
+      repo: 'quartzrecall',
+      recentCommits: [{ date: '2026-07-06T12:00:00.000Z', subject: 'fixture integration' }],
+    }) + '\n');
+    const dailyOutput = await captureStdout(async () => {
+      await buildCli().parseAsync(['node', 'ft', 'daily', '--date', '2026-07-06', '--write', '--no-gists', '--no-ground']);
+    });
+    assert.match(dailyOutput, /Digest written:/);
+    const docs = await searchLibraryDocs({ limit: 100 });
+    assert.ok(docs.some((doc) => doc.relPath === 'daily/2026-07-06.md'));
+    assert.ok(docs.some((doc) => doc.relPath === 'interests.md'));
+    assert.ok((await searchLibraryDocs({ query: 'quartzrecall' })).some((doc) => doc.relPath === 'daily/2026-07-06.md'));
+
+    const categoryPath = path.join(process.env.FT_LIBRARY_DIR, 'categories', 'freshness.md');
+    fs.mkdirSync(path.dirname(categoryPath), { recursive: true });
+    fs.writeFileSync(categoryPath, '```fencetag\n# Freshness\n\nsparrowtoken\n```\n');
+    await captureStdout(async () => {
+      await buildCli().parseAsync(['node', 'ft', 'wiki', '--unified', '--index-only']);
+    });
+    assert.equal((await searchLibraryDocs({ query: 'sparrowtoken' })).length, 1);
+    assert.equal((await searchLibraryDocs({ query: 'fencetag' })).length, 1);
+    await captureStdout(async () => {
+      await buildCli().parseAsync(['node', 'ft', 'wiki', '--unified', '--clean']);
+    });
+    assert.equal((await searchLibraryDocs({ query: 'fencetag' })).length, 0);
+    assert.equal((await searchLibraryDocs({ query: 'sparrowtoken' })).length, 1);
+    assert.equal(process.exitCode, 0);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    process.exitCode = previousExitCode;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 

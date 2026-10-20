@@ -10,6 +10,7 @@ import { listFiles, pathExists, readMd, writeJson } from '../fs.js';
 import { writeBinary, writeMd } from '../fs.js';
 import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunProfile } from '../engine.js';
 import { extractJsonArray } from '../bookmark-classify-llm.js';
+import { safeHref } from '../html-kit.js';
 import { getCanonicalBookmarkById, type CanonicalRecentItem } from '../canonical-bookmarks-db.js';
 import { loadYoutubeState } from '../youtube/state.js';
 import { youtubeShadowReviews, type YoutubeShadowReview } from '../youtube/shadow.js';
@@ -200,6 +201,34 @@ interface DailyReadingContext {
   previousDigests: Array<{ date: string; excerpt: string }>;
 }
 
+/** Retain theme prose, including formatted paragraphs and lists, but not item/source inventories. */
+function previousThemeSummaries(markdown: string): string {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^## Today['’]s material\s*$/.test(line));
+  if (start < 0) return '';
+  const summaries: string[] = [];
+  let theme: string[] = [];
+  let inTheme = false;
+  let inInventory = false;
+  for (const line of lines.slice(start + 1)) {
+    if (/^## (?:Also saved|Captured, unread|System details|Project activity)\b/.test(line)) break;
+    if (line.startsWith('## ')) {
+      if (theme.length) summaries.push(theme.join('\n').trim());
+      theme = [line];
+      inTheme = true;
+      inInventory = false;
+    } else if (inTheme && !inInventory) {
+      if (/^### |^(?:Connects to earlier saves:|Additional context \(web\/X\):|Active projects:)/.test(line)) {
+        inInventory = true;
+      } else {
+        theme.push(line);
+      }
+    }
+  }
+  if (theme.length) summaries.push(theme.join('\n').trim());
+  return summaries.join('\n\n').slice(0, 4000);
+}
+
 async function readDailyContext(date: string, untilIso: string): Promise<DailyReadingContext> {
   const oldest = new Date(`${date}T00:00:00Z`).getTime() - 7 * 86400000;
   const dates = (await listFiles(dailyLibraryDir()))
@@ -210,11 +239,7 @@ async function readDailyContext(date: string, untilIso: string): Promise<DailyRe
   const previousDigests = await Promise.all(dates.map(async (previous) => ({
     date: previous,
     // Only previous theme summaries, not inventories or quoted old articles.
-    excerpt: (await readMd(dailyDigestPath(previous)).catch(() => ''))
-      .split("\n## Today's material\n")[1]?.split(/\n## (?:Also saved|Captured, unread|System details|Project activity)\b/)[0]
-      .trim().split(/\n(?=## )/).filter((section) => section.startsWith('## '))
-      .map((section) => section.split(/\n(?:### |\*\*|[-*] |\d+\. )/)[0].trim())
-      .join('\n\n').slice(0, 4000) ?? '',
+    excerpt: previousThemeSummaries(await readMd(dailyDigestPath(previous)).catch(() => '')),
   })));
   const interests = await readMd(interestsMarkdownPath()).catch(() => '');
   // A historical rerun must not learn the future from today's interests file.
@@ -526,6 +551,7 @@ export function renderDigestMarkdown(
     return link ? ` · [notes](${link})` : '';
   };
   const linkLabel = (value: string): string => value.replace(/\s+/g, ' ').replace(/[[\]]/g, '').trim();
+  const markdownText = (value: string): string => value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const itemById = new Map(collection.items.map((item) => [item.id, item]));
   const relatedById = new Map<string, RelatedRef>();
   for (const { related } of connected) {
@@ -581,12 +607,19 @@ export function renderDigestMarkdown(
   if (priorities.length > 0) {
     lines.push('## Read first', '');
     priorities.forEach((theme, index) => {
-      lines.push(`${index + 1}. **${linkLabel(theme.title)}** — ${theme.takeaway!.text}`, '');
+      const title = separateReadingLinks(theme.title);
+      const takeaway = separateReadingLinks(theme.takeaway!.text);
+      lines.push(`${index + 1}. **${markdownText(linkLabel(title.text).replace(/[\\*`_]/g, ''))}** — ${markdownText(takeaway.text)}`, '');
+      const themeSources = sourceLine(undefined, [...title.urls, ...takeaway.urls]);
+      if (themeSources) lines.push(`   ${themeSources}`, '');
       for (const id of theme.takeaway!.itemIds) {
         const item = itemById.get(id);
         if (!item) continue;
-        const title = linkLabel(dailyItemHeadline(item, gists.get(id)));
-        lines.push(`   ${item.canonicalUrl ? `[${title}](${item.canonicalUrl})` : title}${notesSuffix(item.canonicalUrl)}`, '');
+        const headline = separateReadingLinks(dailyItemHeadline(item, gists.get(id)));
+        const label = markdownText(linkLabel(headline.text || 'Saved page').replace(/[\\*`_]/g, ''));
+        const href = safeHref(item.canonicalUrl);
+        const embedded = sourceLine(undefined, headline.urls.filter((url) => url !== href));
+        lines.push(`   ${href ? `[${label}](${href})` : label}${notesSuffix(item.canonicalUrl)}${embedded ? ` · ${embedded}` : ''}`, '');
       }
     });
   } else if (collection.items.length > 0 && capturedIds.size === collection.items.length) {

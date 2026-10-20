@@ -1922,6 +1922,7 @@ export function buildCli() {
         if (result.droppedCitations > 0) console.log(`    dropped invalid citations: ${result.droppedCitations}`);
         const interests = await writeInterests();
         console.log(`  ✓ Interests updated: ${interests.path}`);
+        await reindexLibraryDocs();
         return;
       }
 
@@ -3917,6 +3918,7 @@ export function buildCli() {
         }
         console.log('  Fixed files:');
         for (const f of fence.fixedFiles) console.log(`    ${f}`);
+        await reindexLibraryDocs();
         return;
       }
 

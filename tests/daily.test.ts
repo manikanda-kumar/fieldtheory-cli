@@ -1293,9 +1293,12 @@ test('daily: synthesis grounds ranking and continuity in earlier context without
     const collection = await collectDaily({ date: '2026-07-06' });
     const library = path.join(dir, 'md');
     await mkdir(path.join(library, 'daily'), { recursive: true });
-    const previous = "# Daily Learning Review\n\n## Today's material\n\n## Evals need a baseline\n\nMeasure errors before choosing an agent.\n\n### Old source\n\nold-source-inventory\n\n## Also saved\n\nold-overflow-inventory\n";
+    const previous = "# Daily Learning Review\n\n## Today’s material\n\n## Evals need a baseline\n\nMeasure errors before choosing an agent.\n\n**Important:** compare the error distribution, not only the average.\n\n- Check regressions against a known case.\n- Preserve the failure boundary.\n\n1. Record the baseline first.\n2. Then compare changes.\n\n### Old source\n\nold-source-inventory\n\nConnects to earlier saves:\n- old-related-inventory\n\nAdditional context (web/X):\n- old-web-inventory\n\n## Also saved\n\nold-overflow-inventory\n";
     await writeFile(dailyDigestPath('2026-07-05'), previous);
-    await writeFile(dailyDigestPath('2026-06-20'), previous.replace('baseline', 'outside-lookback-marker'));
+    await writeFile(dailyDigestPath('2026-07-04'), "## Today's material\n\n## Another theme\n\nStraight-apostrophe-summary.\n\nAdditional context (web/X):\n- old-web-only-marker\n\n## Captured, unread\n\nold-captured-marker\n");
+    await writeFile(dailyDigestPath('2026-07-03'), "## Today's material\n\n## Third theme\n\nThird-summary-marker.\n\n## Project activity\n\nold-project-marker\n");
+    await writeFile(dailyDigestPath('2026-07-02'), previous.replace('baseline', 'fourth-digest-marker'));
+    await writeFile(dailyDigestPath('2026-06-28'), previous.replace('baseline', 'outside-lookback-marker'));
     await writeFile(dailyDigestPath('2026-07-07'), previous.replace('baseline', 'future-digest-marker'));
     await writeFile(path.join(library, 'interests.md'), '---\ngenerated_at: "2026-07-05T06:00:00Z"\n---\n# Current Interests\n\n## Rising\n- ai/evals — 5 this week\n');
     let prompt = '';
@@ -1306,7 +1309,12 @@ test('daily: synthesis grounds ranking and continuity in earlier context without
     assert.match(prompt, /topics: ai\/evals/);
     assert.match(prompt, /READING INTERESTS[\s\S]*ai\/evals/);
     assert.match(prompt, /PREVIOUS DIGEST THEMES[\s\S]*date=2026-07-05[\s\S]*Measure errors/);
-    assert.doesNotMatch(prompt, /old-source-inventory|old-overflow-inventory|outside-lookback-marker|future-digest-marker/);
+    assert.match(prompt, /\*\*Important:\*\* compare the error distribution/);
+    assert.match(prompt, /- Check regressions against a known case/);
+    assert.match(prompt, /1\. Record the baseline first/);
+    assert.match(prompt, /date=2026-07-04[\s\S]*Straight-apostrophe-summary/);
+    assert.match(prompt, /date=2026-07-03[\s\S]*Third-summary-marker/);
+    assert.doesNotMatch(prompt, /old-source-inventory|old-related-inventory|old-web-inventory|old-web-only-marker|old-overflow-inventory|old-captured-marker|old-project-marker|fourth-digest-marker|outside-lookback-marker|future-digest-marker/);
     await writeFile(path.join(library, 'interests.md'), '---\ngenerated_at: "2026-07-07T01:00:00Z"\n---\nfuture-interest-marker\n');
     await synthesizeDaily(collection, [], { force: true, invoke: async (value) => {
       prompt = value;

@@ -12,6 +12,7 @@ import { deriveTodayAnalysis, deriveTodaySources, readLatestXListDigest, type St
 import { libraryDir, xListsDir } from './paths.js';
 import type { XListHtmlTweet } from './x-list-html.js';
 import { writeDailyIndexHtml } from './daily/index-html.js';
+import { reindexLibraryDocs } from './library-index-db.js';
 
 const DEFAULT_PROMPT_TWEETS = 80;
 const TWEET_TEXT_CHARS = 400;
@@ -288,6 +289,8 @@ export async function summarizeXList(listId: string, options: XListSummaryOption
   } catch (error) {
     process.stderr.write(`  Warning: X-list archive index regeneration failed (${xListSummaryIndexPath()}): ${error instanceof Error ? error.message : String(error)}\n`);
   }
+
+  await reindexLibraryDocs();
 
   return {
     summaryPath,

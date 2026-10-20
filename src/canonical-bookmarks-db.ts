@@ -352,13 +352,15 @@ async function sampleCanonical(
 }
 
 export function sampleCanonicalByCategory(category: string, limit: number, existingDb?: Database): Promise<CanonicalSample[]> {
-  return sampleCanonical(`WHERE c.primary_category = ? COLLATE NOCASE OR c.categories LIKE ?
-    ORDER BY RANDOM() LIMIT ?`, [category, `%${category}%`, limit], existingDb);
+  return sampleCanonical(`WHERE c.primary_category = ? COLLATE NOCASE
+    OR instr(',' || lower(coalesce(c.categories, '')) || ',', ',' || lower(?) || ',') > 0
+    ORDER BY RANDOM() LIMIT ?`, [category, category, limit], existingDb);
 }
 
 export function sampleCanonicalByDomain(domain: string, limit: number, existingDb?: Database): Promise<CanonicalSample[]> {
-  return sampleCanonical(`WHERE c.primary_domain = ? COLLATE NOCASE OR c.domains LIKE ?
-    ORDER BY RANDOM() LIMIT ?`, [domain, `%${domain}%`, limit], existingDb);
+  return sampleCanonical(`WHERE c.primary_domain = ? COLLATE NOCASE
+    OR instr(',' || lower(coalesce(c.domains, '')) || ',', ',' || lower(?) || ',') > 0
+    ORDER BY RANDOM() LIMIT ?`, [domain, domain, limit], existingDb);
 }
 
 export function sampleCanonicalBySource(source: string, limit: number, existingDb?: Database): Promise<CanonicalSample[]> {
@@ -823,7 +825,7 @@ function readYoutubeSourcesFromDb(db: Database): CanonicalSourceInput[] {
 
 function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[]): CanonicalGroup {
   const id = canonicalIdForDedupeKey(dedupeKey);
-  const browserSource = sources.find((source) => source.source !== 'x' && source.sourceUrl);
+  const browserSource = sources.find((source) => source.source !== 'x' && source.source !== 'tweetsmash' && source.sourceUrl);
   const linkSource = sources.find((source) => source.targetUrl);
   const rawCanonicalUrl = browserSource?.sourceUrl ?? linkSource?.targetUrl ?? sources[0]?.sourceUrl ?? null;
   // The stored URL is what digests, EPUBs, and search results render, so it
@@ -1410,10 +1412,7 @@ export async function findRelatedCanonicalBookmarks(seedText: string, options: F
   }
 }
 
-export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOptions = {}): Promise<CanonicalBookmarkListResult[]> {
-  const db = await openDb(twitterBookmarksIndexPath());
-  const limit = options.limit ?? 20;
-  const offset = options.offset ?? 0;
+function canonicalBookmarkFilters(db: Database, options: ListCanonicalBookmarksOptions) {
   const query = options.query?.trim() ?? '';
   const conditions: string[] = [];
   const params: Array<string | number> = [];
@@ -1431,12 +1430,14 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
     params.push(options.source);
   }
   if (options.category) {
-    conditions.push(`(c.primary_category = ? COLLATE NOCASE OR c.categories LIKE ?)`);
-    params.push(options.category, `%${options.category}%`);
+    conditions.push(`(c.primary_category = ? COLLATE NOCASE
+      OR instr(',' || lower(coalesce(c.categories, '')) || ',', ',' || lower(?) || ',') > 0)`);
+    params.push(options.category, options.category);
   }
   if (options.domain) {
-    conditions.push(`(c.primary_domain = ? COLLATE NOCASE OR c.domains LIKE ?)`);
-    params.push(options.domain, `%${options.domain}%`);
+    conditions.push(`(c.primary_domain = ? COLLATE NOCASE
+      OR instr(',' || lower(coalesce(c.domains, '')) || ',', ',' || lower(?) || ',') > 0)`);
+    params.push(options.domain, options.domain);
   }
   if (options.topic) {
     conditions.push(`EXISTS (SELECT 1 FROM json_each(c.topics_json) WHERE value = ? COLLATE NOCASE)`);
@@ -1449,9 +1450,28 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
     )`);
     params.push(options.author);
   }
+  if (options.after || options.before) {
+    // Parse both ISO and Twitter timestamps in SQL so filtering precedes
+    // LIMIT/OFFSET and the count uses exactly the same date boundaries.
+    db.create_function('canonical_saved_at_ms', (value: string | null) => parseSavedAt(value));
+    conditions.push('canonical_saved_at_ms(c.first_saved_at) IS NOT NULL');
+    for (const [bound, comparison] of [[options.after, '>'], [options.before, '<']] as const) {
+      const ms = parseSavedAt(bound);
+      if (ms != null) {
+        conditions.push(`canonical_saved_at_ms(c.first_saved_at) ${comparison} ?`);
+        params.push(ms);
+      }
+    }
+  }
 
+  return { joinFts, where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', params };
+}
+
+export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOptions = {}): Promise<CanonicalBookmarkListResult[]> {
+  const db = await openDb(twitterBookmarksIndexPath());
   try {
     initCanonicalSchema(db);
+    const { joinFts, where, params } = canonicalBookmarkFilters(db, options);
 
     const select = `SELECT c.id, c.canonical_url, c.display_title, c.search_text, c.source_count,
                            c.first_saved_at, c.last_saved_at, c.sources_json,
@@ -1461,29 +1481,11 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
                             LIMIT 1) as author_handle, c.topics_json
                     FROM canonical_bookmarks c
                     ${joinFts ? 'JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid' : ''}`;
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const order = `ORDER BY ${joinFts ? 'bm25(canonical_bookmarks_fts, 10.0, 1.0) ASC,' : ''} COALESCE(c.last_saved_at, c.first_saved_at, '') DESC, c.id ASC
                    LIMIT ?
                    OFFSET ?`;
-    // after/before are applied in JS because first_saved_at mixes ISO and
-    // Twitter-format strings — SQL string comparison would silently drop rows.
-    const fetchLimit = (options.after || options.before) ? limit * 5 : limit;
-    const rows = db.exec(`${select} ${where} ${order}`, [...params, fetchLimit, offset]);
-
-    let values = rows[0]?.values ?? [];
-    if (options.after || options.before) {
-      const afterMs = options.after ? parseSavedAt(options.after) : null;
-      const beforeMs = options.before ? parseSavedAt(options.before) : null;
-      values = values.filter((row) => {
-        const savedAt = row[5] == null ? null : String(row[5]); // first_saved_at
-        const ms = parseSavedAt(savedAt);
-        if (ms == null) return false;
-        if (afterMs != null && ms <= afterMs) return false;
-        if (beforeMs != null && ms >= beforeMs) return false;
-        return true;
-      });
-    }
-    return values.slice(0, limit).map(mapListRow);
+    const rows = db.exec(`${select} ${where} ${order}`, [...params, options.limit ?? 20, options.offset ?? 0]);
+    return (rows[0]?.values ?? []).map(mapListRow);
   } finally {
     db.close();
   }
@@ -1491,45 +1493,14 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
 
 export async function countCanonicalBookmarks(options: Omit<ListCanonicalBookmarksOptions, 'limit' | 'offset'> = {}): Promise<number> {
   const db = await openDb(twitterBookmarksIndexPath());
-  const query = options.query?.trim() ?? '';
-  const conditions: string[] = [];
-  const params: Array<string | number> = [];
-  const joinFts = Boolean(query);
-
-  if (query) {
-    conditions.push('canonical_bookmarks_fts MATCH ?');
-    params.push(sanitizeFtsQuery(query));
-  }
-  if (options.source) {
-    conditions.push(`EXISTS (
-      SELECT 1 FROM bookmark_sources s
-      WHERE s.canonical_id = c.id AND s.source = ?
-    )`);
-    params.push(options.source);
-  }
-  if (options.category) {
-    conditions.push(`(c.primary_category = ? COLLATE NOCASE OR c.categories LIKE ?)`);
-    params.push(options.category, `%${options.category}%`);
-  }
-  if (options.domain) {
-    conditions.push(`(c.primary_domain = ? COLLATE NOCASE OR c.domains LIKE ?)`);
-    params.push(options.domain, `%${options.domain}%`);
-  }
-  if (options.author) {
-    conditions.push(`EXISTS (
-      SELECT 1 FROM bookmark_sources s
-      WHERE s.canonical_id = c.id AND s.author_handle = ? COLLATE NOCASE
-    )`);
-    params.push(options.author);
-  }
-
   try {
     initCanonicalSchema(db);
+    const { joinFts, where, params } = canonicalBookmarkFilters(db, options);
     const rows = db.exec(
       `SELECT COUNT(*)
        FROM canonical_bookmarks c
        ${joinFts ? 'JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid' : ''}
-       ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}`,
+       ${where}`,
       params,
     );
     return Number(rows[0]?.values?.[0]?.[0] ?? 0);
@@ -1710,7 +1681,8 @@ export async function classifyCanonicalBookmarks(): Promise<{ total: number; cla
     try {
       const stmt = db.prepare(
         `UPDATE canonical_bookmarks
-         SET categories = ?, primary_category = ?, domains = ?, primary_domain = ?
+         SET categories = ?, primary_category = ?, domains = coalesce(nullif(domains, ''), ?),
+             primary_domain = coalesce(nullif(primary_domain, ''), ?)
          WHERE id = ?`,
       );
       try {
@@ -1777,6 +1749,8 @@ export interface CanonicalLlmClassifyResult {
 export async function classifyCanonicalBookmarksWithLlm(
   options: { engine: ResolvedEngine; onBatch?: (done: number, total: number) => void },
 ): Promise<CanonicalLlmClassifyResult> {
+  // Deterministic rows, especially people rosters, must never consume model calls.
+  await classifyCanonicalBookmarks();
   const { engine } = options;
   const dbPath = twitterBookmarksIndexPath();
   const db = await openDb(dbPath);
@@ -1836,24 +1810,19 @@ export async function classifyCanonicalBookmarksWithLlm(
         try {
           const stmt = db.prepare(
             `UPDATE canonical_bookmarks
-             SET categories = ?, primary_category = ?, domains = ?, primary_domain = ?
+             SET categories = ?, primary_category = ?, domains = coalesce(nullif(domains, ''), ?),
+                 primary_domain = coalesce(nullif(primary_domain, ''), ?)
              WHERE id = ?`,
           );
           try {
             for (const r of results) {
               const canonicalUrlForDomain = rows.find((row) => row[0] === r.id)?.[1] as string | null;
               const newDomains = canonicalUrlForDomain ? hostnameForUrl(canonicalUrlForDomain) : null;
-              // Preserve any existing domain (regex may have set one); only add the LLM-derived new category
-              const existingDomainRow = db.exec(
-                `SELECT primary_domain FROM canonical_bookmarks WHERE id = ?`,
-                [r.id],
-              )[0]?.values[0]?.[0] as string | null;
-              const finalDomains = existingDomainRow ?? newDomains;
               stmt.run([
                 r.categories.length ? r.categories.join(',') : null,
                 r.primary,
-                finalDomains ? String(finalDomains) : null,
-                finalDomains ? String(finalDomains) : null,
+                newDomains,
+                newDomains,
                 r.id,
               ]);
             }

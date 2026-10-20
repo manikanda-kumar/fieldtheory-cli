@@ -12,17 +12,22 @@ import {
   xListSummaryPath,
 } from '../src/x-list-summary.js';
 import { xListsDir } from '../src/paths.js';
+import { searchLibraryDocs } from '../src/library-index-db.js';
 
 async function withTempRoot<T>(fn: () => Promise<T>): Promise<T> {
   const previous = process.env.FT_DATA_DIR;
+  const previousLibrary = process.env.FT_LIBRARY_DIR;
   const root = await mkdtemp(path.join(os.tmpdir(), 'ft-x-list-summary-'));
   process.env.FT_DATA_DIR = root;
+  process.env.FT_LIBRARY_DIR = path.join(root, 'md');
   try {
     await mkdir(xListsDir(), { recursive: true });
     return await fn();
   } finally {
     if (previous === undefined) delete process.env.FT_DATA_DIR;
     else process.env.FT_DATA_DIR = previous;
+    if (previousLibrary === undefined) delete process.env.FT_LIBRARY_DIR;
+    else process.env.FT_LIBRARY_DIR = previousLibrary;
   }
 }
 
@@ -98,6 +103,7 @@ test('summarizeXList writes dated summary and latest pointer via injected invoke
     const latest = fs.readFileSync(path.join(xListsDir(), '197-summary-latest.md'), 'utf8');
     assert.equal(latest, written);
     assert.match(fs.readFileSync(xListSummaryIndexPath(), 'utf8'), /2026-06-24\.md/);
+    assert.deepEqual((await searchLibraryDocs({ query: 'talking' })).map((doc) => doc.path), [result.summaryPath]);
   });
 });
 
@@ -124,11 +130,14 @@ test('summarizeXList skips an existing summary unless forced', async () => {
     const now = new Date('2026-06-24T13:00:00.000Z');
     const first = await summarizeXList('197', { invoke: async () => '## Top themes\nfirst', now });
     assert.equal(first.skipped, undefined);
+    assert.equal((await searchLibraryDocs({ query: 'first' })).length, 1);
     const second = await summarizeXList('197', { invoke: async () => '## Top themes\nsecond', now });
     assert.equal(second.skipped, true);
     const forced = await summarizeXList('197', { invoke: async () => '## Top themes\nthird', now, force: true });
     assert.equal(forced.skipped, undefined);
     assert.match(fs.readFileSync(forced.summaryPath, 'utf8'), /third/);
+    assert.equal((await searchLibraryDocs({ query: 'first' })).length, 0);
+    assert.deepEqual((await searchLibraryDocs({ query: 'third' })).map((doc) => doc.path), [forced.summaryPath]);
   });
 });
 

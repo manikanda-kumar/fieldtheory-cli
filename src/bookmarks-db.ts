@@ -200,12 +200,12 @@ function buildBookmarkWhereClause(filters: BookmarkTimelineFilters): {
     params.push(filters.before);
   }
   if (filters.category) {
-    conditions.push(`b.categories LIKE ?`);
-    params.push(`%${filters.category}%`);
+    conditions.push(`instr(',' || lower(coalesce(b.categories, '')) || ',', ',' || lower(?) || ',') > 0`);
+    params.push(filters.category);
   }
   if (filters.domain) {
-    conditions.push(`b.domains LIKE ?`);
-    params.push(`%${filters.domain}%`);
+    conditions.push(`instr(',' || lower(coalesce(b.domains, '')) || ',', ',' || lower(?) || ',') > 0`);
+    params.push(filters.domain);
   }
   if (filters.folder) {
     conditions.push(
@@ -940,10 +940,10 @@ export async function sampleByCategory(
     const rows = db.exec(
       `SELECT id, url, text, author_handle, categories, github_urls, links_json
        FROM bookmarks
-       WHERE categories LIKE ?
+       WHERE instr(',' || lower(coalesce(categories, '')) || ',', ',' || lower(?) || ',') > 0
        ORDER BY RANDOM()
        LIMIT ?`,
-      [`%${category}%`, limit]
+      [category, limit]
     );
     if (!rows.length) return [];
     return rows[0].values.map((r: any) => ({
@@ -1076,10 +1076,10 @@ export async function sampleByDomain(
     const rows = db.exec(
       `SELECT id, url, text, author_handle, categories, github_urls, links_json
        FROM bookmarks
-       WHERE domains LIKE ?
+       WHERE instr(',' || lower(coalesce(domains, '')) || ',', ',' || lower(?) || ',') > 0
        ORDER BY RANDOM()
        LIMIT ?`,
-      [`%${domain}%`, limit]
+      [domain, limit]
     );
     if (!rows.length) return [];
     return rows[0].values.map((r: any) => ({

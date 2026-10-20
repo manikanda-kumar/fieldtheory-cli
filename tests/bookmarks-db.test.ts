@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { buildIndex, searchBookmarks, getStats, formatSearchResults, getBookmarkById, listBookmarks, sanitizeFtsQuery, getCategoryCounts, sampleByCategory, getClassificationProgress, exportBookmarksForSyncSeed } from '../src/bookmarks-db.js';
+import { buildIndex, searchBookmarks, getStats, formatSearchResults, getBookmarkById, listBookmarks, countBookmarks, sanitizeFtsQuery, getCategoryCounts, sampleByCategory, sampleByDomain, getClassificationProgress, exportBookmarksForSyncSeed } from '../src/bookmarks-db.js';
 import { openDb, saveDb } from '../src/db.js';
 import { twitterBookmarksIndexPath } from '../src/paths.js';
 
@@ -152,6 +152,27 @@ test('searchBookmarks: no results for unmatched query', async () => {
     await buildIndex();
     const results = await searchBookmarks({ query: 'cryptocurrency', limit: 10 });
     assert.equal(results.length, 0);
+  });
+});
+
+test('bookmark lists, counts and samples match complete category/domain tokens literally', async () => {
+  await withIsolatedDataDir(async () => {
+    await buildIndex();
+    const db = await openDb(twitterBookmarksIndexPath());
+    db.run(`UPDATE bookmarks SET categories = 'dev-tools', domains = 'openai.com,email'`);
+    db.run(`UPDATE bookmarks SET categories = 'research,tool', domains = 'health,ai' WHERE id = '1'`);
+    saveDb(db, twitterBookmarksIndexPath());
+    db.close();
+    for (const filter of [{ category: 'TOOL' }, { domain: 'AI' }]) {
+      assert.deepEqual((await listBookmarks(filter)).map((row) => row.id), ['1']);
+      assert.equal(await countBookmarks(filter), 1);
+    }
+    assert.deepEqual((await sampleByCategory('tool', 20)).map((row) => row.id), ['1']);
+    assert.deepEqual((await sampleByDomain('ai', 20)).map((row) => row.id), ['1']);
+    for (const filter of [{ category: 'tool%' }, { domain: 'a_' }]) {
+      assert.deepEqual(await listBookmarks(filter), []);
+      assert.equal(await countBookmarks(filter), 0);
+    }
   });
 });
 

@@ -65,6 +65,7 @@ export interface UnifiedWebItem {
   firstSavedAt: string | null;
   categories: string[];
   domains: string[];
+  topics: string[];
   primaryCategory: string | null;
   primaryDomain: string | null;
 }
@@ -97,6 +98,9 @@ function parseUnifiedFilters(url: URL) {
     source: optionalParam(url, 'source'),
     category: optionalParam(url, 'category'),
     domain: optionalParam(url, 'domain'),
+    topic: optionalParam(url, 'topic'),
+    after: optionalParam(url, 'after'),
+    before: optionalParam(url, 'before'),
     limit: parseBoundedInteger(url.searchParams.get('limit'), { defaultValue: 30, min: 1, max: 100 }),
     offset: parseBoundedInteger(url.searchParams.get('offset'), { defaultValue: 0, min: 0, max: 1_000_000 }),
   };
@@ -145,6 +149,7 @@ function toUnifiedWebItem(row: CanonicalBookmarkListResult): UnifiedWebItem {
     firstSavedAt: row.firstSavedAt,
     categories: splitTags(row.categories),
     domains: splitTags(row.domains),
+    topics: row.topics ?? [],
     primaryCategory: row.primaryCategory,
     primaryDomain: row.primaryDomain,
   };

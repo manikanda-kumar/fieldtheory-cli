@@ -218,12 +218,19 @@ export function renderDigestHtml(
 
   const priorities = usedLlm ? themes.filter((theme) => theme.takeaway).slice(0, 3) : [];
   const lead = priorities.length ? '<section class="overview" id="takeaways"><h2>Read first</h2><ol class="summary-list">'
-    + priorities.map((theme) => `<li><strong>${htmlEscape(theme.title)}</strong><p>${htmlEscape(theme.takeaway!.text)}</p>`
+    + priorities.map((theme) => {
+      const title = separateReadingLinks(theme.title);
+      const takeaway = separateReadingLinks(theme.takeaway!.text);
+      return `<li><strong>${htmlEscape(title.text)}</strong><p>${htmlEscape(takeaway.text)}</p>`
+      + renderReadingSourceLinks({ title: title.text }, [...title.urls, ...takeaway.urls])
       + theme.takeaway!.itemIds.map((id) => {
         const item = itemById.get(id);
         if (!item) return '';
-        return `<p class="footnote">${item.canonicalUrl ? htmlLink(item.canonicalUrl, dailyItemHeadline(item, gists.get(id))) : htmlEscape(dailyItemHeadline(item, gists.get(id)))}${notesLink(item.canonicalUrl) ? ` · ${notesLink(item.canonicalUrl)}` : ''}</p>`;
-      }).join('') + '</li>').join('') + '</ol></section>' : undefined;
+        const headline = separateReadingLinks(dailyItemHeadline(item, gists.get(id)));
+        return `<p class="footnote">${item.canonicalUrl ? htmlLink(item.canonicalUrl, headline.text || 'Saved page') : htmlEscape(headline.text || 'Saved page')}${notesLink(item.canonicalUrl) ? ` · ${notesLink(item.canonicalUrl)}` : ''}</p>`
+          + renderReadingSourceLinks({ title: headline.text }, headline.urls.filter((url) => url !== item.canonicalUrl));
+      }).join('') + '</li>';
+    }).join('') + '</ol></section>' : undefined;
   if (lead) contents.unshift({ title: 'Read first', id: 'takeaways' });
 
   const freshness = (['x', 'raindrop', 'github-stars', 'rss', 'youtube', 'projects'] as const)

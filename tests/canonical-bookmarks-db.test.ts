@@ -6,6 +6,8 @@ import path from 'node:path';
 import { readJsonLines, writeJson, writeJsonLines } from '../src/fs.js';
 import {
   classifyCanonicalBookmarks,
+  classifyCanonicalBookmarksWithLlm,
+  countCanonicalBookmarks,
   countCanonicalUndateableBookmarks,
   formatCanonicalSearchResults,
   getAllCanonicalBookmarkSources,
@@ -14,6 +16,8 @@ import {
   getCanonicalBookmarkSources,
   listCanonicalBookmarks,
   rebuildCanonicalIndex,
+  sampleCanonicalByCategory,
+  sampleCanonicalByDomain,
   searchCanonicalBookmarks,
 } from '../src/canonical-bookmarks-db.js';
 import { openDb, saveDb } from '../src/db.js';
@@ -215,7 +219,9 @@ test('rebuildCanonicalIndex makes X and Raindrop source tags searchable', async 
     const operations = (await listCanonicalBookmarks()).find((item) => item.canonicalUrl === 'https://example.com/operations')!;
     assert.deepEqual(operations.topics, ['eng/infra-devops']);
     assert.deepEqual((await listCanonicalBookmarks({ topic: 'ENG/infra-devops' })).map((item) => item.id), [operations.id]);
+    assert.equal(await countCanonicalBookmarks({ topic: 'ENG/infra-devops' }), 1);
     assert.deepEqual(await listCanonicalBookmarks({ topic: 'eng/infra' }), [], 'topics match whole facets, not prefixes');
+    assert.equal(await countCanonicalBookmarks({ topic: 'eng/infra' }), 0);
     assert.deepEqual((await getCanonicalBookmarkById(operations.id))!.topics, ['eng/infra-devops']);
     assert.deepEqual((await getCanonicalBookmarksSince('2026-08-12'))
       .find((item) => item.id === operations.id)!.topics, ['eng/infra-devops']);
@@ -606,6 +612,48 @@ test('listCanonicalBookmarks filters by query, source, category, and domain', as
   });
 });
 
+test('canonical filters count exact tokens and apply mixed-format dates before pagination', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeRaindropBookmarks(dir, Array.from({ length: 12 }, (_, i) => ({
+      id: i, url: `https://example.com/entry-${i}`, title: `Windowmarker ${i}`,
+      createdAt: i < 4 ? `2026-07-0${i + 1}T00:00:00.000Z` : '2026-10-20T00:00:00.000Z',
+      syncedAt: '2026-10-20T00:00:00.000Z',
+    })));
+    await rebuildCanonicalIndex();
+    const db = await openDb(twitterBookmarksIndexPath());
+    db.run(`UPDATE canonical_bookmarks SET categories = 'dev-tools', primary_category = 'dev-tools',
+      domains = 'openai.com,email', primary_domain = 'openai.com'`);
+    db.run(`UPDATE canonical_bookmarks SET categories = 'technique,tool', primary_category = 'technique',
+      domains = 'research,ai', primary_domain = 'research', topics_json = '["ai/evals"]'
+      WHERE canonical_url = 'https://example.com/entry-1'`);
+    db.run(`UPDATE canonical_bookmarks SET first_saved_at = 'Thu Jul 02 00:00:00 +0000 2026'
+      WHERE canonical_url = 'https://example.com/entry-1'`);
+    saveDb(db, twitterBookmarksIndexPath());
+    db.close();
+
+    const window = { query: 'Windowmarker', source: 'raindrop', after: '2026-06-30', before: '2026-07-04' };
+    assert.equal(await countCanonicalBookmarks(window), 3);
+    for (const [offset, entry] of [[0, 2], [1, 1], [2, 0]] as const) {
+      assert.deepEqual((await listCanonicalBookmarks({ ...window, limit: 1, offset }))
+        .map((row) => row.canonicalUrl), [`https://example.com/entry-${entry}`]);
+    }
+    const exact = { ...window, after: '2026-07-01', before: '2026-07-03', topic: 'AI/EVALS' };
+    assert.equal(await countCanonicalBookmarks(exact), 1);
+    const selected = await listCanonicalBookmarks(exact);
+    assert.deepEqual(selected.map((row) => row.canonicalUrl), ['https://example.com/entry-1']);
+    for (const filter of [{ category: 'TOOL' }, { domain: 'AI' }]) {
+      assert.deepEqual((await listCanonicalBookmarks(filter)).map((row) => row.id), [selected[0].id]);
+      assert.equal(await countCanonicalBookmarks(filter), 1);
+    }
+    assert.deepEqual((await sampleCanonicalByCategory('tool', 20)).map((row) => row.id), [selected[0].id]);
+    assert.deepEqual((await sampleCanonicalByDomain('ai', 20)).map((row) => row.id), [selected[0].id]);
+    for (const filter of [{ category: 'tool%' }, { domain: 'a_' }]) {
+      assert.deepEqual(await listCanonicalBookmarks(filter), []);
+      assert.equal(await countCanonicalBookmarks(filter), 0);
+    }
+  });
+});
+
 test('listCanonicalBookmarks filters by author and populates authorHandle', async () => {
   await withIsolatedDataDir(async (dir) => {
     await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [
@@ -759,6 +807,8 @@ test('classifyCanonicalBookmarks is fill-only and never overwrites existing clas
     const db = await openDb(twitterBookmarksIndexPath());
     db.run(`UPDATE canonical_bookmarks SET categories = 'research', primary_category = 'research'
             WHERE canonical_url = 'https://github.com/example/tool'`);
+    db.run(`UPDATE canonical_bookmarks SET domains = 'health,policy', primary_domain = 'health'
+            WHERE canonical_url = 'https://example.com/essay'`);
     saveDb(db, twitterBookmarksIndexPath());
     db.close();
 
@@ -770,6 +820,8 @@ test('classifyCanonicalBookmarks is fill-only and never overwrites existing clas
     const byUrl = new Map(rows.map((row) => [row.canonicalUrl, row]));
     assert.equal(byUrl.get('https://github.com/example/tool')!.primaryCategory, 'research');
     assert.equal(byUrl.get('https://github.com/example/tool')!.categories, 'research');
+    assert.equal(byUrl.get('https://example.com/essay')!.domains, 'health,policy');
+    assert.equal(byUrl.get('https://example.com/essay')!.primaryDomain, 'health');
   });
 });
 
@@ -1063,7 +1115,36 @@ test('canonical rebuild ingests TweetSmash-only saves without replaying imports 
       const current = await getCanonicalBookmarkById(fresh.id);
       assert.ok(current, 'later GraphQL imports retain the TweetSmash-first identity across rebuilds');
       assert.equal(current.firstSavedAt, '2026-10-02T05:00:00.000Z');
+      assert.equal(current.canonicalUrl, 'https://example.com/memory', 'an article link outranks supplemental post provenance');
       assert.deepEqual(current.sources.sort(), ['tweetsmash', 'x']);
     }
+  });
+});
+
+test('canonical LLM classification handles deterministic people first and preserves domain labels', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeFollowing(dir, [{ userId: '42', handle: 'alice', name: 'Alice', syncedAt: '2026-07-18T10:00:00Z' }]);
+    await writeRaindropBookmarks(dir, [{
+      id: 1, url: 'https://example.com/essay', title: 'Untypable essay',
+      createdAt: '2026-07-01T00:00:00Z', syncedAt: '2026-07-18T10:00:00Z',
+    }]);
+    await rebuildCanonicalIndex();
+    const essay = (await listCanonicalBookmarks()).find((row) => row.canonicalUrl === 'https://example.com/essay')!;
+    const db = await openDb(twitterBookmarksIndexPath());
+    db.run(`UPDATE canonical_bookmarks SET domains = 'health,policy', primary_domain = 'health' WHERE id = ?`, [essay.id]);
+    saveDb(db, twitterBookmarksIndexPath());
+    db.close();
+    const output = JSON.stringify([{ id: essay.id, categories: ['reference'], primary: 'reference' }]);
+    const result = await classifyCanonicalBookmarksWithLlm({
+      engine: { name: 'fixture', label: 'fixture', config: { bin: '/bin/sh', args: () => ['-c', `cat >/dev/null; printf '%s' '${output}'`] } } as any,
+    });
+    assert.equal(result.totalUnclassified, 1, 'people do not consume model classification');
+    assert.equal(result.classified, 1);
+    const rows = await listCanonicalBookmarks();
+    assert.equal(rows.find((row) => row.sources.includes('x-following'))?.primaryCategory, 'person');
+    const classified = rows.find((row) => row.id === essay.id)!;
+    assert.equal(classified.primaryCategory, 'reference');
+    assert.equal(classified.domains, 'health,policy');
+    assert.equal(classified.primaryDomain, 'health');
   });
 });
