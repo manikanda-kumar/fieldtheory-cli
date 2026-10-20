@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { writeJson, writeJsonLines } from '../src/fs.js';
+import { readJsonLines, writeJson, writeJsonLines } from '../src/fs.js';
 import {
   classifyCanonicalBookmarks,
+  countCanonicalUndateableBookmarks,
   formatCanonicalSearchResults,
   getAllCanonicalBookmarkSources,
   getCanonicalBookmarksSince,
@@ -198,7 +199,7 @@ test('rebuildCanonicalIndex makes X and Raindrop source tags searchable', async 
       id: 102,
       url: 'https://example.com/operations',
       title: 'Production handbook',
-      tags: ['devops'],
+      tags: ['devops', 'DevOps', 'x-bookmark', 'Chrome', 'misc'],
       createdAt: '2026-08-13T00:00:00.000Z',
       syncedAt: '2026-08-13T00:00:00.000Z',
     }]);
@@ -210,7 +211,16 @@ test('rebuildCanonicalIndex makes X and Raindrop source tags searchable', async 
     const sources = await getAllCanonicalBookmarkSources();
     const metadata = [...sources.values()].flat().map((source) => source.metadata);
     assert.ok(metadata.some((item) => JSON.stringify(item) === JSON.stringify({ tags: ['agent-memory'] })));
-    assert.ok(metadata.some((item) => JSON.stringify(item) === JSON.stringify({ tags: ['devops'] })));
+    assert.ok(metadata.some((item) => JSON.stringify(item) === JSON.stringify({ tags: ['devops', 'DevOps', 'x-bookmark', 'Chrome', 'misc'] })));
+    const operations = (await listCanonicalBookmarks()).find((item) => item.canonicalUrl === 'https://example.com/operations')!;
+    assert.deepEqual(operations.topics, ['eng/infra-devops']);
+    assert.deepEqual((await listCanonicalBookmarks({ topic: 'ENG/infra-devops' })).map((item) => item.id), [operations.id]);
+    assert.deepEqual(await listCanonicalBookmarks({ topic: 'eng/infra' }), [], 'topics match whole facets, not prefixes');
+    assert.deepEqual((await getCanonicalBookmarkById(operations.id))!.topics, ['eng/infra-devops']);
+    assert.deepEqual((await getCanonicalBookmarksSince('2026-08-12'))
+      .find((item) => item.id === operations.id)!.topics, ['eng/infra-devops']);
+    await rebuildCanonicalIndex();
+    assert.deepEqual((await getCanonicalBookmarkById(operations.id))!.topics, ['eng/infra-devops']);
   });
 });
 
@@ -469,6 +479,9 @@ test('rebuildCanonicalIndex indexes following and latest X-list members as merge
 
     const daily = await getCanonicalBookmarksSince('2026-07-18T00:00:00.000Z');
     assert.equal(daily.length, 0);
+    assert.equal(await countCanonicalUndateableBookmarks(), 0, 'people deliberately lack save dates');
+    await classifyCanonicalBookmarks();
+    assert.equal((await getCanonicalBookmarkById(following[0].id))!.primaryCategory, 'person');
   });
 });
 
@@ -995,5 +1008,62 @@ test('classifyCanonicalBookmarksWithLlm writes LLM categories back to canonical 
     const finalRows = await listCanonicalBookmarks({ limit: 50 });
     const ghRow = finalRows.find((r) => r.canonicalUrl?.includes('github.com'));
     assert.equal(ghRow?.primaryCategory, 'tool');
+  });
+});
+
+test('canonical rebuild ingests TweetSmash-only saves without replaying imports or changing existing identities', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [{
+      id: 'x-100', tweetId: '100', url: 'https://x.com/alice/status/100',
+      text: 'Existing GraphQL save', links: ['https://example.com/original'],
+      bookmarkedAt: '2026-06-01T00:00:00.000Z', syncedAt: '2026-06-02T00:00:00.000Z',
+    }]);
+    await writeRaindropBookmarks(dir, [{
+      id: 200, url: 'https://twitter.com/bob/status/200', title: 'Existing Raindrop save',
+      createdAt: '2026-06-03T00:00:00.000Z', syncedAt: '2026-06-03T00:00:00.000Z',
+    }]);
+    await rebuildCanonicalIndex();
+    const before = await listCanonicalBookmarks({ limit: 20 });
+    await mkdir(path.join(dir, 'tweetsmash'), { recursive: true });
+    await writeJsonLines(path.join(dir, 'tweetsmash/bookmarks.jsonl'), [
+      { post_id: '100', imported_at: '2026-07-18T08:00:00', tags: [], tweet_details: { text: 'Existing GraphQL save' } },
+      { post_id: '200', imported_at: '2026-10-01T01:00:00', tags: ['evals'], tweet_details: { text: 'Extra Raindrop evidence', link: 'https://x.com/bob/status/200' } },
+      { post_id: '300', imported_at: '2026-07-18T09:00:00', tags: [], tweet_details: { text: 'Initial archive burst', posted_at: '2024-01-01T00:00:00Z' } },
+      { post_id: '400', imported_at: '2026-10-02T10:30:00+05:30', tags: ['rare-topic'], author_username: 'carol', tweet_details: { text: 'Fresh memory research', posted_at: '2026-09-30T00:00:00Z', article: { title: 'Memory architecture', plain_text: 'Persistent retrieval evidence' } } },
+      { post_id: '500', imported_at: '2026-10-03T00:00:00', is_thread_segment: true, tweet_details: { text: 'Not a separate save' } },
+    ]);
+    await rebuildCanonicalIndex();
+    const after = await listCanonicalBookmarks({ limit: 20 });
+    assert.equal(after.length, 4);
+    for (const original of before) {
+      const current = after.find((row) => row.id === original.id)!;
+      assert.ok(current);
+      assert.equal(current.firstSavedAt, original.firstSavedAt);
+      assert.equal(current.lastSavedAt, original.lastSavedAt);
+      assert.equal(current.canonicalUrl, original.canonicalUrl);
+    }
+    const fresh = (await searchCanonicalBookmarks({ query: 'Persistent retrieval' }))[0];
+    assert.ok(fresh);
+    assert.deepEqual(fresh.sources, ['tweetsmash']);
+    assert.equal((await getCanonicalBookmarkById(fresh.id))?.firstSavedAt, '2026-10-02T05:00:00.000Z');
+    assert.equal((await searchCanonicalBookmarks({ query: 'rare-topic' }))[0]?.id, fresh.id);
+    const archive = after.find((row) => row.searchText.includes('Initial archive burst'))!;
+    assert.equal(archive.firstSavedAt, null, 'initial import time is not a bookmark timestamp');
+    assert.equal((await getCanonicalBookmarksSince('2026-07-01T00:00:00Z')).some((row) => row.id === archive.id), false);
+    await rebuildCanonicalIndex();
+    assert.deepEqual(await listCanonicalBookmarks({ limit: 20 }), after);
+    await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [
+      ...await readJsonLines(path.join(dir, 'bookmarks.jsonl')),
+      { id: 'x-400', tweetId: '400', url: 'https://x.com/carol/status/400',
+        text: 'Fresh memory research', links: ['https://example.com/memory'],
+        bookmarkedAt: '2026-10-02T05:00:00.000Z', syncedAt: '2026-10-03T00:00:00.000Z' },
+    ]);
+    for (let pass = 0; pass < 2; pass += 1) {
+      await rebuildCanonicalIndex();
+      const current = await getCanonicalBookmarkById(fresh.id);
+      assert.ok(current, 'later GraphQL imports retain the TweetSmash-first identity across rebuilds');
+      assert.equal(current.firstSavedAt, '2026-10-02T05:00:00.000Z');
+      assert.deepEqual(current.sources.sort(), ['tweetsmash', 'x']);
+    }
   });
 });

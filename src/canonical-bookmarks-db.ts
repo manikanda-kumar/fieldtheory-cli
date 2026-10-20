@@ -8,6 +8,7 @@ import type { BookmarkRecord } from './types.js';
 import { cleanDisplayUrl, dedupeKeyForUrl, dedupeKeyForXBookmark, xStatusIdFromUrl } from './url-normalize.js';
 import { sanitizeFtsQuery } from './bookmarks-db.js';
 import { classifyBookmarkInput } from './bookmark-classify.js';
+import { topicsFromTags } from './bookmark-topics.js';
 import {
   buildCategoryPrompt,
   parseCategoryResponse,
@@ -28,6 +29,7 @@ import type { FollowingRecord } from './following/types.js';
 import type { ListMemberRecord, XListMembersDigest } from './x-list-members.js';
 import { rssItemsCachePath } from './rss/paths.js';
 import type { RssItemRecord } from './rss/types.js';
+import { INITIAL_IMPORT_BURST_MS, normalizeImportedAt, tweetsmashCachePath, type TweetsmashPost } from './tweetsmash.js';
 
 export interface CanonicalRebuildResult {
   dbPath: string;
@@ -58,6 +60,7 @@ export interface CanonicalBookmarkListResult {
   primaryCategory: string | null;
   domains: string | null;
   primaryDomain: string | null;
+  topics?: string[];
   authorHandle?: string;
 }
 
@@ -78,6 +81,7 @@ export interface ListCanonicalBookmarksOptions {
   source?: string;
   category?: string;
   domain?: string;
+  topic?: string;
   author?: string;
   after?: string;
   before?: string;
@@ -113,6 +117,7 @@ interface CanonicalGroup {
   canonicalUrl: string | null;
   displayTitle: string | null;
   searchText: string;
+  topics: string[];
   sourceCount: number;
   firstSavedAt: string | null;
   lastSavedAt: string | null;
@@ -212,6 +217,7 @@ function initCanonicalSchema(db: Database): void {
   ensureCanonicalColumn(db, 'primary_category', 'TEXT');
   ensureCanonicalColumn(db, 'domains', 'TEXT');
   ensureCanonicalColumn(db, 'primary_domain', 'TEXT');
+  ensureCanonicalColumn(db, 'topics_json', 'TEXT');
 }
 
 function tableColumnExists(db: Database, table: string, column: string): boolean {
@@ -564,7 +570,7 @@ export function githubStarsSourceFromRecord(record: GitHubStarRecord): Canonical
       record.defaultBranch ? `${record.htmlUrl}/tree/${record.defaultBranch}` : null,
     ].filter((link): link is string => Boolean(link)),
     contentPath: null,
-    metadata: null,
+    metadata: { tags: record.topics },
   };
 }
 
@@ -757,6 +763,7 @@ function youtubeSourceFromVideo(video: YoutubeSourceVideoInput, savedAt: string)
   ])) ?? [];
   const metadata: Record<string, unknown> = {
     videoId: video.videoId,
+    tags: video.topics,
     ...(video.channel ? { channel: video.channel } : {}),
     ...(video.durationSec != null ? { durationSec: video.durationSec } : {}),
     ...(video.videoType ? { videoType: video.videoType } : {}),
@@ -859,6 +866,11 @@ function buildCanonicalGroup(dedupeKey: string, sources: CanonicalSourceInput[])
       source.authorHandle,
       metadataTags(source.metadata),
     ])),
+    topics: topicsFromTags(sources.flatMap((source) => [
+      ...metadataTags(source.metadata),
+      // Older persisted videos stored topics only in their folder path.
+      ...(source.source === 'youtube' ? source.folderPath.slice(1) : []),
+    ])),
     sourceCount: sources.length,
     firstSavedAt: savedDates[0] ?? null,
     lastSavedAt: savedDates[savedDates.length - 1] ?? null,
@@ -938,8 +950,8 @@ function isSchemaMissingError(error: unknown): boolean {
 const INSERT_CANONICAL_SQL = `INSERT INTO canonical_bookmarks (
   id, dedupe_key, canonical_url, display_title, search_text,
   categories, primary_category, domains, primary_domain,
-  source_count, first_saved_at, last_saved_at, sources_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  source_count, first_saved_at, last_saved_at, sources_json, topics_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 function canonicalInsertParams(group: CanonicalGroup, preserved?: PreservedCanonicalFields): Array<string | number | null> {
   return [
@@ -956,6 +968,7 @@ function canonicalInsertParams(group: CanonicalGroup, preserved?: PreservedCanon
     group.firstSavedAt,
     group.lastSavedAt,
     JSON.stringify(group.sources),
+    JSON.stringify(group.topics),
   ];
 }
 
@@ -986,6 +999,7 @@ function mapListRow(row: unknown[]): CanonicalBookmarkListResult {
     domains: (row[10] as string) ?? null,
     primaryDomain: (row[11] as string) ?? null,
     authorHandle: (row[12] as string) ?? undefined,
+    topics: parseJsonStringArray(row[13]),
   };
 }
 
@@ -1000,7 +1014,15 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
 
     const sourceRows: CanonicalSourceInput[] = [];
     const xRecords = await readJsonLines<BookmarkRecord>(twitterBookmarksCachePath());
-    const xSources = xRecords.map(xSourceFromRecord);
+    // A later GraphQL import must not rename a TweetSmash-first canonical item.
+    const smashSources = new Map((db.exec(`SELECT source_item_id, dedupe_key, saved_at FROM bookmark_sources
+      WHERE source = 'tweetsmash'`)[0]?.values ?? []).map((row) => [String(row[0]), {
+        dedupeKey: String(row[1]), savedAt: row[2] == null ? null : String(row[2]),
+      }]));
+    const xSources = xRecords.map((record) => {
+      const source = xSourceFromRecord(record);
+      return { ...source, dedupeKey: smashSources.get(record.tweetId)?.dedupeKey ?? source.dedupeKey };
+    });
     sourceRows.push(...xSources);
     const xDedupeKeyByTweetId = new Map(xSources.map((source) => [source.sourceItemId, source.dedupeKey]));
 
@@ -1013,7 +1035,7 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
         .map((record) => {
           const tweetId = xStatusIdFromUrl(record.url);
           const source = raindropSourceFromRecord(record, tweetId ? xHydration.get(tweetId) : undefined);
-          const xDedupeKey = tweetId ? xDedupeKeyByTweetId.get(tweetId) : undefined;
+          const xDedupeKey = tweetId ? xDedupeKeyByTweetId.get(tweetId) ?? smashSources.get(tweetId)?.dedupeKey : undefined;
           return source && xDedupeKey ? { ...source, dedupeKey: xDedupeKey } : source;
         })
         .filter((row): row is CanonicalSourceInput => row !== null);
@@ -1059,6 +1081,45 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
     }
 
     sourceRows.push(...readYoutubeSourcesFromDb(db));
+
+    // Enrichment alone cannot introduce saves missing from the GraphQL cache.
+    // Keep GraphQL-backed records untouched; add independent provenance only
+    // for missing records, joining a Raindrop status by tweet ID when possible.
+    if (await pathExists(tweetsmashCachePath())) {
+      const posts = await readJsonLines<TweetsmashPost>(tweetsmashCachePath());
+      const times = posts.map((post) => Date.parse(normalizeImportedAt(post.imported_at) ?? ''))
+        .filter(Number.isFinite);
+      const burstEnd = times.length ? Math.min(...times) + INITIAL_IMPORT_BURST_MS : Infinity;
+      const statusKeys = new Map(sourceRows.flatMap((source) => {
+        const id = xStatusIdFromUrl(source.sourceUrl);
+        return id ? [[id, source.dedupeKey] as const] : [];
+      }));
+      for (const post of posts) {
+        if (!/^\d+$/.test(post.post_id) || post.is_thread_segment
+          || (xDedupeKeyByTweetId.has(post.post_id) && !smashSources.has(post.post_id))) continue;
+        const importedAt = normalizeImportedAt(post.imported_at);
+        const existingKey = statusKeys.get(post.post_id);
+        const link = post.tweet_details?.link;
+        const sourceUrl = link && xStatusIdFromUrl(link) === post.post_id
+          ? link : `https://x.com/${encodeURIComponent(post.author_username || 'i')}/status/${post.post_id}`;
+        // Import-burst times are not save dates. A supplemental source must
+        // also never move an existing canonical item's first/last saved time.
+        const savedAt = existingKey ? smashSources.get(post.post_id)?.savedAt ?? null
+          : importedAt && Date.parse(importedAt) > burstEnd ? importedAt : null;
+        sourceRows.push({
+          id: `tweetsmash:${post.post_id}`, source: 'tweetsmash', profile: null,
+          sourceItemId: post.post_id, sourceUrl, targetUrl: null,
+          dedupeKey: existingKey ?? smashSources.get(post.post_id)?.dedupeKey ?? `x:${post.post_id}`,
+          title: post.tweet_details?.article?.title ?? null,
+          text: compactText([post.tweet_details?.text, post.tweet_details?.article?.plain_text]),
+          authorHandle: post.author_username ?? null, savedAt,
+          createdAt: normalizeImportedAt(post.tweet_details?.posted_at), modifiedAt: null,
+          folderPath: [], links: [], contentPath: null,
+          metadata: { tags: post.tags ?? [], importedAt, isRead: post.is_read, isArchived: post.is_archived,
+            dateBasis: savedAt ? 'tweetsmash-import' : 'unknown-or-existing-source' },
+        });
+      }
+    }
 
     const groups = new Map<string, CanonicalSourceInput[]>();
     for (const source of sourceRows) {
@@ -1199,6 +1260,7 @@ export interface CanonicalRecentItem {
   lastSavedAt: string | null;
   primaryCategory: string | null;
   primaryDomain: string | null;
+  topics?: string[];
 }
 
 /** Parse the mixed timestamp formats stored in first_saved_at: ISO-8601 (with
@@ -1223,7 +1285,7 @@ export async function getCanonicalBookmarksSince(
     initCanonicalSchema(db);
     const rows = db.exec(
       `SELECT id, canonical_url, display_title, search_text, sources_json,
-              first_saved_at, last_saved_at, primary_category, primary_domain
+              first_saved_at, last_saved_at, primary_category, primary_domain, topics_json
        FROM canonical_bookmarks
        WHERE first_saved_at IS NOT NULL`,
     );
@@ -1250,6 +1312,7 @@ export async function getCanonicalBookmarksSince(
       lastSavedAt: row[6] == null ? null : String(row[6]),
       primaryCategory: row[7] == null ? null : String(row[7]),
       primaryDomain: row[8] == null ? null : String(row[8]),
+      topics: parseJsonStringArray(row[9]),
     }));
   } finally {
     db.close();
@@ -1265,8 +1328,13 @@ export async function countCanonicalUndateableBookmarks(): Promise<number> {
   const db = await openDb(twitterBookmarksIndexPath());
   try {
     initCanonicalSchema(db);
-    const rows = db.exec('SELECT first_saved_at FROM canonical_bookmarks');
-    return (rows[0]?.values ?? []).filter((row) => parseSavedAt(row[0] == null ? null : String(row[0])) == null).length;
+    const rows = db.exec('SELECT first_saved_at, sources_json FROM canonical_bookmarks');
+    return (rows[0]?.values ?? []).filter((row) => {
+      const sources = parseSources(row[1]);
+      // People rosters deliberately have no saved date; they are not missed reading.
+      if (sources.length && sources.every((source) => source === 'x-following' || source.startsWith('x-list-members:'))) return false;
+      return parseSavedAt(row[0] == null ? null : String(row[0])) == null;
+    }).length;
   } finally {
     db.close();
   }
@@ -1370,6 +1438,10 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
     conditions.push(`(c.primary_domain = ? COLLATE NOCASE OR c.domains LIKE ?)`);
     params.push(options.domain, `%${options.domain}%`);
   }
+  if (options.topic) {
+    conditions.push(`EXISTS (SELECT 1 FROM json_each(c.topics_json) WHERE value = ? COLLATE NOCASE)`);
+    params.push(options.topic);
+  }
   if (options.author) {
     conditions.push(`EXISTS (
       SELECT 1 FROM bookmark_sources s
@@ -1386,7 +1458,7 @@ export async function listCanonicalBookmarks(options: ListCanonicalBookmarksOpti
                            c.categories, c.primary_category, c.domains, c.primary_domain,
                            (SELECT s.author_handle FROM bookmark_sources s
                             WHERE s.canonical_id = c.id AND s.author_handle IS NOT NULL AND s.author_handle != ''
-                            LIMIT 1) as author_handle
+                            LIMIT 1) as author_handle, c.topics_json
                     FROM canonical_bookmarks c
                     ${joinFts ? 'JOIN canonical_bookmarks_fts ON canonical_bookmarks_fts.rowid = c.rowid' : ''}`;
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -1564,7 +1636,7 @@ export async function getCanonicalBookmarkById(id: string): Promise<CanonicalBoo
               c.categories, c.primary_category, c.domains, c.primary_domain,
               (SELECT s.author_handle FROM bookmark_sources s
                WHERE s.canonical_id = c.id AND s.author_handle IS NOT NULL AND s.author_handle != ''
-               LIMIT 1) as author_handle
+               LIMIT 1) as author_handle, c.topics_json
        FROM canonical_bookmarks c
        WHERE c.id = ?
        LIMIT 1`,
@@ -1617,18 +1689,19 @@ export async function classifyCanonicalBookmarks(): Promise<{ total: number; cla
        ORDER BY id ASC`,
     )[0]?.values ?? [];
     const sourceRows = db.exec(
-      `SELECT canonical_id, source_url, target_url, links_json, folder_path_json
+      `SELECT canonical_id, source_url, target_url, links_json, folder_path_json, source
        FROM bookmark_sources`,
     )[0]?.values ?? [];
 
-    const sourceInputs = new Map<string, { links: string[]; folderPath: string[] }>();
+    const sourceInputs = new Map<string, { links: string[]; folderPath: string[]; peopleOnly: boolean }>();
     for (const row of sourceRows) {
       const canonicalId = row[0] as string;
-      const existing = sourceInputs.get(canonicalId) ?? { links: [], folderPath: [] };
+      const existing = sourceInputs.get(canonicalId) ?? { links: [], folderPath: [], peopleOnly: true };
       for (const url of [row[1] as string | null, row[2] as string | null, ...parseJsonStringArray(row[3])]) {
         if (url) existing.links.push(url);
       }
       existing.folderPath.push(...parseJsonStringArray(row[4]));
+      existing.peopleOnly &&= row[5] === 'x-following' || row[5] === 'x-list-members';
       sourceInputs.set(canonicalId, existing);
     }
 
@@ -1646,7 +1719,7 @@ export async function classifyCanonicalBookmarks(): Promise<{ total: number; cla
           const canonicalUrl = (row[1] as string) ?? null;
           const displayTitle = (row[2] as string) ?? undefined;
           const searchText = (row[3] as string) ?? undefined;
-          const sourceInput = sourceInputs.get(id) ?? { links: [], folderPath: [] };
+          const sourceInput = sourceInputs.get(id) ?? { links: [], folderPath: [], peopleOnly: false };
           const links = [...new Set([canonicalUrl, ...sourceInput.links].filter((url): url is string => typeof url === 'string' && url.length > 0))];
           const result = classifyBookmarkInput({
             id,
@@ -1657,11 +1730,12 @@ export async function classifyCanonicalBookmarks(): Promise<{ total: number; cla
             folderPath: [...new Set(sourceInput.folderPath)],
           });
           const domains = [...new Set([canonicalUrl, ...result.extractedUrls].map(hostnameForUrl).filter((domain): domain is string => Boolean(domain)))];
+          const categories = sourceInput.peopleOnly ? ['person'] : result.categories;
 
-          if (result.categories.length > 0) classified += 1;
+          if (categories.length > 0) classified += 1;
           stmt.run([
-            result.categories.length ? result.categories.join(',') : null,
-            result.primary,
+            categories.length ? categories.join(',') : null,
+            sourceInput.peopleOnly ? 'person' : result.primary,
             domains.length ? domains.join(',') : null,
             domains[0] ?? null,
             id,

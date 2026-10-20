@@ -69,7 +69,7 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
     }
   }
   const enabled = (source: SyncAllSource): boolean => (!only || only.has(source)) && !skip.has(source);
-  const classify = Boolean(options.classify && !options.noSynthesis);
+  const classify = Boolean(options.classify);
   const playlists = typeof options.playlist === 'string' ? [options.playlist] : options.playlist ?? [];
 
   const steps: SyncAllStep[] = [
@@ -180,6 +180,15 @@ export function buildSyncAllPlan(options: SyncAllOptions): SyncAllStep[] {
       command: ['index'],
       enabled: true,
       required: true,
+    },
+    {
+      id: 'canonical-classify',
+      label: 'Classify remaining canonical bookmarks (regex)',
+      // The final rebuild can add rows from any source (including RSS).
+      // Classify once here, after all syncs, rather than rebuilding RSS again.
+      command: ['classify', '--unified', '--regex'],
+      enabled: classify,
+      reason: classify ? undefined : 'pass --classify to include',
     },
     {
       id: 'canonical-md',

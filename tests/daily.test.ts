@@ -1232,16 +1232,17 @@ test('daily: interests classifies rising/steady/fading topics and finds active t
   await withIsolatedDataDir(async (dir) => {
     const now = new Date('2026-07-07T00:00:00.000Z');
     const recent = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
-    // Rising: 3 "agents"-category saves this week, none in baseline.
-    // Fading: 5 "css" saves in baseline, none this week.
+    // Rising: 3 explicitly tagged agent saves this week, none in baseline.
+    // Fading: 15 "css" saves in the 30-day baseline, none this week.
     await writeStars(dir, [
-      starRecord({ id: 1, fullName: 'a/agent-one', starredAt: recent(1), description: 'llm agents orchestration framework' }),
-      starRecord({ id: 2, fullName: 'b/agent-two', starredAt: recent(2), description: 'llm agents memory framework' }),
-      starRecord({ id: 3, fullName: 'c/agent-three', starredAt: recent(3), description: 'llm agents evaluation framework' }),
-      ...Array.from({ length: 5 }, (_, i) => starRecord({
+      starRecord({ id: 1, fullName: 'a/agent-one', starredAt: recent(1), topics: ['agents', 'AGENTS', 'synced'], description: 'llm agents orchestration framework html notes video slides' }),
+      starRecord({ id: 2, fullName: 'b/agent-two', starredAt: recent(2), topics: ['Agents'], description: 'llm agents memory frameworks html notes video slides' }),
+      starRecord({ id: 3, fullName: 'c/agent-three', starredAt: recent(3), topics: ['ai/agents'], description: 'llm agents evaluation framework' }),
+      ...Array.from({ length: 15 }, (_, i) => starRecord({
         id: 10 + i,
         fullName: `css/lib-${i}`,
         starredAt: recent(10 + i),
+        topics: ['css'],
         description: 'css styling toolkit',
       })),
     ]);
@@ -1251,8 +1252,8 @@ test('daily: interests classifies rising/steady/fading topics and finds active t
       projectRecord({
         repo: 'agent-lab',
         recentPrompts: [
-          { timestamp: recent(1), text: 'how do agents framework handle orchestration' },
-          { timestamp: recent(2), text: 'best agents framework for memory' },
+          { timestamp: recent(1), text: 'how do agents framework handle orchestration html note video slide' },
+          { timestamp: recent(2), text: 'best agents frameworks for memory html notes videos slides' },
         ],
       }),
     ]);
@@ -1266,6 +1267,9 @@ test('daily: interests classifies rising/steady/fading topics and finds active t
 
     assert.ok(markdown.split('\n').length <= 80);
     assert.match(markdown, /# Current Interests/);
+    assert.deepEqual(data.rising.map((entry) => [entry.topic, entry.recentCount]), [['ai/agents', 3]]);
+    assert.deepEqual(data.fading.map((entry) => entry.topic), ['eng/frontend-mobile']);
+    assert.ok(!data.threads.some((thread) => /\b(html|notes?|videos?|slides?)\b/.test(thread.term)));
     // Threads: "framework" appears in both saves and prompts; the generic
     // "agents" unigram is stop-filtered but survives inside bigrams.
     assert.ok(data.threads.some((thread) => thread.term === 'framework' || thread.term === 'agents framework'),
@@ -1279,6 +1283,36 @@ test('daily: interests classifies rising/steady/fading topics and finds active t
       assert.ok(lastBigram < firstUnigram,
         `bigrams should precede unigrams, got ${JSON.stringify(data.threads.map((t) => t.term))}`);
     }
+  });
+});
+
+test('daily: synthesis grounds ranking and continuity in earlier context without leaking future digests', async () => {
+  await withIsolatedDataDir(async (dir) => {
+    await writeStars(dir, [starRecord({ id: 1, fullName: 'a/evals', starredAt: '2026-07-06T12:00:00Z', topics: ['evals'] })]);
+    await rebuildCanonicalIndex();
+    const collection = await collectDaily({ date: '2026-07-06' });
+    const library = path.join(dir, 'md');
+    await mkdir(path.join(library, 'daily'), { recursive: true });
+    const previous = "# Daily Learning Review\n\n## Today's material\n\n## Evals need a baseline\n\nMeasure errors before choosing an agent.\n\n### Old source\n\nold-source-inventory\n\n## Also saved\n\nold-overflow-inventory\n";
+    await writeFile(dailyDigestPath('2026-07-05'), previous);
+    await writeFile(dailyDigestPath('2026-06-20'), previous.replace('baseline', 'outside-lookback-marker'));
+    await writeFile(dailyDigestPath('2026-07-07'), previous.replace('baseline', 'future-digest-marker'));
+    await writeFile(path.join(library, 'interests.md'), '---\ngenerated_at: "2026-07-05T06:00:00Z"\n---\n# Current Interests\n\n## Rising\n- ai/evals — 5 this week\n');
+    let prompt = '';
+    await synthesizeDaily(collection, [], { invoke: async (value) => {
+      prompt = value;
+      return JSON.stringify([{ title: 'Evals', summary: 'Measure errors before choosing an agent.', itemIds: ['i1'] }]);
+    } });
+    assert.match(prompt, /topics: ai\/evals/);
+    assert.match(prompt, /READING INTERESTS[\s\S]*ai\/evals/);
+    assert.match(prompt, /PREVIOUS DIGEST THEMES[\s\S]*date=2026-07-05[\s\S]*Measure errors/);
+    assert.doesNotMatch(prompt, /old-source-inventory|old-overflow-inventory|outside-lookback-marker|future-digest-marker/);
+    await writeFile(path.join(library, 'interests.md'), '---\ngenerated_at: "2026-07-07T01:00:00Z"\n---\nfuture-interest-marker\n');
+    await synthesizeDaily(collection, [], { force: true, invoke: async (value) => {
+      prompt = value;
+      return '[]';
+    } });
+    assert.doesNotMatch(prompt, /future-interest-marker|READING INTERESTS/);
   });
 });
 

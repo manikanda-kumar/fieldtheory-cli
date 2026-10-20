@@ -42,6 +42,9 @@ const THREAD_STOPTERMS = new Set([
   'give', 'gives', 'giving', 'given', 'show', 'shows', 'showing', 'shown',
   'find', 'finds', 'finding', 'found', 'know', 'knows', 'knowing', 'known',
   'keep', 'keeps', 'keeping', 'kept', 'start', 'starts', 'starting', 'started',
+  'html', 'note', 'notes', 'video', 'videos', 'slide', 'slides', 'youtube',
+  'sync', 'syncing', 'create', 'creates', 'created',
+  'image', 'images', 'picture', 'pictures', 'overview', 'overviews',
 ]);
 
 /** Function words never useful in any position, including inside bigrams. */
@@ -58,6 +61,7 @@ const BIGRAM_STOPWORDS = new Set([
   'anybody', 'everybody', 'none', 'else', 'every', 'always', 'never', 'still',
   'already', 'again', 'though', 'maybe', 'actually', 'really', 'probably',
   'currently', 'instead', 'because', 'before', 'after', 'while', 'without',
+  'today', 'tomorrow', 'yesterday',
 ]);
 
 /**
@@ -65,7 +69,9 @@ const BIGRAM_STOPWORDS = new Set([
  * bigrams. Bigrams survive one generic side ("claude code") but not two.
  */
 export function interestThreadTerms(text: string): string[] {
+  const plurals: Record<string, string> = { frameworks: 'framework', memories: 'memory', evaluations: 'evaluation' };
   const tokens = text.toLowerCase().split(/[^a-z0-9_]+/)
+    .map((token) => plurals[token] ?? token)
     .filter((token) => token.length >= 3 && !/^\d+$/.test(token) && !BIGRAM_STOPWORDS.has(token));
   const terms: string[] = [];
   for (const token of tokens) {
@@ -74,6 +80,9 @@ export function interestThreadTerms(text: string): string[] {
     if (terms.length >= 20) break;
   }
   for (let i = 0; i + 1 < tokens.length && terms.length < 40; i += 1) {
+    // Workflow nouns carry no signal even when attached to another word.
+    if (/^(?:html|notes?|videos?|slides?|youtube|sync|syncing|create|creates|created)$/.test(tokens[i])
+      || /^(?:html|notes?|videos?|slides?|youtube|sync|syncing|create|creates|created)$/.test(tokens[i + 1])) continue;
     if (THREAD_STOPTERMS.has(tokens[i]) && THREAD_STOPTERMS.has(tokens[i + 1])) continue;
     const bigram = `${tokens[i]} ${tokens[i + 1]}`;
     if (!terms.includes(bigram)) terms.push(bigram);
@@ -120,17 +129,13 @@ async function topicCounts(sinceIso: string, untilIso: string): Promise<Map<stri
   try {
     // first_saved_at mixes ISO and Twitter-format strings — filter in JS.
     const rows = db.exec(
-      `SELECT primary_category, primary_domain, first_saved_at FROM canonical_bookmarks
+      `SELECT topics_json, first_saved_at FROM canonical_bookmarks
        WHERE first_saved_at IS NOT NULL`,
     );
     for (const row of rows[0]?.values ?? []) {
-      if (!inWindowMs(row[2], sinceMs, untilMs)) continue;
-      for (const value of [row[0], row[1]]) {
-        if (value == null) continue;
-        const topic = String(value).trim().toLowerCase();
-        // Skip non-topics: empty, catch-all buckets, and website hostnames
-        // (primary_domain holds values like "youtube.com" for some sources).
-        if (!topic || topic === 'general' || topic === 'unclassified' || topic.includes('.')) continue;
+      if (!inWindowMs(row[1], sinceMs, untilMs)) continue;
+      const topics: string[] = row[0] ? JSON.parse(String(row[0])) : [];
+      for (const topic of new Set(topics)) {
         counts.set(topic, (counts.get(topic) ?? 0) + 1);
       }
     }

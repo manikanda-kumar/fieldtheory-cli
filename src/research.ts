@@ -1,6 +1,9 @@
+import path from 'node:path';
 import { searchCanonicalBookmarks, type CanonicalSearchResult } from './canonical-bookmarks-db.js';
 import { isFollowingSnapshotComplete, searchFollowing, type FollowingSearchResult } from './following/db.js';
 import { searchLibraryDocuments, type LibrarySearchResult } from './library.js';
+import { getLibraryIndexStats, searchLibraryDocs } from './library-index-db.js';
+import { canonicalCommandsDir, canonicalLibraryDir } from './paths.js';
 import { searchTweetsmashBookmarks, tweetIdFromStatusUrl, type TweetsmashSearchHit } from './tweetsmash-search.js';
 import { deriveTodaySources, readLatestXListDigest, type TodaySourceRow } from './x-list-store.js';
 
@@ -86,6 +89,25 @@ function tweetsmashResearchHit(hit: TweetsmashSearchHit): ResearchCanonicalHit {
   };
 }
 
+async function researchLibrary(query: string, limit: number): Promise<LibrarySearchResult[]> {
+  try {
+    // The search API returns [] both for a missing index and for zero matches.
+    // Check its indexed state first so a real miss never starts a tree walk.
+    if ((await getLibraryIndexStats()).indexed) {
+      const docs = await searchLibraryDocs({ query, place: 'library', limit });
+      return docs.map(({ path, relPath, title, updatedAt, size, snippet }) => ({
+        path, relPath, title, updatedAt, size, snippet,
+      }));
+    }
+  } catch {
+    // Missing or unreadable index: use the portable Markdown search below.
+  }
+  return searchLibraryDocuments(query, {
+    limit,
+    excludeDirs: [path.join(canonicalLibraryDir(), 'bookmarks'), canonicalCommandsDir()],
+  });
+}
+
 export async function researchLocalContext(query: string, options: ResearchOptions = {}): Promise<ResearchResult> {
   const limit = options.limit ?? 10;
   const trimmed = query.trim();
@@ -94,7 +116,7 @@ export async function researchLocalContext(query: string, options: ResearchOptio
   const followingComplete = await isFollowingSnapshotComplete();
   const [canonical, library, experts, smash] = await Promise.all([
     searchCanonicalBookmarks({ query: trimmed, limit }).then((rows) => rows.map(canonicalHit)).catch(() => []),
-    Promise.resolve().then(() => searchLibraryDocuments(trimmed, { limit })).catch(() => []),
+    researchLibrary(trimmed, limit).catch(() => []),
     followingComplete ? searchFollowing({ query: trimmed, limit }).catch(() => []) : Promise.resolve([]),
     useTweetsmash
       ? searchTweetsmashBookmarks({ query: trimmed, limit, fetchImpl: options.fetchImpl }).catch(() => ({ hits: [], skipped: true, reason: 'network' }))

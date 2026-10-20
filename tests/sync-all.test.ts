@@ -46,6 +46,7 @@ function runPlanAssertions(): void {
 test('buildSyncAllPlan classifies the X table when --classify is on', () => {
   const off = buildSyncAllPlan({ noSynthesis: true });
   assert.equal(off.find((step) => step.id === 'x-classify')?.enabled, false);
+  assert.equal(off.find((step) => step.id === 'canonical-classify')?.enabled, false);
 
   const plan = buildSyncAllPlan({ classify: true });
   const step = plan.find((item) => item.id === 'x-classify');
@@ -57,6 +58,34 @@ test('buildSyncAllPlan classifies the X table when --classify is on', () => {
 
   const skipped = buildSyncAllPlan({ classify: true, skip: ['x'] });
   assert.equal(skipped.find((item) => item.id === 'x-classify')?.enabled, false);
+});
+
+test('sync-all --classify performs the final canonical fill-only pass even with --only rss', async () => {
+  const plan = buildSyncAllPlan({ classify: true, only: 'rss' });
+  assert.equal(plan.find((step) => step.id === 'x')?.enabled, false);
+  assert.equal(plan.find((step) => step.id === 'x-classify')?.enabled, false);
+  assert.deepEqual(plan.find((step) => step.id === 'rss')?.command, ['sync-rss']);
+  assert.deepEqual(plan.find((step) => step.id === 'canonical-classify')?.command, ['classify', '--unified', '--regex']);
+  const commands: string[][] = [];
+  const result = await runSyncAll({ classify: true, only: 'rss' }, {
+    async run(command) {
+      commands.push(command);
+      return { exitCode: 0 };
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(commands, [
+    ['sync-rss'],
+    ['index'],
+    ['classify', '--unified', '--regex'],
+    ['md', '--canonical'],
+    ['daily', '--write', '--epub'],
+  ]);
+  assert.equal(plan.filter((step) => step.id === 'canonical-classify').length, 1);
+
+  const withoutSynthesis = buildSyncAllPlan({ classify: true, only: 'rss', noSynthesis: true });
+  assert.equal(withoutSynthesis.find((step) => step.id === 'canonical-classify')?.enabled, true);
+  assert.equal(withoutSynthesis.find((step) => step.id === 'canonical-md')?.enabled, false);
 });
 
 test('buildSyncAllPlan runs the daily digest step in the synthesis tail', () => {

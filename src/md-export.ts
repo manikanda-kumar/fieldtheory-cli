@@ -12,7 +12,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureDir, writeMd, readJsonLines } from './fs.js';
+import { createHash } from 'node:crypto';
+import { ensureDir, writeMd, writeJson, readJsonLines } from './fs.js';
 import { mdDir } from './paths.js';
 import { listBookmarks, countBookmarks, type BookmarkTimelineItem } from './bookmarks-db.js';
 import { parseTimestampMs, toIsoDate } from './date-utils.js';
@@ -60,6 +61,14 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function existingWikiRefs(libraryRoot: string, refs: Array<[string, string | null | undefined]>): string[] {
+  return refs.flatMap(([kind, value]) => {
+    if (!value) return [];
+    const target = `${kind}/${slug(value)}`;
+    return fs.existsSync(path.join(libraryRoot, `${target}.md`)) ? [`[[${target}]]`] : [];
+  });
+}
+
 function latestSourceUpdateMs(b: BookmarkTimelineItem): number | null {
   const values = [b.syncedAt, b.enrichedAt]
     .map((value) => value ? parseTimestampMs(value) : null)
@@ -88,6 +97,7 @@ function buildBookmarkMd(b: BookmarkTimelineItem): string {
   if (b.authorName) lines.push(`author_name: "${b.authorName.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ')}"`);
   const postedAt = exportDate(b.postedAt);
   const bookmarkedAt = exportDate(b.bookmarkedAt);
+  lines.push(`date: ${bookmarkedAt ?? postedAt ?? 'null'}`);
   if (postedAt) lines.push(`posted_at: ${postedAt}`);
   if (bookmarkedAt) lines.push(`bookmarked_at: ${bookmarkedAt}`);
   if (b.primaryCategory) lines.push(`category: ${b.primaryCategory}`);
@@ -141,10 +151,9 @@ function buildBookmarkMd(b: BookmarkTimelineItem): string {
   }
 
   // ── Wikilinks to wiki pages ─────────────────────────────────────────
-  const refs: string[] = [];
-  if (b.primaryCategory) refs.push(`[[categories/${slug(b.primaryCategory)}]]`);
-  if (b.primaryDomain) refs.push(`[[domains/${slug(b.primaryDomain)}]]`);
-  if (b.authorHandle) refs.push(`[[entities/${slug(b.authorHandle)}]]`);
+  const refs = existingWikiRefs(mdDir(), [
+    ['categories', b.primaryCategory], ['domains', b.primaryDomain], ['entities', b.authorHandle],
+  ]);
 
   if (refs.length > 0) {
     lines.push('## Related');
@@ -219,10 +228,11 @@ export interface ExportCanonicalResult {
 }
 
 function canonicalFilename(canonical: CanonicalBookmarkListResult): string {
-  const date = exportDate(canonical.lastSavedAt ?? canonical.firstSavedAt) ?? 'undated';
-  const domain = canonical.primaryDomain ? slug(canonical.primaryDomain) : 'unknown';
-  const titleSlug = slug((canonical.displayTitle ?? canonical.canonicalUrl ?? canonical.id).slice(0, 50));
-  return `${date}-${domain}-${titleSlug}.md`;
+  // The full canonical ID is the identity; dates, domains and titles are mutable.
+  if (!/^canonical:[a-f0-9]{64}$/.test(canonical.id)) {
+    throw new Error(`Invalid canonical bookmark ID: ${canonical.id}`);
+  }
+  return `${canonical.id.replace(':', '-')}.md`;
 }
 
 function findRaindropRecord(
@@ -286,6 +296,7 @@ function buildCanonicalBookmarkMd(
   sources: CanonicalSourceRow[],
   raindropRecord: RaindropRecord | null,
   githubStarRecord: GitHubStarRecord | null,
+  libraryRoot: string,
 ): string {
   const lines: string[] = [];
   const title = githubStarRecord?.fullName ?? canonical.displayTitle ?? 'Untitled';
@@ -297,8 +308,11 @@ function buildCanonicalBookmarkMd(
 
   // ── Frontmatter ─────────────────────────────────────────────────────
   lines.push('---');
+  lines.push(`canonical_id: ${yamlQuoted(canonical.id)}`);
   lines.push(`title: ${yamlQuoted(title)}`);
   lines.push(`url: ${yamlQuoted(url)}`);
+  lines.push(`date: ${exportDate(canonical.firstSavedAt) ?? 'null'}`);
+  lines.push(`subject_topics: [${(canonical.topics ?? []).map(yamlQuoted).join(', ')}]`);
   if (!githubStarRecord && canonical.primaryDomain) lines.push(`domain: ${canonical.primaryDomain}`);
   if (canonical.primaryCategory) lines.push(`category: ${canonical.primaryCategory}`);
   if (categories.length > 0) lines.push(`categories: [${categories.join(', ')}]`);
@@ -361,6 +375,10 @@ function buildCanonicalBookmarkMd(
     lines.push(`source: youtube`);
     lines.push(`sources:`);
     lines.push(...yamlList(sourceLabels));
+  } else {
+    lines.push(`source: ${sourceLabels[0] ?? 'unknown'}`);
+    lines.push('sources:');
+    lines.push(...yamlList(sourceLabels));
   }
 
   if (!githubStarRecord && canonical.firstSavedAt) lines.push(`saved_at: ${exportDate(canonical.firstSavedAt)}`);
@@ -403,10 +421,14 @@ function buildCanonicalBookmarkMd(
     lines.push(`- [Issues](${githubStarRecord.htmlUrl}/issues)`);
     lines.push('');
 
-    lines.push('## Related');
-    lines.push(`- [[domains/github-com]]`);
-    lines.push(`- [[entities/${slug(`github-${githubStarRecord.owner}`)}]]`);
-    lines.push('');
+    const refs = existingWikiRefs(libraryRoot, [
+      ['domains', 'github.com'], ['entities', `github-${githubStarRecord.owner}`],
+    ]);
+    if (refs.length) {
+      lines.push('## Related');
+      for (const ref of refs) lines.push(`- ${ref}`);
+      lines.push('');
+    }
 
     return lines.join('\n');
   }
@@ -451,9 +473,9 @@ function buildCanonicalBookmarkMd(
   }
 
   // ── Wikilinks to wiki pages ─────────────────────────────────────────
-  const refs: string[] = [];
-  if (canonical.primaryCategory) refs.push(`[[categories/${slug(canonical.primaryCategory)}]]`);
-  if (canonical.primaryDomain) refs.push(`[[domains/${slug(canonical.primaryDomain)}]]`);
+  const refs = existingWikiRefs(libraryRoot, [
+    ['categories', canonical.primaryCategory], ['domains', canonical.primaryDomain],
+  ]);
 
   if (refs.length > 0) {
     lines.push('## Related');
@@ -503,12 +525,26 @@ export async function exportCanonicalBookmarks(
   const sourcesByCanonicalId = await getAllCanonicalBookmarkSources();
 
   let exported = 0;
+  const entries: Array<{ canonicalId: string; path: string; sha256: string }> = [];
+  const fullExport = !options.source && options.limit == null;
+  const manifestPath = path.join(outputDir, fullExport
+    ? 'canonical-export-manifest.json' : 'canonical-export-partial-manifest.json');
+  const writeManifest = (scope: 'full' | 'partial') => writeJson(manifestPath, {
+    version: 1,
+    scope,
+    source: options.source ?? null,
+    limit: options.limit ?? null,
+    entries,
+  });
+  // Invalidate this run's receipt before writing. A partial report never replaces
+  // the last full snapshot; its hashes must still be verified before any cleanup.
+  await writeManifest('partial');
   let offset = 0;
   const batchSize = 100;
   let hasMore = true;
 
   while (hasMore) {
-    const limit = options.limit ? Math.min(batchSize, options.limit - exported) : batchSize;
+    const limit = options.limit != null ? Math.min(batchSize, options.limit - exported) : batchSize;
     if (limit <= 0) break;
 
     const canonicals = await listCanonicalBookmarks({
@@ -523,14 +559,15 @@ export async function exportCanonicalBookmarks(
       const sources = sourcesByCanonicalId.get(c.id) ?? [];
       const raindropRecord = findRaindropRecord(sources, raindropMap);
       const githubStarRecord = findGitHubStarRecord(sources, githubStarsMap);
-      const content = buildCanonicalBookmarkMd(c, sources, raindropRecord, githubStarRecord);
+      const content = buildCanonicalBookmarkMd(c, sources, raindropRecord, githubStarRecord, path.dirname(outputDir));
       const filename = canonicalFilename(c);
       const filePath = path.join(outputDir, filename);
       await writeMd(filePath, content);
+      entries.push({ canonicalId: c.id, path: filename, sha256: createHash('sha256').update(content, 'utf8').digest('hex') });
       exported++;
     }
 
-    if (options.limit && exported >= options.limit) {
+    if (options.limit != null && exported >= options.limit) {
       hasMore = false;
     } else {
       offset += canonicals.length;
@@ -541,6 +578,10 @@ export async function exportCanonicalBookmarks(
       progress(`  ${exported} exported...`);
     }
   }
+
+  // Publish only after all bookmark writes succeed. Filtered runs cannot
+  // authorize cleanup, even if they happened to include every current row.
+  await writeManifest(fullExport ? 'full' : 'partial');
 
   const elapsed = Math.round((Date.now() - startTime) / 1000);
   progress(`Exported ${exported} bookmarks to ${outputDir} (${elapsed}s)`);

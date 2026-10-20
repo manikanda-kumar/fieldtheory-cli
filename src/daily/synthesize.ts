@@ -6,7 +6,7 @@
 
 import path from 'node:path';
 
-import { pathExists, writeJson } from '../fs.js';
+import { listFiles, pathExists, readMd, writeJson } from '../fs.js';
 import { writeBinary, writeMd } from '../fs.js';
 import { invokeEngineAsync, resolveEngine, withSystemOverride, type EngineRunProfile } from '../engine.js';
 import { extractJsonArray } from '../bookmark-classify-llm.js';
@@ -24,6 +24,7 @@ import { listDueReviewCards, markReviewCardsShown, queueReviewCards, type Review
 import { hasReadingContent, isTruncatedTitle, summarizeSavedText, truncateAtBoundary } from './summary.js';
 import { generateDailyGists, type DailyGist } from './gist.js';
 import { readingSourceLabel, separateReadingLinks } from './reading-text.js';
+import { interestsMarkdownPath } from './interests.js';
 
 const SNIPPET_CHARS = 900;
 const ITEM_SUMMARY_CHARS = 220;
@@ -194,6 +195,36 @@ export interface DailyAliases {
   related: Map<string, string>;
 }
 
+interface DailyReadingContext {
+  interests: string;
+  previousDigests: Array<{ date: string; excerpt: string }>;
+}
+
+async function readDailyContext(date: string, untilIso: string): Promise<DailyReadingContext> {
+  const oldest = new Date(`${date}T00:00:00Z`).getTime() - 7 * 86400000;
+  const dates = (await listFiles(dailyLibraryDir()))
+    .filter((file) => /^\d{4}-\d{2}-\d{2}\.md$/.test(file))
+    .map((file) => file.slice(0, -3))
+    .filter((previous) => previous < date && Date.parse(previous) >= oldest)
+    .sort().reverse().slice(0, 3);
+  const previousDigests = await Promise.all(dates.map(async (previous) => ({
+    date: previous,
+    // Only previous theme summaries, not inventories or quoted old articles.
+    excerpt: (await readMd(dailyDigestPath(previous)).catch(() => ''))
+      .split("\n## Today's material\n")[1]?.split(/\n## (?:Also saved|Captured, unread|System details|Project activity)\b/)[0]
+      .trim().split(/\n(?=## )/).filter((section) => section.startsWith('## '))
+      .map((section) => section.split(/\n(?:### |\*\*|[-*] |\d+\. )/)[0].trim())
+      .join('\n\n').slice(0, 4000) ?? '',
+  })));
+  const interests = await readMd(interestsMarkdownPath()).catch(() => '');
+  // A historical rerun must not learn the future from today's interests file.
+  const generated = interests.match(/^generated_at:\s*"?([^"\n]+)"?$/m)?.[1];
+  return {
+    interests: generated && Date.parse(generated) < Date.parse(untilIso) ? interests.slice(0, 6000) : '',
+    previousDigests: previousDigests.filter(({ excerpt }) => excerpt),
+  };
+}
+
 /** Long canonical hash ids get mangled by smaller models; the prompt uses
  *  short ordinal aliases (i1/r1) and citations are mapped back locally. */
 export function buildDailyAliases(collection: DailyCollection, connected: ConnectedItem[]): DailyAliases {
@@ -218,7 +249,7 @@ export function buildDailyPrompt(
   collection: DailyCollection,
   connected: ConnectedItem[],
   aliases: DailyAliases,
-  options: { groundExternal?: boolean; gists?: Map<string, DailyGist> } = {},
+  options: { groundExternal?: boolean; gists?: Map<string, DailyGist>; readingContext?: DailyReadingContext } = {},
 ): string {
   const itemAlias = new Map([...aliases.items.entries()].map(([alias, id]) => [id, alias]));
   const relatedAlias = new Map([...aliases.related.entries()].map(([alias, id]) => [id, alias]));
@@ -231,6 +262,7 @@ export function buildDailyPrompt(
   lines.push('NEW ITEMS (saved today):');
   for (const item of collection.items) {
     lines.push(`- id=${itemAlias.get(item.id)} source=${item.sources.join(',')} title=${JSON.stringify(item.displayTitle ?? item.canonicalUrl ?? item.id)}`);
+    if (item.topics?.length) lines.push(`  topics: ${item.topics.join(', ')}`);
     lines.push(`  snippet: ${options.gists?.get(item.id)?.gist || snippet(item)}`);
     for (const ref of relatedByItem.get(item.id) ?? []) {
       if (!ref.summary) continue;
@@ -244,6 +276,15 @@ export function buildDailyPrompt(
     const subjects = delta.commits.slice(0, 5).map((commit) => commit.subject).join('; ');
     const questions = delta.prompts.slice(0, 3).map((prompt) => prompt.text.slice(0, 120)).join(' | ');
     lines.push(`- repo=${delta.repo} commits=[${subjects}] questions=[${questions}] ampThreadCount=${delta.ampThreads.length}`);
+  }
+  if (options.readingContext?.interests) {
+    lines.push('', 'READING INTERESTS (ranking context, not source evidence):', options.readingContext.interests);
+    lines.push('Use specific topic matches to prioritize useful reading; format types and website names are not interests.');
+  }
+  if (options.readingContext?.previousDigests.length) {
+    lines.push('', 'PREVIOUS DIGEST THEMES (historical context, not new sources):');
+    for (const previous of options.readingContext.previousDigests) lines.push(`- date=${previous.date}\n${previous.excerpt}`);
+    lines.push('For recurring subjects, explain the concrete addition or difference supported by today\'s material and name the earlier date. Do not claim novelty, progress or disagreement merely from topic overlap. Previous digests are not new items and cannot supply new-item citations.');
   }
   lines.push('');
   lines.push(`TASK: Group the new items into 3-${MAX_THEMES} themes (fewer if the evidence supports fewer). Order themes by practical learning value: concrete mechanisms, useful tradeoffs and well-supported comparisons before minor releases or inventories.`);
@@ -854,7 +895,8 @@ export async function synthesizeDaily(
         // Grounded digests need the engine's web/X tools when available (grok).
         ...(groundExternal ? { webSearch: true } : {}),
       };
-      const prompt = buildDailyPrompt(promptCollection, promptConnected, aliases, { groundExternal, gists });
+      const readingContext = await readDailyContext(collection.date, collection.untilIso);
+      const prompt = buildDailyPrompt(promptCollection, promptConnected, aliases, { groundExternal, gists, readingContext });
       // Unattended runs hit transient engine flakiness: retry the primary
       // engine once, then try the fallback engine before going mechanical.
       const primaryLabel = profile.engine ?? 'default';

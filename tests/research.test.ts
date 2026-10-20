@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { rebuildCanonicalIndex } from '../src/canonical-bookmarks-db.js';
 import { writeJsonLines } from '../src/fs.js';
+import { reindexLibraryDocs } from '../src/library-index-db.js';
 import { researchLocalContext } from '../src/research.js';
 import type { GitHubStarRecord } from '../src/github-stars/types.js';
 
@@ -51,11 +52,13 @@ function githubStarRecord(): GitHubStarRecord {
   };
 }
 
-test('researchLocalContext returns grouped canonical and library results with next commands', async () => {
+test('researchLocalContext retains portable fallback without a library index', async () => {
   await withIsolatedRoots(async (dataDir, libraryDir) => {
     await mkdir(path.join(dataDir, 'github-stars'), { recursive: true });
     await writeJsonLines(path.join(dataDir, 'github-stars', 'stars.jsonl'), [githubStarRecord()]);
     await writeFile(path.join(libraryDir, 'memory.md'), '# Agent memory\n\nNotes about agent memory systems.\n');
+    await mkdir(path.join(libraryDir, 'bookmarks'));
+    await writeFile(path.join(libraryDir, 'bookmarks', 'export.md'), '# Agent memory bookmark export\n');
     await rebuildCanonicalIndex();
 
     const result = await researchLocalContext('agent memory', { limit: 5, tweetsmash: false });
@@ -69,6 +72,40 @@ test('researchLocalContext returns grouped canonical and library results with ne
     assert.equal(result.tweetsmash.length, 0);
     assert.deepEqual(result.truncated, { canonical: false, library: false, today: false, experts: false, tweetsmash: false });
     assert.ok(result.next.includes('ft show --unified <id> --json'));
+    await assert.rejects(access(path.join(dataDir, 'library.db')));
+  });
+});
+
+test('researchLocalContext uses ranked library FTS for notes without duplicating bookmark exports', async () => {
+  await withIsolatedRoots(async (dataDir, libraryDir) => {
+    await mkdir(path.join(dataDir, 'github-stars'), { recursive: true });
+    await writeJsonLines(path.join(dataDir, 'github-stars', 'stars.jsonl'), [githubStarRecord()]);
+    await mkdir(path.join(libraryDir, 'concepts'), { recursive: true });
+    await mkdir(path.join(libraryDir, 'youtube', '2026-06'), { recursive: true });
+    await mkdir(path.join(libraryDir, 'bookmarks'), { recursive: true });
+    await writeFile(path.join(libraryDir, 'concepts', 'memory.md'), '# Agent memory\n\nA practical guide.\n');
+    await writeFile(path.join(libraryDir, 'youtube', '2026-06', 'talk.md'), '# A talk\n\nThe speaker explains agent memory once.\n');
+    await writeFile(path.join(libraryDir, 'bookmarks', 'export.md'), '# Agent memory bookmark export\n');
+    await rebuildCanonicalIndex();
+    await reindexLibraryDocs();
+    const indexPath = path.join(dataDir, 'library.db');
+    const before = await readFile(indexPath);
+
+    const result = await researchLocalContext('agent memory', { limit: 5, tweetsmash: false });
+    assert.deepEqual(result.canonical.map((hit) => hit.title), ['example/tool']);
+    assert.deepEqual(result.library.map((hit) => hit.relPath), [
+      'concepts/memory.md',
+      'youtube/2026-06/talk.md',
+    ]);
+    assert.deepEqual(Object.keys(result.library[0]).sort(), ['path', 'relPath', 'size', 'snippet', 'title', 'updatedAt']);
+    assert.equal(result.library[0].path, path.join(libraryDir, 'concepts', 'memory.md'));
+    assert.match(result.library[1].snippet, /agent memory/);
+
+    // A newly written, unindexed file must not turn a genuine FTS miss into a broad scan.
+    await writeFile(path.join(libraryDir, 'fresh.md'), '# uniquefreshword\n');
+    const miss = await researchLocalContext('uniquefreshword', { tweetsmash: false });
+    assert.deepEqual(miss.library, []);
+    assert.deepEqual(await readFile(indexPath), before); // Recall does not refresh the index.
   });
 });
 

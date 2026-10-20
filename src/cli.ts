@@ -2748,6 +2748,7 @@ export function buildCli() {
     .option('--before <date>', 'Posted before (YYYY-MM-DD)')
     .option('--category <category>', 'Filter by category')
     .option('--domain <domain>', 'Filter by domain')
+    .option('--topic <topic>', 'Filter unified list by subject topic, e.g. ai/evals (requires --unified)')
     .option('--folder <name>', 'Filter by X bookmark folder name (exact or unambiguous prefix)')
     .option('--limit <n>', 'Max results', (v: string) => Number(v), 30)
     .option('--offset <n>', 'Offset into results', (v: string) => Number(v), 0)
@@ -2769,6 +2770,7 @@ export function buildCli() {
           source: options.source ? String(options.source) : undefined,
           category: options.category ? String(options.category) : undefined,
           domain: options.domain ? String(options.domain) : undefined,
+          topic: options.topic ? String(options.topic) : undefined,
           author: options.author ? String(options.author) : undefined,
           after: options.after ? String(options.after) : undefined,
           before: options.before ? String(options.before) : undefined,
@@ -2780,6 +2782,11 @@ export function buildCli() {
           return;
         }
         console.log(formatCanonicalSearchResults(items));
+        return;
+      }
+      if (options.topic) {
+        console.error('  --topic requires --unified');
+        process.exitCode = 1;
         return;
       }
       if (!requireIndex()) return;

@@ -1,10 +1,10 @@
 /**
- * Tweetsmash enrichment connector.
+ * Tweetsmash bookmark cache and enrichment connector.
  *
  * Layers Tweetsmash's REST data (bookmark import timestamps, labels, read
- * state) onto GraphQL-synced X bookmark records. Tweetsmash is enrichment,
- * not a source of truth: records are matched by tweet id and only gain
- * fields the GraphQL sync cannot provide.
+ * state) onto GraphQL-synced X bookmark records. The canonical rebuild also
+ * ingests cached saves absent from GraphQL, preserving their own provenance
+ * without replacing GraphQL records or their canonical identities.
  *
  * Rate limit is 100 requests/hour; a rate-limited crawl persists its cursor
  * and the next run resumes (or, with waitOnRateLimit, sleeps and continues).
@@ -26,7 +26,7 @@ const PAGE_LIMIT = 100;
  * treated as the initial historical backfill burst: their imported_at is the
  * Tweetsmash signup import time, not a real bookmark time.
  */
-const INITIAL_IMPORT_BURST_MS = 48 * 60 * 60 * 1000;
+export const INITIAL_IMPORT_BURST_MS = 48 * 60 * 60 * 1000;
 
 export interface TweetsmashPost {
   post_id: string;
@@ -34,7 +34,13 @@ export interface TweetsmashPost {
   tags: string[];
   is_read: boolean;
   is_archived: boolean;
-  tweet_details?: { text?: string; link?: string; posted_at?: string };
+  is_thread_segment?: boolean;
+  tweet_details?: {
+    text?: string;
+    link?: string;
+    posted_at?: string;
+    article?: { title?: string; plain_text?: string } | null;
+  };
   author_username?: string;
 }
 

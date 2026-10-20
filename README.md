@@ -260,6 +260,7 @@ Overview modes:
 | `ft search --no-tweetsmash <query>` | Local FTS only (skip the live Tweetsmash overlay) |
 | `ft list --unified` | List unified canonical bookmarks |
 | `ft list --unified --source github-stars` | List canonical rows that include a GitHub star source |
+| `ft list --unified --topic ai/evals` | Filter by subject topics seeded from source tags, independently of category or hostname |
 | `ft show --unified <id>` | Show one unified canonical bookmark |
 | `ft list` | Filter by author, date, category, domain, or folder |
 | `ft list --folder <name>` | Show bookmarks in an X bookmark folder |
