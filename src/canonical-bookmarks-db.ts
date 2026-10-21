@@ -1037,7 +1037,8 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
         .map((record) => {
           const tweetId = xStatusIdFromUrl(record.url);
           const source = raindropSourceFromRecord(record, tweetId ? xHydration.get(tweetId) : undefined);
-          const xDedupeKey = tweetId ? xDedupeKeyByTweetId.get(tweetId) ?? smashSources.get(tweetId)?.dedupeKey : undefined;
+          // Supplemental TweetSmash provenance must not merge existing URL aliases.
+          const xDedupeKey = tweetId ? xDedupeKeyByTweetId.get(tweetId) : undefined;
           return source && xDedupeKey ? { ...source, dedupeKey: xDedupeKey } : source;
         })
         .filter((row): row is CanonicalSourceInput => row !== null);
@@ -1111,7 +1112,7 @@ export async function rebuildCanonicalIndex(_options: RebuildCanonicalOptions = 
         sourceRows.push({
           id: `tweetsmash:${post.post_id}`, source: 'tweetsmash', profile: null,
           sourceItemId: post.post_id, sourceUrl, targetUrl: null,
-          dedupeKey: existingKey ?? smashSources.get(post.post_id)?.dedupeKey ?? `x:${post.post_id}`,
+          dedupeKey: smashSources.get(post.post_id)?.dedupeKey ?? existingKey ?? `x:${post.post_id}`,
           title: post.tweet_details?.article?.title ?? null,
           text: compactText([post.tweet_details?.text, post.tweet_details?.article?.plain_text]),
           authorHandle: post.author_username ?? null, savedAt,

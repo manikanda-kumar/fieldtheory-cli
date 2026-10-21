@@ -7,8 +7,13 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 function git(root, ...args) {
-  const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
-  if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr.trim() || result.stdout.trim() || result.error?.message || result.status}`);
+  return runGit(root, args);
+}
+
+function runGit(root, args, input) {
+  const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, input });
+  if (result.error) throw new Error(`git ${args[0]} failed: ${result.error.message}`);
+  if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr?.trim() || result.stdout?.trim() || result.status}`);
   return result.stdout.trimEnd();
 }
 
@@ -83,7 +88,9 @@ export function publishData(root) {
     path.join(root, 'bookmarks/bookmarks.db')], { encoding: 'utf8' });
   if (check.status !== 0) throw new Error('SQLite integrity check failed; preserving local data without publication.');
   if (files.length) {
-    git(root, 'add', '--', ...files);
+    // Send only the reviewed names, NUL-delimited: no shell, argv limit, or pathspec globbing.
+    runGit(root, ['--literal-pathspecs', 'add', '--pathspec-from-file=-', '--pathspec-file-nul'],
+      Buffer.from(`${files.join('\0')}\0`));
     // Imported prose is data: preserve whitespace rather than applying code-style checks.
     git(root, 'commit', '-m', `data: orb daily ${new Date().toISOString().slice(0, 10)}`);
   }

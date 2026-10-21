@@ -1070,10 +1070,14 @@ test('canonical rebuild ingests TweetSmash-only saves without replaying imports 
       text: 'Existing GraphQL save', links: ['https://example.com/original'],
       bookmarkedAt: '2026-06-01T00:00:00.000Z', syncedAt: '2026-06-02T00:00:00.000Z',
     }]);
-    await writeRaindropBookmarks(dir, [{
-      id: 200, url: 'https://twitter.com/bob/status/200', title: 'Existing Raindrop save',
-      createdAt: '2026-06-03T00:00:00.000Z', syncedAt: '2026-06-03T00:00:00.000Z',
-    }]);
+    await writeRaindropBookmarks(dir, [
+      { id: 200, url: 'https://twitter.com/bob/status/200', title: 'Existing Raindrop save',
+        createdAt: '2026-06-03T00:00:00.000Z', syncedAt: '2026-06-03T00:00:00.000Z' },
+      { id: 201, url: 'https://x.com/bob/status/200', title: 'Another saved status URL',
+        createdAt: '2026-06-05T00:00:00.000Z', syncedAt: '2026-06-05T00:00:00.000Z' },
+      { id: 202, url: 'https://x.com/bob/status/200?_bhlid=shared', title: 'Tracked saved status URL',
+        createdAt: '2026-06-04T00:00:00.000Z', syncedAt: '2026-06-04T00:00:00.000Z' },
+    ]);
     await rebuildCanonicalIndex();
     const before = await listCanonicalBookmarks({ limit: 20 });
     await mkdir(path.join(dir, 'tweetsmash'), { recursive: true });
@@ -1086,7 +1090,7 @@ test('canonical rebuild ingests TweetSmash-only saves without replaying imports 
     ]);
     await rebuildCanonicalIndex();
     const after = await listCanonicalBookmarks({ limit: 20 });
-    assert.equal(after.length, 4);
+    assert.equal(after.length, 6);
     for (const original of before) {
       const current = after.find((row) => row.id === original.id)!;
       assert.ok(current);
@@ -1102,6 +1106,7 @@ test('canonical rebuild ingests TweetSmash-only saves without replaying imports 
     const archive = after.find((row) => row.searchText.includes('Initial archive burst'))!;
     assert.equal(archive.firstSavedAt, null, 'initial import time is not a bookmark timestamp');
     assert.equal((await getCanonicalBookmarksSince('2026-07-01T00:00:00Z')).some((row) => row.id === archive.id), false);
+    await writeRaindropBookmarks(dir, (await readJsonLines<RaindropRecord>(path.join(dir, 'raindrop/bookmarks.jsonl'))).reverse());
     await rebuildCanonicalIndex();
     assert.deepEqual(await listCanonicalBookmarks({ limit: 20 }), after);
     await writeJsonLines(path.join(dir, 'bookmarks.jsonl'), [

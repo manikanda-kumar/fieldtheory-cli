@@ -11,7 +11,9 @@ function fixture(t: test.TestContext) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const remote = path.join(dir, 'remote.git');
   const root = path.join(dir, 'data');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 16 * 1024 * 1024,
+  }).trim();
   fs.mkdirSync(root);
   execFileSync('git', ['init', '--bare', '--initial-branch=main', remote], { stdio: 'ignore' });
   git('init', '--initial-branch=main');
@@ -39,6 +41,35 @@ test('orb publication commits only data and verifies the remote', (t) => {
   assert.equal(publishData(f.root), commit, 'retry after successful publication adds no empty commit');
 });
 
+test('orb publication stages more filenames than fit in process argv', (t) => {
+  const f = fixture(t);
+  const names = Array.from({ length: 10500 }, (_, i) =>
+    `library/${String(i).padStart(5, '0')}-${'x'.repeat(205)}.md`);
+  assert.ok(names.reduce((bytes, name) => bytes + Buffer.byteLength(name) + 1, 0) > 2 * 1024 * 1024);
+  for (const name of names) fs.writeFileSync(path.join(f.root, name), 'published\n');
+  const commit = publishData(f.root);
+  const published = f.git('ls-tree', '-r', '--name-only', '-z', commit).split('\0').filter(Boolean);
+  assert.equal(published.length, names.length + 2, 'every reviewed file reached the commit');
+  assert.ok(published.includes(names[0]));
+  assert.ok(published.includes(names.at(-1)!));
+  assert.equal(f.git('ls-remote', 'origin', 'refs/heads/main').split(/\s/)[0], commit);
+  assert.equal(f.git('status', '--porcelain'), '');
+});
+
+test('orb publication treats metacharacters and newlines as literal filenames', (t) => {
+  const f = fixture(t);
+  const names = [
+    'library/[brackets]*? with\nnewline.md',
+    'library/:(glob)literal.md',
+    'library/-leading.md',
+  ];
+  for (const name of names) fs.writeFileSync(path.join(f.root, name), 'literal\n');
+  const commit = publishData(f.root);
+  const published = f.git('ls-tree', '-r', '--name-only', '-z', commit).split('\0').filter(Boolean);
+  assert.deepEqual(published.sort(), ['bookmarks/bookmarks.db', 'bookmarks/items.jsonl', ...names].sort());
+  assert.equal(f.git('status', '--porcelain'), '');
+});
+
 test('orb publication permits credential-related titles only in dated bookmark Markdown', (t) => {
   const f = fixture(t);
   const files = [
@@ -58,6 +89,7 @@ test('orb publication permits credential-related titles only in dated bookmark M
 
 test('orb publication rejects unrelated files, credential paths, staged edits, and SQLite sidecars', (t) => {
   const f = fixture(t);
+  fs.writeFileSync(path.join(f.root, 'library/safe.md'), 'safe');
   for (const file of [
     'sync-all.sh', 'bookmarks/credentials.json', 'library/projects/local.md', 'bookmarks/bookmarks.db-wal',
     'library/bookmarks/credentials.md', 'library/bookmarks/cookies.txt',
@@ -76,9 +108,22 @@ test('orb publication rejects unrelated files, credential paths, staged edits, a
     assert.equal(f.git('diff', '--cached', '--name-only'), '');
     fs.rmSync(dest);
   }
+  fs.rmSync(path.join(f.root, 'library/safe.md'));
   fs.writeFileSync(path.join(f.root, 'library/staged.md'), 'staged');
   f.git('add', 'library/staged.md');
   assert.throws(() => publishData(f.root), /staged changes/);
+});
+
+test('orb publication reports a git spawn failure instead of masking it', (t) => {
+  const f = fixture(t);
+  const originalPath = process.env.PATH;
+  try {
+    process.env.PATH = '/nonexistent-publisher-test-path';
+    assert.throws(() => publishData(f.root), /git branch failed: spawnSync git ENOENT/);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+  assert.equal(f.git('diff', '--cached', '--name-only'), '');
 });
 
 test('orb refresh refuses dirty state and publication preserves commits on a remote race', (t) => {
