@@ -151,8 +151,9 @@ export async function processVideo(videoId: string, options: ProcessVideoOptions
   if (!notes) notes = await generateNotes({ ...fetched, slides: slideImages }, options.llm);
   let notesForMarkdown = withApproximateChapters(notes, fetched.meta.durationSec);
   // Slides are embedded inline within the chapter timeline for visual continuity,
-  // not appended as a detached link list.
-  let notesMarkdown = renderNotesMarkdown(videoId, fetched.meta, notesForMarkdown, slideImages, undefined, { notesSource });
+  // not appended as a detached link list. They are linked relative to the note so
+  // a synced library still renders where the artifacts directory lives elsewhere.
+  let notesMarkdown = renderNotesMarkdown(videoId, fetched.meta, notesForMarkdown, slideImages, undefined, { notesSource, notePath: notesPath });
 
   if (options.overview === 'audio') {
     try {

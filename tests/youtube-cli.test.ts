@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { buildCli, parseVideoIdsText } from '../src/cli.js';
+import { getLibraryDocById, reindexLibraryDocs } from '../src/library-index-db.js';
 
 test('sync-all accumulates repeated playlists without changing sync-youtube parsing', async () => {
   const program = buildCli();
@@ -66,4 +67,41 @@ test('slide-only sync can finish without an audio engine; audio still requires o
   await buildCli().parseAsync([...args, '--overview', 'audio']);
   assert.equal(process.exitCode, 1);
   assert.match(errors.join('\n'), /OPENAI_API_KEY is required for OpenAI TTS/);
+});
+
+test('slide-link repair is read-only by default and refreshes indexed note bodies when written', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-slide-repair-cli-'));
+  const before = { FT_DATA_DIR: process.env.FT_DATA_DIR, FT_LIBRARY_DIR: process.env.FT_LIBRARY_DIR, FT_COMMANDS_DIR: process.env.FT_COMMANDS_DIR };
+  const exitCode = process.exitCode;
+  t.after(() => {
+    for (const [name, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    process.exitCode = exitCode;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  process.env.FT_DATA_DIR = path.join(root, 'bookmarks');
+  process.env.FT_LIBRARY_DIR = path.join(root, 'library');
+  process.env.FT_COMMANDS_DIR = path.join(root, 'commands');
+  const notePath = path.join(root, 'library/youtube/2026-10/v1.md');
+  const slidePath = path.join(root, 'bookmarks/youtube/artifacts/v1/slide.png');
+  fs.mkdirSync(path.dirname(notePath), { recursive: true });
+  fs.mkdirSync(path.dirname(slidePath), { recursive: true });
+  fs.writeFileSync(slidePath, 'png');
+  const original = '---\nsynced: 2026-10-25T03:00:00Z\n---\n\n# Talk\n\n![Slide](/Users/manik/.fieldtheory/bookmarks/youtube/artifacts/v1/slide.png)\n';
+  fs.writeFileSync(notePath, original);
+  const args = ['node', 'ft', 'repair-youtube-slides', '--note', notePath];
+
+  await buildCli().parseAsync(args);
+  assert.equal(fs.readFileSync(notePath, 'utf8'), original);
+  assert.equal(fs.existsSync(path.join(root, 'bookmarks/library.db')), false);
+
+  await reindexLibraryDocs();
+  assert.equal((await getLibraryDocById('library:youtube/2026-10/v1.md'))?.body, original);
+  await buildCli().parseAsync([...args, '--write']);
+  assert.equal(process.exitCode ?? 0, 0);
+  const repaired = original.replace('/Users/manik/.fieldtheory/bookmarks/youtube/artifacts/v1/slide.png', '../../../bookmarks/youtube/artifacts/v1/slide.png');
+  assert.equal(fs.readFileSync(notePath, 'utf8'), repaired);
+  assert.equal((await getLibraryDocById('library:youtube/2026-10/v1.md'))?.body, repaired);
 });

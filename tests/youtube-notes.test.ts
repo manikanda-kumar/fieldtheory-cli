@@ -168,3 +168,39 @@ test('renderNotesMarkdown embeds slide thumbnails inline under their chapter', (
   assert.match(md, /\*\*Intro\*\* — Opening\n  \[!\[Slide at 00:30\]\(\/tmp\/a\.png\)\]\(https:\/\/youtu\.be\/v1\?t=30\)/);
   assert.match(md, /\*\*Build\*\* — Implementation\n  \[!\[Slide at 06:00\]\(\/tmp\/b\.png\)\]\(https:\/\/youtu\.be\/v1\?t=360\)/);
 });
+
+test('renderNotesMarkdown links slide images relative to the note so the library is portable', () => {
+  const md = renderNotesMarkdown('v1', meta, {
+    videoType: 'talk',
+    tldr: 'Short summary',
+    keyPoints: [],
+    chapters: [{ tSec: 0, label: 'Intro', summary: 'Opening' }],
+    actionItems: [],
+    topics: [],
+  }, [
+    { tSec: 30, imagePath: '/home/u/.fieldtheory/bookmarks/youtube/artifacts/v1/youtube-v1/slide 0001 (30s).png' },
+    { tSec: 60, imagePath: 'https://example.com/remote-slide.png' },
+    { tSec: 90, imagePath: 'https://cdn.example.com/slides/a%20b.png?token=abc%2F123&expires=1700000000#page=2' },
+  ], '2026-05-12T00:00:00.000Z', { notePath: '/home/u/.fieldtheory/library/youtube/2026-05/v1.md' });
+
+  // Three levels up from the note's month folder reaches the Field Theory home,
+  // and the filename is escaped so spaces and parentheses do not end the link.
+  assert.match(md, /\[!\[Slide at 00:30\]\(\.\.\/\.\.\/\.\.\/bookmarks\/youtube\/artifacts\/v1\/youtube-v1\/slide%200001%20%2830s%29\.png\)\]/);
+  // Remote images are already portable: plain URLs and signed URLs with
+  // percent-escapes, a query string and a fragment must pass through unchanged.
+  assert.match(md, /\[!\[Slide at 01:00\]\(https:\/\/example\.com\/remote-slide\.png\)\]/);
+  assert.match(md, /\[!\[Slide at 01:30\]\(https:\/\/cdn\.example\.com\/slides\/a%20b\.png\?token=abc%2F123&expires=1700000000#page=2\)\]/);
+});
+
+test('renderNotesMarkdown keeps absolute slide paths when no note path is supplied', () => {
+  const md = renderNotesMarkdown('v1', meta, {
+    videoType: 'talk',
+    tldr: 'Short summary',
+    keyPoints: [],
+    chapters: [{ tSec: 0, label: 'Intro', summary: 'Opening' }],
+    actionItems: [],
+    topics: [],
+  }, [{ tSec: 30, imagePath: '/tmp/a.png' }], '2026-05-12T00:00:00.000Z');
+
+  assert.match(md, /!\[Slide at 00:30\]\(\/tmp\/a\.png\)/);
+});

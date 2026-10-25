@@ -101,7 +101,8 @@ test('processVideo skips unchanged done videos unless forced', async () => {
 });
 
 test('processVideo keeps chapter summaries separate from captured slides', async () => {
-  await withTempRoots(async () => {
+  await withTempRoots(async ({ dataDir }) => {
+    const slidePath = (name: string) => path.join(dataDir, 'youtube', 'artifacts', 'v1', 'youtube-v1', name);
     const result = await processVideo('v1', {
       overview: 'slides',
       force: true,
@@ -113,9 +114,9 @@ test('processVideo keeps chapter summaries separate from captured slides', async
         contentHash: 'hash-slides',
       }),
       fetchSlides: async () => [
-        { tSec: 10, imagePath: '/tmp/slide-1.png', ocrText: 'Architecture diagram with clear module boundary labels' },
-        { tSec: 300, imagePath: '/tmp/slide-2.png', ocrText: 'Tool access terminal commands validation and tests' },
-        { tSec: 600, imagePath: '/tmp/slide-3.png', ocrText: 'Context memory compaction subagent delegation summary' },
+        { tSec: 10, imagePath: slidePath('slide-1.png'), ocrText: 'Architecture diagram with clear module boundary labels' },
+        { tSec: 300, imagePath: slidePath('slide-2.png'), ocrText: 'Tool access terminal commands validation and tests' },
+        { tSec: 600, imagePath: slidePath('slide-3.png'), ocrText: 'Context memory compaction subagent delegation summary' },
       ],
       llm: { chat: async () => ({ text: '{}', json: {
         tldr: 'Summary',
@@ -128,11 +129,12 @@ test('processVideo keeps chapter summaries separate from captured slides', async
 
     const md = await fs.readFile(result.notesPath!, 'utf8');
     assert.match(md, /\[00:00\]\(https:\/\/youtu\.be\/v1\?t=0\) \*\*Part 1\*\* — Module boundaries matter/);
-    // Slides are embedded inline within the chapter timeline, not a detached list.
+    // Slides are embedded inline within the chapter timeline, not a detached list,
+    // and are linked relative to the note so the library stays portable.
     assert.doesNotMatch(md, /## Slides/);
-    assert.match(md, /  \[!\[Slide at 00:10\]\(\/tmp\/slide-1\.png\)\]\(https:\/\/youtu\.be\/v1\?t=10\)/);
+    assert.match(md, /  \[!\[Slide at 00:10\]\(\.\.\/\.\.\/\.\.\/data\/youtube\/artifacts\/v1\/youtube-v1\/slide-1\.png\)\]\(https:\/\/youtu\.be\/v1\?t=10\)/);
     // Slide at 05:00 (300s) falls under Part 1 [0,400); slide at 10:00 (600s) under Part 2 [400,800).
-    assert.match(md, /\*\*Part 2\*\* — Tool access needs validation\n  \[!\[Slide at 10:00\]\(\/tmp\/slide-3\.png\)\]/);
+    assert.match(md, /\*\*Part 2\*\* — Tool access needs validation\n  \[!\[Slide at 10:00\]\(\.\.\/\.\.\/\.\.\/data\/youtube\/artifacts\/v1\/youtube-v1\/slide-3\.png\)\]/);
     assert.doesNotMatch(md, /\*\*Slide 1\*\* — Captured slide frame/);
   });
 });

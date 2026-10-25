@@ -84,6 +84,7 @@ import { processVideo, type OverviewMode } from './youtube/overview.js';
 import { resolvePlaylist } from './youtube/playlist.js';
 import { writeYoutubeIndexFromState, writeYoutubePlaylistIndex } from './youtube/index-html.js';
 import { createEngineYoutubeLlmClient, createFallbackYoutubeLlmClient, type YoutubeLlmClient } from './youtube/llm.js';
+import { repairYoutubeSlideLinks } from './youtube/slide-links.js';
 import { markPlaylistSynced, updateYoutubeState } from './youtube/state.js';
 import type { YtDlpAccessOptions } from './youtube/yt-dlp.js';
 import { fetchXListDigest, parseListId } from './x-list-fetch.js';
@@ -2156,6 +2157,37 @@ export function buildCli() {
         if (playlistIndexPath) console.log(`  ✓ Playlist index: ${playlistIndexPath}`);
       }
       if (failed > 0) process.exitCode = 1;
+    }));
+
+  program
+    .command('repair-youtube-slides')
+    .description('Rewrite absolute slide image links in YouTube notes as portable relative paths')
+    .option('--write', 'Rewrite notes; without it the command only reports', false)
+    .option('--limit <n>', 'Max notes to rewrite per run; repeat the command to continue', (v: string) => Number(v), 100)
+    .option('--note <path>', 'Repair one note instead of scanning the YouTube library')
+    .action(safe(async (options) => {
+      const limit = typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0 ? Math.floor(options.limit) : 100;
+      const note = stringOption(options.note);
+      const result = await repairYoutubeSlideLinks({
+        notePaths: note ? [path.resolve(note)] : undefined,
+        limit,
+        write: Boolean(options.write),
+      });
+      if (result.notesWritten > 0) await reindexLibraryDocs();
+      console.log(options.write
+        ? `  Repaired ${result.linksWritten} slide link(s) in ${result.notesWritten} note(s)`
+        : `  Would repair ${result.linksRewritten} slide link(s) in ${result.notesChanged} of ${result.notesScanned} note(s)`);
+      if (result.unresolvedLinks > 0) {
+        console.log(`  ! ${result.unresolvedLinks} absolute link(s) left alone: the referenced artifact is missing locally`);
+        for (const sample of result.unresolvedSamples) console.log(`    - ${sample}`);
+      }
+      for (const example of result.examples) console.log(`  · ${example.from}\n    → ${example.to}`);
+      if (!options.write && result.notesChanged > 0) {
+        console.log(`  Run with --write to update up to ${limit} note(s); repeat to continue.`);
+      }
+      if (options.write && result.notesDeferred > 0) {
+        console.log(`  ${result.notesDeferred} note(s) still need repair; run again to continue past --limit ${limit}.`);
+      }
     }));
 
   // ── review ─────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import type { YoutubeLlmClient } from './llm.js';
 import type { TranscriptSegment, VideoMeta } from './fetch.js';
+import { slideImageTarget } from './slide-links.js';
 
 const DEFAULT_TRANSCRIPT_CHAR_BUDGET = 48_000;
 
@@ -118,6 +119,8 @@ export interface SlideImage {
 export interface RenderNotesExtras {
   /** How the notes were produced (e.g. `agy-video`, `transcript`); omitted from frontmatter when unset. */
   notesSource?: string;
+  /** Absolute path of the note being written; when set, slide images are linked relative to it. */
+  notePath?: string;
 }
 
 export function renderNotesMarkdown(videoId: string, meta: VideoMeta, notes: YoutubeNotes, slides: SlideImage[] = [], syncedAt = new Date().toISOString(), extras: RenderNotesExtras = {}): string {
@@ -144,7 +147,7 @@ ${renderList(notes.keyPoints)}
 
 ## Chapters
 
-${renderChapters(videoId, notes.chapters, slides)}
+${renderChapters(videoId, notes.chapters, slides, extras.notePath)}
 
 ## Action items
 
@@ -162,11 +165,11 @@ ${renderList(notes.topics)}
  * follows (slides before the first chapter attach to it), so the captured
  * visuals flow alongside the summary instead of living in a detached list.
  */
-function renderChapters(videoId: string, chapters: YoutubeNotes['chapters'], slides: SlideImage[]): string {
+function renderChapters(videoId: string, chapters: YoutubeNotes['chapters'], slides: SlideImage[], notePath?: string): string {
   const sortedSlides = [...slides].sort((a, b) => a.tSec - b.tSec);
   if (!chapters.length) {
     if (!sortedSlides.length) return '- None';
-    return sortedSlides.map((slide) => renderSlide(videoId, slide)).join('\n');
+    return sortedSlides.map((slide) => renderSlide(videoId, slide, notePath)).join('\n');
   }
   const buckets: SlideImage[][] = chapters.map(() => []);
   for (const slide of sortedSlides) {
@@ -178,15 +181,15 @@ function renderChapters(videoId: string, chapters: YoutubeNotes['chapters'], sli
   }
   return chapters.map((chapter, i) => {
     const line = `- [${formatTimestamp(chapter.tSec)}](https://youtu.be/${videoId}?t=${Math.max(0, Math.floor(chapter.tSec))}) **${chapter.label}** — ${chapter.summary}`;
-    const images = buckets[i].map((slide) => `  ${renderSlide(videoId, slide)}`);
+    const images = buckets[i].map((slide) => `  ${renderSlide(videoId, slide, notePath)}`);
     return [line, ...images].join('\n');
   }).join('\n');
 }
 
-function renderSlide(videoId: string, slide: SlideImage): string {
+function renderSlide(videoId: string, slide: SlideImage, notePath?: string): string {
   const ts = formatTimestamp(slide.tSec);
   const link = `https://youtu.be/${videoId}?t=${Math.max(0, Math.floor(slide.tSec))}`;
-  return `[![Slide at ${ts}](${slide.imagePath})](${link})`;
+  return `[![Slide at ${ts}](${slideImageTarget(slide.imagePath, notePath)})](${link})`;
 }
 
 export function classifyYoutubeVideoType(meta: Pick<VideoMeta, 'title' | 'channel' | 'durationSec'>): YoutubeVideoType {

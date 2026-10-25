@@ -188,6 +188,7 @@ What it does:
 - With `--engine agy`, the model **watches the video** when the screen carries the note: tutorials, talks, benchmarks, captionless videos, and short clips under 12 minutes. Long interviews, explainers, and other talking-heads stay on the transcript. A 144p copy is downloaded with `yt-dlp`, agy (Gemini 3.7 Flash) views it, and the notes pick up slide text, benchmark tables, code and terminal output the speaker never reads aloud. Notes carry `notesSource: agy-video`. Falls back to transcript notes on any failure. `--video-notes auto` (default) is that type gate; `on` watches every video; `off` never watches (`FT_YOUTUBE_VIDEO_NOTES` too). Cap length with `FT_YOUTUBE_VIDEO_MAX_MINUTES` (default 120). No Gemini API key involved — this runs on the Antigravity subscription.
 - Writes markdown notes to `~/.fieldtheory/library/youtube/<YYYY-MM>/<videoId>.md` and updates `~/.fieldtheory/library/youtube/index.html`.
 - Stores state and heavy artifacts under `~/.fieldtheory/bookmarks/youtube/`.
+- Slide thumbnails are linked relative to the note, so moving the library and artifacts together preserves the links. `ft repair-youtube-slides` reports notes that still hold old absolute links; add `--write` to rewrite them and refresh the Library index. Each write run is bounded by `--limit` (default 100 notes) and leaves links alone when the captured image is missing locally, so repeat the command to continue.
 - Indexes each video into the unified canonical SQLite index so `ft search --unified` can find it.
 
 YouTube classification shadow mode:
