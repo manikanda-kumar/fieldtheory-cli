@@ -163,5 +163,34 @@ tags and device provenance. Dates mean **last tab activity**, not bookmark save
 time. Stale devices are reported with Chrome's freshness label, not silently
 treated as current. This reads the browser's cached view (up to its native
 10-device limit); it cannot force a sleeping remote device to sync. Existing
-Raindrop URLs are skipped account-wide. The Vivaldi remote-tab pull remains
-one-off; its bookmarks are automated separately.
+Raindrop URLs are skipped account-wide.
+
+### Vivaldi tabs from other devices
+
+The local `~/.config/fieldtheory/orb-vivaldi-tabs` marker enables
+`scripts/sync-vivaldi-tabs.mjs --run` after Chrome tabs and before Raindrop
+ingestion. The same script accepts `--dry-run` for a live CDP/API read without
+imports; hold `~/.fieldtheory/sync-orb.lock` for manual calls as above.
+
+To exclude a computer from this feed, put its exact Vivaldi device name in
+`~/.config/fieldtheory/vivaldi-tabs-excluded-devices`, one name per line. Blank
+lines are ignored; without the file, all devices remain eligible. Exclusions
+apply before URL deduplication, and the run report marks matching devices
+`excluded: true`. This does not change Vivaldi's account sync settings or remove
+previously imported tabs. Keep the machine-specific file outside Git.
+
+The supervised `fieldtheory-vivaldi-sync` service needs its existing signed-in
+profile plus `--remote-debugging-address=127.0.0.1 --remote-debugging-port=9224`.
+Never create a portal for this debugging port. The reader talks to loopback CDP
+directly and evaluates `chrome.sessions.getDevices()` in Vivaldi's UI extension
+target. It does not use `agent-browser` (that path hangs on this UI), open the
+remote links, read local `about:blank` tabs, change sync settings, or export
+credentials. Missing/empty foreign sessions fail visibly (including when there
+are genuinely no remote tabs).
+
+Missing HTTP(S) links go into `Vivaldi Saved Tabs`, with `vivaldi`/`synced-tabs`
+tags and device provenance. Dates mean **last tab activity** (`session.lastModified`
+Unix seconds), not bookmark save time. Stale devices are reported with that
+timestamp, not silently treated as current. This reads the browser's cached
+view; it cannot force a sleeping remote device to sync. Existing Raindrop URLs
+are skipped account-wide.

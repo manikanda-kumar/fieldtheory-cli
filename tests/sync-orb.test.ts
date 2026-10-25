@@ -29,6 +29,7 @@ if (args[0] === '--input-type=module') {
 console.log(JSON.stringify({args, tz:process.env.TZ, data:process.env.FT_DATA_DIR, ocrWorkers:process.env.SUMMARIZE_SLIDES_WORKERS, ocrThreads:process.env.OMP_THREAD_LIMIT}));
 if (args[0].endsWith('sync-browser-bookmarks.mjs')) process.exit(Number(process.env.TEST_BROWSER_EXIT || 0));
 if (args[0].endsWith('sync-chrome-tabs.mjs')) process.exit(Number(process.env.TEST_TABS_EXIT || 0));
+if (args[0].endsWith('sync-vivaldi-tabs.mjs')) process.exit(Number(process.env.TEST_VIVALDI_TABS_EXIT || 0));
 process.exit(Number(process.env.TEST_CLI_EXIT || 0));
 `, { mode: 0o755 });
   const env = { ...process.env, HOME: home, RAINDROP_TOKEN: 'fixture', TWEETSMASH_API_KEY: 'fixture' };
@@ -100,24 +101,28 @@ test('orb daily mode requires handoff and reports RSS failures after publishing 
 test('opted-in browser feed precedes ingestion; feed failure still publishes and returns nonzero', { skip: process.platform !== 'linux' }, t => {
   const f = fixture(t);
   fs.mkdirSync(path.join(f.home, '.config/fieldtheory'), { recursive: true });
-  for (const marker of ['orb-canonical-writer', 'orb-browser-bookmarks', 'orb-chrome-tabs']) {
+  for (const marker of ['orb-canonical-writer', 'orb-browser-bookmarks', 'orb-chrome-tabs', 'orb-vivaldi-tabs']) {
     fs.writeFileSync(path.join(f.home, '.config/fieldtheory', marker), 'enabled');
   }
   fs.mkdirSync(path.join(f.home, '.fieldtheory/bookmarks/rss'));
   fs.writeFileSync(path.join(f.home, '.fieldtheory/bookmarks/rss/meta.json'), '{"feeds":[]}');
   for (const mode of ['--check', '--dry-run', '--run']) {
-    assert.doesNotMatch(f.run(mode).stdout, /sync-browser-bookmarks|sync-chrome-tabs/);
+    assert.doesNotMatch(f.run(mode).stdout, /sync-browser-bookmarks|sync-chrome-tabs|sync-vivaldi-tabs/);
   }
   const success = f.run('--daily');
   assert.equal(success.status, 0, success.stderr);
   const calls = success.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line).args);
-  assert.deepEqual(calls.map(args => args[1]), ['refresh', '--run', '--run', 'sync-all', 'publish']);
+  assert.deepEqual(calls.map(args => args[1]), ['refresh', '--run', '--run', '--run', 'sync-all', 'publish']);
   assert.match(calls[1][0], /sync-browser-bookmarks\.mjs$/);
   assert.match(calls[2][0], /sync-chrome-tabs\.mjs$/);
+  assert.match(calls[3][0], /sync-vivaldi-tabs\.mjs$/);
   const failed = spawnSync('bash', [f.script, '--daily'], { env: { ...f.env, TEST_BROWSER_EXIT: '1' }, encoding: 'utf8' });
   assert.equal(failed.status, 1);
   assert.match(failed.stdout, /"publish"/);
   const tabsFailed = spawnSync('bash', [f.script, '--daily'], { env: { ...f.env, TEST_TABS_EXIT: '1' }, encoding: 'utf8' });
   assert.equal(tabsFailed.status, 1);
   assert.match(tabsFailed.stdout, /"publish"/);
+  const vivaldiFailed = spawnSync('bash', [f.script, '--daily'], { env: { ...f.env, TEST_VIVALDI_TABS_EXIT: '1' }, encoding: 'utf8' });
+  assert.equal(vivaldiFailed.status, 1);
+  assert.match(vivaldiFailed.stdout, /"publish"/);
 });

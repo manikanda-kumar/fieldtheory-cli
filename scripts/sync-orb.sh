@@ -80,6 +80,9 @@ fi
 if [[ -f "$HOME/.config/fieldtheory/orb-chrome-tabs" ]]; then
   node "$root/scripts/sync-chrome-tabs.mjs" --run || rc=1
 fi
+if [[ -f "$HOME/.config/fieldtheory/orb-vivaldi-tabs" ]]; then
+  node "$root/scripts/sync-vivaldi-tabs.mjs" --run || rc=1
+fi
 node "$root/dist/cli.js" "${args[@]}" || rc=$?
 # sync-rss currently exits zero on individual feed failures. Surface them as a
 # degraded daily run without throwing away successful ingestion.
